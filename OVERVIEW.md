@@ -24,7 +24,7 @@ you can jump straight to Layout and come back to refine.
 | 3 | **Frame** | Mounting frame geometry: fixed-tilt or single-axis tracker, tilt, module orientation, modules per frame, frame sizing by module count or max frame length. Includes a live frame drawing. |
 | 4 | **String Sizing** | The core electrical calculation — modules per string, derived from temperature extremes. Nine numbered worked steps, each with formula, result, pass/fail status, and a plain-English "why". |
 | 5 | **Paralleling** | Parallel strings per MPPT and DC build-up: string count limited by the lower of connector limit and MPPT current headroom; DC/AC ratio against the AC rating. |
-| 6 | **Pitch & Shading** | Row pitch vs. shading trade-off. Computes GCR and clear row gap, runs a solstice clearance check, and compares candidate pitches on kWh/kWp vs. shading loss. |
+| 6 | **Pitch & Shading** | Row pitch vs. shading trade-off. Computes GCR and clear row gap, runs a solstice clearance check, and models specific yield (kWh/kWp) and row-shading loss per candidate pitch from the fetched irradiance record. |
 | 7 | **Layout** | Site boundary, blocks and corridors, array pitch and alignment, terrain gradient limits, electrical grouping, and design variants scored against an optimisation target. |
 
 ### Three UI modes
@@ -99,7 +99,43 @@ rows, then evaluates candidate pitches on kWh/kWp and shading loss (lower wins).
 The solstice clearance check uses a fixed-declination approximation — the winter noon
 solar elevation is taken as `90 − |latitude| − 23.45`, and the required shadow geometry
 comes from the tilted collector's rise (`L·sin θ`) and run (`pitch − L·cos θ`). For a
-tracker the tilt is treated as 0.
+tracker the tilt is treated as 0. This is the "quick geometric screen"; the modelled
+yield below is the quantitative answer.
+
+### Energy yield model (section 6C)
+
+`pvYield()` is a self-contained pure function that turns the fetched irradiance record
+into a specific yield (kWh/kWp·yr) and a row-shading loss for any candidate pitch. It is a
+**preliminary screening model, not a bankable yield**. The chain, per month:
+
+1. **Day types.** Each month runs as two representative days — a clear day at the 90th
+   percentile of recorded daily GHI and a dull day — weighted so their mean returns the
+   recorded monthly total. A single average day would smooth away the peaks that cause
+   inverter clipping, which would make the DC/AC input inert.
+2. **Beam/diffuse split.** Daily clearness index `kt = H / H₀` against extraterrestrial
+   irradiation, then the **Erbs** correlation for the diffuse fraction.
+3. **Intra-day distribution.** **Collares-Pereira–Rabl** for global and Liu–Jordan for
+   diffuse, stepped at 15 minutes across the day.
+4. **Transposition.** `POA = B·R_b + D·(1+cos β)/2 + G·ρ·(1−cos β)/2` — isotropic sky plus
+   ground reflectance ρ.
+5. **Row shading.** Profile-angle geometry against the row rise `L·sin β` and clear gap
+   `pitch − L·cos β`, deducted from the **beam component only**. Diffuse is left unshaded.
+6. **Trackers.** Single-axis N–S with **ideal backtracking** (the pvlib formulation,
+   `axes_distance = pitch / L`), clamped to the frame's `maxRot`. Backtracked rows do not
+   self-shade, so the shading column reads ≈ 0 and pitch acts through the backtracking
+   angle instead.
+7. **Temperature.** NOCT model, `T_cell = T_amb + (NOCT−20)/800 · POA`, against the monthly
+   mean ambient from the same ERA5 request — so the derate tracks the site's weather.
+8. **Losses and clipping.** System losses, inverter efficiency, then an AC cap at
+   `1 / DC-AC`, which is what turns an oversized array into lost energy.
+
+Exposed assumptions (all editable in 6C): system losses 12%, inverter efficiency 98%,
+ground albedo 20%, DC/AC 1.2.
+
+Not modelled: horizon shading, seasonal soiling, bifacial rear gain, spectral and IAM
+corrections, and diffuse row blocking. Validation against synthetic input reproduces the
+input GHI to within ~0.7%, and yields the expected fixed-vs-tracker and
+pitch-vs-shading relationships.
 
 ### Layout (tab 7)
 
@@ -170,7 +206,9 @@ Shading / temperature workflow can pull ERA5 reanalysis history from Open-Meteo.
 https://archive-api.open-meteo.com/v1/archive   (primary)
 https://api.open-meteo.com/v1/archive           (fallback)
   ?latitude=…&longitude=…&start_date=…&end_date=…
-  &daily=temperature_2m_max,temperature_2m_min&timezone=UTC
+  &daily=temperature_2m_max,temperature_2m_min,
+         temperature_2m_mean,shortwave_radiation_sum
+  &timezone=UTC
 ```
 
 No API key. The window is "N years back from one week ago" (`Date.now() − 6.048e8 ms`),
@@ -178,6 +216,25 @@ where N comes from the "Years of record" input. The app already surfaces the two
 failure modes to the user: opening the page from a `file://` path (browsers block
 cross-origin requests from local files — host it instead), and corporate networks blocking
 `open-meteo.com`. Everything else in the app works fully offline.
+
+The single request serves both halves of the tool. Temperature extremes feed string sizing;
+`shortwave_radiation_sum` (MJ/m², converted to kWh/m² by ÷3.6) and `temperature_2m_mean`
+are aggregated per calendar month and written to `loc.clim`:
+
+```js
+loc.clim = {
+  ghiDaily,   // [12] mean daily GHI, kWh/m²·day
+  ghiHi,      // [12] 90th-percentile daily GHI — the "clear day"
+  tMon,       // [12] mean ambient, °C
+  ghiAnnual,  // kWh/m²·yr
+  days        // sample count
+}
+```
+
+`loc` is App-level state already passed to both the string-sizing tool (which fetches) and
+the shading tool (which models), so this needs no extra plumbing. Non-finite days are
+filtered before any reduction, so sparse coverage cannot inject a fictitious 0 °C or
+0 kWh/m² into the extremes.
 
 ---
 

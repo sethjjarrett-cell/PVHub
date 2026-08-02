@@ -129,6 +129,15 @@ explicit note for low-latitude sites.
 There is no test of any kind. For a tool whose entire value is numerical correctness in an
 engineering context, this is the most consequential quality gap after G1.
 
+This now includes `pvYield()` — roughly 60 lines of solar geometry (Erbs,
+Collares-Pereira–Rabl, isotropic transposition, backtracking, NOCT) that ships with **no
+regression test**, because there is nowhere to put one. It was validated once, by hand,
+against synthetic input: GHI round-trips to within ~0.7%, trackers beat fixed tilt by ~8%
+at low latitude, shading responds correctly to pitch at high latitude, clipping engages
+near DC/AC 1.3, and the degenerate cases (zero pitch, zero collector width, missing
+irradiance, southern hemisphere) all return finite numbers. None of that is repeatable
+without a test harness. It is the single strongest argument for G1 in the repository.
+
 The calculations that most need pinning down, in priority order:
 
 1. `N_max` / `N_min` string bounds, including the floor/ceiling behaviour that the UI text
@@ -184,6 +193,27 @@ reserved". Anyone who forks or contributes has no defined terms.
 **Recommendation.** Add a `LICENSE`. If the intent is open use, MIT matches the vendored
 dependency and is the least friction.
 
+### G15. The yield model's assumptions are stated but not sourced
+
+`pvYield()` (section 6C) states its limitations in the UI — no horizon, no seasonal
+soiling, no bifacial rear gain, no spectral or IAM correction, diffuse left unshaded. What
+it does not do is cite where its *methods* come from: Erbs for the diffuse split,
+Collares-Pereira–Rabl for the intra-day distribution, the isotropic sky transposition, the
+NOCT cell-temperature model, the pvlib backtracking formulation. Nor are the defaults
+(12% system losses, 98% inverter efficiency, 20% albedo, 45 °C NOCT fallback) attributed.
+
+Two specific soft spots worth recording:
+
+- **The two-day-type approximation** (a p90 "clear" day and a dull day, weighted to the
+  monthly mean) is a pragmatic device to restore the irradiance peaks that drive clipping.
+  It is not a standard method and the 45/55 weighting is a judgement call, not a citation.
+- **Diffuse is not reduced for row blocking**, so POA is mildly optimistic at high GCR —
+  stated in the UI, but it means shading loss is understated for dense fixed-tilt layouts.
+
+**Recommendation.** Fold these into the `docs/assumptions.md` proposed in G9, with the
+method citations alongside. A yield figure that cannot be traced to a method is not
+reviewable, and this one now feeds a "★ best" recommendation.
+
 ### G9. No engineering provenance for the assumptions
 
 The tool encodes real design decisions — the ±margin defaults, the mounting-dependent
@@ -198,18 +228,16 @@ guideline, or from a rule of thumb.
 **Recommendation.** A `docs/assumptions.md` mapping each default and preset to its source,
 with a review date. This is the single highest-value document the project does not have.
 
-### G10. Unhandled data-quality path on the ERA5 fetch
+### ~~G10. Unhandled data-quality path on the ERA5 fetch~~ — **resolved**
 
-The Open-Meteo call has a sensible primary/fallback host pair and surfaces the two likely
-failure causes to the user (`file://` origin, corporate network block). What it does not
-appear to handle is **partial or sparse data** — Open-Meteo returns `null` entries for days
-it has no reanalysis for, and the extremes are derived with spread `Math.min`/`Math.max`
-over the returned arrays. A `null` in that array coerces to `0`, which would silently drop
-a fictitious 0 °C into the low-temperature extreme — the exact input the whole string-sizing
-chain is most sensitive to.
+The day filter tested `ft[E]===null||H[E]===null`, which let `undefined` and `NaN` through.
+A `null`/`NaN` reaching the spread `Math.min`/`Math.max` would have dropped a fictitious
+0 °C into the low-temperature extreme — the input the whole string-sizing chain is most
+sensitive to.
 
-**Recommendation.** Filter non-finite values before reducing, and report the actual number
-of days used against the number requested so the user can see coverage.
+Now guarded with `Number.isFinite` on every daily value before it reaches any reduction,
+including the new irradiance and mean-temperature series. Sample counts are retained in
+`loc.clim.days` so coverage is inspectable.
 
 ---
 

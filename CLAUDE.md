@@ -83,10 +83,24 @@ await b.close();
 `1 · Module`, `2 · Inverter`, `3 · Frame`, `4 · String Sizing`, `5 · Paralleling`,
 `6 · Pitch & Shading`, `7 · Layout`.
 
-**Known pre-existing noise:** ~200 console errors of the form
-`<rect> attribute width: Expected length, "Infinity"` fire on load. That is GAPS §G3
-(empty site polygon → `Math.min(...[])`), not something you broke. Filter it out when
-checking your own changes — and don't report it as new.
+**Known pre-existing noise:** ~250 console errors of the form
+`<rect> attribute width: Expected length, "Infinity"` fire on load, plus one 404 for the
+missing favicon. Those are GAPS §G3 (empty site polygon → `Math.min(...[])`) and §G11, not
+something you broke. Filter them out when checking your own changes — and don't report them
+as new. **`pageerror` count should be 0**; that is the signal that actually matters.
+
+To exercise the energy model without hitting the network, intercept the archive call and
+serve synthetic daily data:
+
+```js
+await page.route('**/v1/archive**', r => r.fulfill({ status: 200,
+  contentType: 'application/json',
+  body: JSON.stringify({ daily: { time: [...], temperature_2m_max: [...],
+    temperature_2m_min: [...], temperature_2m_mean: [...], shortwave_radiation_sum: [...] } }) }));
+```
+
+Then: tab 4 → **Get design temperatures** (section `03 · Site location`) → tab 6, where
+section `6C` should show a POA figure, a specific yield, and a modelled-runs table.
 
 ## Architecture facts that affect how you edit
 
@@ -103,7 +117,16 @@ checking your own changes — and don't report it as new.
   downloaded files `pvhub-project.json` and `pvhub-component-library.json`. Tools expose
   state through a shared ref with a per-tool `{ get, set }` handle.
 - **One network call:** Open-Meteo ERA5 archive (`archive-api.open-meteo.com` primary,
-  `api.open-meteo.com` fallback), no API key. Everything else works offline.
+  `api.open-meteo.com` fallback), no API key. Everything else works offline. It returns
+  temperature *and* `shortwave_radiation_sum`; the monthly aggregate lands in `loc.clim`
+  (`ghiDaily`, `ghiHi`, `tMon`, `ghiAnnual`), which is App-level state shared by the
+  string-sizing tool (fetches) and the shading tool (models).
+- **`pvYield(cfg)`** is the energy model — a pure function sitting immediately before the
+  shading component. Erbs diffuse split, Collares-Pereira–Rabl intra-day distribution,
+  isotropic transposition, profile-angle row shading, pvlib-style backtracking, NOCT cell
+  temperature, AC clipping. It touches no React state, so it can be lifted out and tested
+  in isolation the moment there is somewhere to put a test. See OVERVIEW §2 for the chain
+  and GAPS §G15 for what is not sourced.
 - **Undo/redo** on Ctrl+Z / Ctrl+Y.
 
 ## Domain conventions — do not "fix" these
