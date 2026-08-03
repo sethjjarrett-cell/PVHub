@@ -1,0 +1,44 @@
+# Builds every pull request and publishes it to a preview URL, then comments
+# the link on the PR. Requires Pages to be served from the gh-pages branch
+# (see deploy.yml). The preview folder is removed automatically when the PR
+# is closed or merged.
+name: PR preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.event.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # the build is skipped when the PR is merely being closed, since the
+      # action only needs to delete the folder in that case
+      - uses: actions/setup-node@v4
+        if: github.event.action != 'closed'
+        with:
+          node-version: 20
+      - run: npm install
+        if: github.event.action != 'closed'
+      - run: npm run build
+        if: github.event.action != 'closed'
+
+      - name: Deploy preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ./dist
+          preview-branch: gh-pages
+          # previews live under pr-preview/ rather than at the gh-pages root,
+          # so they can never collide with the production deploy
+          umbrella-dir: pr-preview
+          action: auto
