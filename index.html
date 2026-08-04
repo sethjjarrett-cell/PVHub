@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f12">
+<title>PVhub &mdash; PV Design Tools</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#14171c;
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
+  #root{height:100%}
+  #boot{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:15px;background:#14171c;color:#8b95a3}
+  #boot .mark{display:flex;align-items:baseline;font:800 26px system-ui,sans-serif;letter-spacing:-.5px}
+  #boot .mark b{color:#fff}
+  #boot .mark s{text-decoration:none;color:#000;background:#f90;border-radius:6px;padding:0 7px;margin-left:3px}
+  #boot .bar{width:160px;height:3px;background:#22272f;border-radius:2px;overflow:hidden}
+  #boot .bar i{display:block;height:100%;width:38%;background:#e8820c;border-radius:2px;
+    animation:pvslide 1.1s ease-in-out infinite}
+  @keyframes pvslide{0%{transform:translateX(-110%)}100%{transform:translateX(370%)}}
+  #boot p{margin:0;font:12px system-ui,sans-serif;letter-spacing:.04em}
+</style>
+  <script type="module" crossorigin src="./assets/index-9PCv1ijX.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<div id="boot">
+  <div class="mark"><b>PV</b><s>hub</s></div>
+  <div class="bar"><i></i></div>
+  <p>Loading design tools&hellip;</p>
+</div>
+</body>
+</html>
