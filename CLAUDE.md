@@ -1,168 +1,129 @@
 # CLAUDE.md
 
-Working context for Claude Code and other agents in this repository. Read this before
-touching `index.html`.
+Working context for Claude Code and other agents in this repository.
 
-## The one thing to understand first
+## Orientation
 
-**This repository contains no source code.** `index.html` is a ~360 KB esbuild bundle —
-React 19.2.7 plus the entire application, minified, with no source map and no build config.
-There is no `package.json`, no `src/`, no test suite, no CI.
-
-So the normal instinct — "find the component, edit the component" — does not apply. Any
-change you make is a change to compiled output. Read [GAPS.md](./GAPS.md) §G1 before
-proposing structural work, and [OVERVIEW.md](./OVERVIEW.md) for what the app does and how
-its engineering model works.
-
-## Repository layout
+PVhub is a browser-based preliminary design tool for utility-scale PV. Read
+[README.md](./README.md) for what it does and how to run it, and
+[pvhub-how-it-works.md](./pvhub-how-it-works.md) for the engineering model — especially
+the layout generator, which is the most intricate part. This file covers only what those
+two do not: how to work on the code without breaking it.
 
 ```
-README.md      2 lines
-index.html     the entire application (build artifact, 226 lines, ~360 KB)
-OVERVIEW.md    product, engineering model, architecture
-GAPS.md        gap analysis with severities and suggested order of work
-CLAUDE.md      this file
+src/App.jsx            the entire application — 6,300 lines, 84 top-level functions
+src/main.jsx           mount + boot-overlay teardown
+src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
+index.html             Vite entry shell
+vite.config.js         base:"./" so the build works from a subpath on Pages
+.github/workflows/     builds and publishes to Pages on push to main
+pvhub-how-it-works.md  engineering documentation
+GAPS.md                known gaps and risks
 ```
 
-## Navigating index.html
+Build: `npm install`, then `npm run dev` (hot reload) or `npm run build` (into `dist/`).
 
-The file is 226 lines but two of them are >100 KB. Line-number ranges (approximate, they
-shift with edits — re-derive rather than trusting these blindly):
+## The one thing to know before editing
 
-| Lines | Contents |
-|-------|----------|
-| 1–22 | `<head>`, boot-overlay CSS |
-| 23–30 | `<body>`, `#root`, `#boot` overlay markup |
-| 31–39 | React + ReactDOM + scheduler, minified. **Do not edit.** Lines 38 and 39 are 133 KB and 100 KB. |
-| 40–178 | Application code. Minified identifiers, but CSS template literals, formula strings and UI prose survived intact. |
-| 179–224 | Bundled React licence banner |
+**Everything is in `src/App.jsx`.** Seven tools, the layout generator, the yield
+simulation, the PDF datasheet parser, all the styling and all the components. It is
+readable and well-commented, but it is one file, so:
 
-Useful reconnaissance commands:
+- Search by function name — they are real names (`simulatePitch`, `buildEnv`, `skyVF`,
+  `parseTmy`, `frameGeom`), not minified.
+- Section codes (`1A`, `2D`, `07`) appear in both the UI and the source and are the
+  fastest way to locate a specific input group.
+- Assume nothing is module-scoped. Check for collisions before adding a top-level name.
+
+**History note:** the repository previously tracked only a stale single-file build with no
+source. That is resolved — this tree is the source, and the build is generated. Do not
+commit build output (`dist/`, `pvhub.html`) as if it were source.
+
+## Verifying a change
+
+There is **no test suite** (GAPS §G2). The checks that exist:
 
 ```bash
-# Where is the weight?
-awk '{print NR": "length($0)}' index.html | sort -t: -k2 -rn | head
-
-# Work on the app region in isolation (never commit this)
-sed -n '100,178p' index.html > /tmp/app.js
-
-# Find UI strings — these are the reliable handles into minified code
-grep -o 'title:"[^"]\{2,60\}"' index.html | sort -u
-grep -o 'label:"[^"]\{2,40\}"' index.html | sort -u
-grep -o 'formula:"[^"]\{2,90\}"' index.html | sort -u
+npm run build     # catches syntax and import errors — the cheapest real gate
 ```
 
-**Search by user-visible string, not by identifier.** Component names are mangled (`Bt`,
-`cl`, `je`, `Zi`, `bg`, `xg`, `Mg`); section titles, field labels and formula text are not.
-Section codes (`1A`, `1B`, `2D`, `07`) are stable and appear in both the UI and the source.
-
-## Running and verifying
-
-```bash
-python3 -m http.server 8000     # serve over http:// — file:// blocks the Open-Meteo fetch
-# → http://127.0.0.1:8000/index.html
-```
-
-Chromium and Playwright are available in this environment
-(`executablePath: '/opt/pw-browsers/chromium'`, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`;
-never run `playwright install`). Since there are no tests, **a headless load is the only
-regression check available** — do it after any edit to `index.html`:
+Then a headless load, which is the only functional regression check available:
 
 ```js
 import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const p = await b.newPage();
 p.on('pageerror', e => console.log('PAGEERROR:', e.message));
-await p.goto('http://127.0.0.1:8000/index.html', { waitUntil: 'networkidle' });
-await p.waitForTimeout(1500);
+await p.goto('http://127.0.0.1:8000/', { waitUntil: 'networkidle' });
 console.log(await p.$$eval('.pvhub-tab', ns => ns.map(n => n.textContent.trim())));
 await b.close();
 ```
 
-**Healthy baseline:** the `#boot` overlay is gone, and exactly seven tabs render:
-`1 · Module`, `2 · Inverter`, `3 · Frame`, `4 · String Sizing`, `5 · Paralleling`,
-`6 · Pitch & Shading`, `7 · Layout`.
+Chromium and Playwright are available (`executablePath: '/opt/pw-browsers/chromium'`;
+never run `playwright install`). Serve over `http://` — `file://` blocks the outbound API
+calls.
 
-**Known pre-existing noise:** ~200 console errors of the form
-`<rect> attribute width: Expected length, "Infinity"` fire on load. That is GAPS §G3
-(empty site polygon → `Math.min(...[])`), not something you broke. Filter it out when
-checking your own changes — and don't report it as new.
+**Healthy baseline:** boot overlay clears, `pageerror` count is 0, and four tab groups
+render — `Technologies` (module, inverter, frame), `Calculations` (string, clip), `Layout`,
+`Yield & Summary` (shade, summary). The seven tools still exist; `GROUPS` in `src/App.jsx`
+maps them onto the four tabs, and Stupid mode filters to Layout + Yield & Summary.
 
-## Architecture facts that affect how you edit
+**Known pre-existing noise:** ~270 console errors of the form
+`<line> attribute y1: Expected length, "-Infinity"` fire on load, plus a favicon 404. That
+is GAPS §G3 (unguarded `Math.min(...)` over an empty collection), not something you broke.
+Filter it out when checking your own work — `pageerror` is the count that matters, and it
+should be 0.
 
-- **React 19.2.7**, `createRoot`, no JSX at runtime — the bundle contains
-  `React.createElement(...)` calls. Match that style; do not introduce JSX into the bundle.
-- **All seven tool panes mount at once**, hidden via `display: flex | none`. State survives
-  tab switches for free, but every pane computes on every render — including invisible ones.
-  This is why G3 fires before the user ever opens the Layout tab.
-- **No CSS framework.** Inline `style={{…}}` objects plus per-component template-literal CSS
-  strings. The theme object `T` holds the palette: accent `#e8820c`, plus `panel`, `panel2`,
-  `line`, `text`, `muted`, `chrome`, `warn`.
-- **All drawings are inline SVG.** No `<canvas>` anywhere.
-- **Persistence:** component library → `localStorage['pvhub.library.v1']`. Projects →
-  downloaded files `pvhub-project.json` and `pvhub-component-library.json`. Tools expose
-  state through a shared ref with a per-tool `{ get, set }` handle.
-- **One network call:** Open-Meteo ERA5 archive (`archive-api.open-meteo.com` primary,
-  `api.open-meteo.com` fallback), no API key. Everything else works offline.
-- **Undo/redo** on Ctrl+Z / Ctrl+Y.
+## Outbound calls
+
+All optional; the app works offline without them, and each degrades with a visible notice
+rather than failing silently.
+
+| Host | Purpose |
+|---|---|
+| `archive-api.open-meteo.com` / `api.open-meteo.com` | ERA5 daily temperature extremes for string sizing |
+| `re.jrc.ec.europa.eu/api/v5_3/tmy` | PVGIS TMY — 8,760 hours of GHI/DNI/DHI/temperature |
+| `re.jrc.ec.europa.eu/api/v5_3/PVcalc` | PVGIS validated absolute yield baseline |
+
+Without TMY the pitch model falls back to a clear-sky synthetic year and says so:
+*"Using a clear-sky model — geometry is right, absolute yield runs high."* Preserve that
+honesty if you touch it — the geometry is trustworthy, the absolute number is not.
 
 ## Domain conventions — do not "fix" these
 
-These look like bugs and are not. Each is a deliberate engineering decision, stated in the
-UI's own explanatory text:
+Deliberate engineering decisions, each stated in the UI's own text:
 
 - **Temperature sources are never averaged.** `T_low = MIN(all lows)`,
-  `T_high = MAX(all highs)`. Averaging would soften exactly the extreme the check exists to
-  catch.
-- **`N_max` floors, never rounds.** One more module would over-volt the inverter on the
-  coldest morning.
+  `T_high = MAX(all highs)`. Averaging softens exactly the extreme the check exists to catch.
+- **`N_max` floors, never rounds.** One more module over-volts the inverter on the coldest morning.
 - **`N_min` uses the full-power lower bound from the P-V curve**, not the MPPT tracking
-  lower bound on the datasheet front page. Below full-power the inverter still tracks but
-  cannot deliver rated power.
-- **`N_rec` trades modules for frame divisibility** — but falls back to the electrical
-  maximum if the divisible candidate would drop below `N_min`.
+  lower bound on the datasheet front page.
+- **`N_rec` trades modules for frame divisibility**, falling back to the electrical maximum
+  if the divisible candidate drops below `N_min`.
 - **Parallel strings take the lower** of connector limit and MPPT current headroom.
-- **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. Keep it.
-- **SI units** throughout — metres, °C, V, A, Wp/kWp/MWp, kVA.
+- **Frames are never rotated to follow a boundary** — alignment is done by staggering frame
+  ends, so tracking geometry and yield are preserved.
+- **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
-If you believe one of these is genuinely wrong, raise it rather than silently changing it —
-they affect equipment sizing on real projects.
+If you think one of these is wrong, raise it — they size real equipment.
 
-## House style for new calculations
+## House style
 
-Every derived number in this app is explained. The established pattern, per step:
+Every derived number is explained: numbered badge and title, the formula in monospace,
+the substituted values, a pass/fail chip where it is a check, and a short paragraph on
+*why the rule exists*. Match that — a bare number with no derivation is out of place here.
 
-1. A numbered badge and title
-2. The formula, in monospace, symbolic
-3. The substituted values and the result
-4. A pass/fail status chip where the step is a check
-5. A short plain-English paragraph on *why the rule exists* — what goes wrong without it
+Monospace (`--mono`) for numeric readouts and formulas, system sans for labels and prose.
+Numbers go through the shared rounding helper with an explicit decimal count. Theme object
+`C`/`T` holds the palette; accent is `#e8820c`.
 
-Match that. A bare number with no derivation is out of place here, and the explanatory
-prose is a large part of what the tool is for.
-
-Typography: monospace (`--mono`) for numeric readouts and formulas, system sans for labels
-and prose. Numbers go through the shared rounding helper with an explicit decimal count.
+Be careful to distinguish **modelled** figures from **entered** ones in the UI. Several
+panes deliberately place a parametric estimate next to a column for real PVsyst results,
+because the estimate is for ranking options and the PVsyst figure is for deciding. Do not
+blur that line.
 
 ## Git workflow
 
-- Development branch for this work: `claude/repo-docs-setup-p12ov7`. Push with
-  `git push -u origin <branch>`.
-- Write real commit messages. Five of the six existing commits say "Add files via upload"
-  (GitHub web upload flow) — that history is not worth imitating.
-- **Never commit extracted scratch files** (`/tmp/app.js`, `node_modules/`, screenshots).
-  There is no `.gitignore` yet.
-
-## When asked to add a feature
-
-Given the state of the repository, the honest sequencing is usually:
-
-1. Say plainly that the change lands in a bundled artifact and what that costs.
-2. For small, contained edits — a label, a threshold, a guard like G3 — editing the bundle
-   directly is reasonable. Locate by UI string, make the minimal edit, verify with a
-   headless load.
-3. For anything structural — a new tool tab, a new calculation module, a React upgrade —
-   recommend recovering the source tree first (GAPS §G1). Do not build significant new
-   functionality inside the bundle; it compounds the problem the repository already has.
-
-Verify with a headless load either way. It is the only check that exists.
+- Write real commit messages. Much of the early history says "Add files via upload"; that
+  is not worth imitating.
+- Never commit `node_modules/`, `dist/`, or scratch files.

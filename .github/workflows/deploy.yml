@@ -1,0 +1,40 @@
+# Builds the site and publishes it to GitHub Pages on every push to main.
+#
+# One-time setup: Settings -> Pages -> Source = "Deploy from a branch",
+# Branch = "gh-pages", folder = "/ (root)".
+#
+# Branch-based (rather than Actions-based) Pages is what makes per-PR preview
+# URLs possible: production lives at the root of gh-pages and each open PR gets
+# its own pr-<number>/ subfolder alongside it. See preview.yml.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run build
+
+      - name: Publish to gh-pages root
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          # keep_files stops a production deploy wiping the pr-*/ preview folders
+          keep_files: true
