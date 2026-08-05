@@ -114,6 +114,34 @@ whether you are optimising for yield or for shading loss and the best row is
 starred. A coarse solstice-clearance geometric screen sits below for use before
 any simulation exists.
 
+**6D · Loss ladder.** The modelled pitch comparison collapses every non-geometric
+loss into one balance-of-system percentage. 6D opens that figure up into the same
+categories PVsyst reports — soiling, IAM, spectral, low light, temperature, module
+quality, LID, mismatch, DC and AC ohmic, inverter efficiency and clipping,
+transformers, auxiliaries, unavailability, curtailment — each with a tick box, an
+editable percentage and a note on what it is. Custom lines can be added for anything
+the standard list misses.
+
+Losses compound rather than add: the total is `1 − Π(1 − Lᵢ)`, which is how PVsyst
+chains them, so the headline figure always sits below the plain sum.
+
+Two flags decide whether a line is safe to tick. `geom` means the row-geometry model
+on the same page already computes it (near shading, temperature, rear mismatch);
+`pvcalc` means the PVGIS PVcalc baseline already includes it (horizon, IAM, spectral,
+low light, temperature). Lines carrying either flag are **off by default** because
+ticking them counts the loss twice, and each row says where it is handled — including
+the case worth knowing about, where a `pvcalc` line is genuinely uncovered because you
+are running on the clear-sky fallback rather than a fetched baseline.
+
+The ladder is **off by default** and changes no number until switched on: the model
+keeps using the single balance-of-system figure. The default ticked set is what PVGIS
+means by its `loss` parameter, and it compounds to 12.0% — the figure it stands in
+for — so switching the ladder on moves the modelled yield by less than 0.01%. When it
+is on it drives both the pitch model and the `loss` parameter of the PVcalc request.
+
+It is bookkeeping, not simulation: flat annual percentages where PVsyst derives most of
+them hour by hour. Use it to interrogate a number or check a PVsyst report line by line.
+
 ### 7 · Layout
 
 The generator. Covered in detail below.

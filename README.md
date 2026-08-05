@@ -25,7 +25,7 @@ Everything below is only needed if you want to change the code or host it online
 | 3 | Frame | Mounting type, 1P–4P, frame dimensions, live frame drawing |
 | 4 | String Sizing | IEC 62548 basis, full workings shown, MPPT window widget |
 | 5 | Paralleling | Strings per inverter vs ILR and clipping; enter PVsyst results to compare |
-| 6 | Pitch & Shading | Compare your PVsyst pitch runs side by side |
+| 6 | Pitch & Shading | Compare your PVsyst pitch runs side by side, plus an itemised PVsyst-style loss ladder |
 | 7 | Layout | Site boundary, terrain, automatic block layout, ranked variants |
 
 Three interface modes, top right:

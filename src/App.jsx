@@ -5588,7 +5588,273 @@ function YieldCurve({ sweep, pitch }) {
   );
 }
 
-function ShadeTab({ frame, mod, elec, reg, loc }) {
+/* ============================================================
+   Loss ladder.
+
+   PVsyst reports a plant as a chain of losses: each stage takes its
+   bite out of what the stage before passed on, which is why the total
+   is never the sum of the parts. This is that chain, editable line by
+   line, so a loss assumption can be argued with in the open instead of
+   hiding inside one balance-of-system percentage.
+
+   Two flags decide whether a line is safe to tick:
+
+     geom   — the row-geometry model on this page already computes it
+     pvcalc — the PVGIS PVcalc baseline already includes it
+
+   A line carrying either flag is off by default, because ticking it
+   counts the same loss twice. The lines that are on by default are the
+   ones PVGIS means by its `loss` parameter, and they compound to 12.0%
+   — the single figure they stand in for. The ladder therefore changes
+   nothing until it is switched on.
+   ============================================================ */
+
+const LOSS_STAGES = [
+  ["optical", "Optical, before the cells"],
+  ["array", "Array and DC conversion"],
+  ["inv", "Inverter"],
+  ["ac", "AC side, transformers, auxiliaries"],
+  ["avail", "Availability and grid"],
+  ["custom", "Your own lines"],
+];
+
+const LOSS_LINES = [
+  { k: "horizon", stage: "optical", name: "Far shading (horizon)", pct: 0.8, on: false, pvcalc: true,
+    why: "Terrain beyond the array cutting the beam at low sun. PVcalc is asked with usehorizon=1, so its baseline already carries it; this tool's own model does not." },
+  { k: "nearShade", stage: "optical", name: "Near shading, irradiance", pct: 1.5, on: false, geom: true,
+    why: "Row on row: beam blocked by the row in front, and the strip of sky it hides. Computed hour by hour above — the geometric loss column is this number." },
+  { k: "iam", stage: "optical", name: "Incidence angle modifier (IAM)", pct: 2.4, on: false, pvcalc: true,
+    why: "Reflection off the glass at oblique incidence, ASHRAE b₀ ≈ 0.05. In the PVcalc baseline; absent from the clear-sky model." },
+  { k: "soiling", stage: "optical", name: "Soiling", pct: 2.0, on: true,
+    why: "Dust, pollen and bird mess on the glass. The one loss that is site-specific rather than equipment-specific: ~1% in wet northern Europe, 2% typical, 5–10% and worse in desert or harvest dust without a wash regime. Worth more scrutiny than anything else on this list." },
+  { k: "spectral", stage: "optical", name: "Spectral correction", pct: 0.5, on: false, pvcalc: true,
+    why: "The spectrum is not AM1.5 all year. Small for crystalline silicon and occasionally a gain — a negative value is legitimate." },
+
+  { k: "lowLight", stage: "array", name: "Irradiance level (low light)", pct: 0.8, on: false, pvcalc: true,
+    why: "Efficiency falls away at low irradiance. In PVGIS's model; the single-diode fit used for the I–V curves does not carry it." },
+  { k: "temp", stage: "array", name: "Temperature", pct: 7.0, on: false, geom: true, pvcalc: true,
+    why: "Hot cells lose voltage. Already applied every hour above through γ_Pmax and an NOCT cell-temperature rise, so it is inside the specific yield already." },
+  { k: "shadeElec", stage: "array", name: "Near shading, electrical", pct: 1.0, on: false,
+    why: "One shaded cell drags its whole substring down until the bypass diode takes over. PVsyst models this at module level; the fixed-tilt mismatch factor here is a blunt stand-in, so a modest figure is defensible if you are not relying on that factor." },
+  { k: "quality", stage: "array", name: "Module quality", pct: 0.5, on: true,
+    why: "Manufacturing spread against the datasheet. Positive-tolerance binning can make it a small gain — enter a negative value if the supplier's flash data supports one." },
+  { k: "lid", stage: "array", name: "Light-induced degradation (LID)", pct: 1.5, on: true,
+    why: "First hours of exposure. 1.5–2% for p-type PERC, close to zero for n-type — drop it to ~0.3% if the modules are n-type." },
+  { k: "mismatch", stage: "array", name: "Module and string mismatch", pct: 1.1, on: true,
+    why: "Cells and strings are never identical, so the array maximum power point sits below the sum of the module ones." },
+  { k: "mismatchRear", stage: "array", name: "Rear irradiance mismatch (bifacial)", pct: 1.0, on: false, geom: true,
+    why: "Uneven rear illumination along a row. It applies to the rear gain only, not to the whole array, and the rear model above already discounts it through k_rear." },
+  { k: "dcOhmic", stage: "array", name: "DC ohmic wiring", pct: 1.0, on: true,
+    why: "String cable and DC main resistance at STC current. 1–1.5% is the usual design target; anything above needs a copper conversation." },
+  { k: "degradation", stage: "array", name: "Module degradation (ageing)", pct: 0.4, on: true,
+    why: "Where the yield sits on the degradation curve. Set 0 for a year-one number, or the mid-life average for a lifetime one — do not carry both this and a separate P50 lifetime derate." },
+
+  { k: "invEff", stage: "inv", name: "Inverter efficiency", pct: 1.8, on: true,
+    why: "Weighted conversion loss across the operating envelope, from the Euro or CEC efficiency rather than the peak figure on the front page." },
+  { k: "invClip", stage: "inv", name: "Clipping above nominal AC power", pct: 0.3, on: true,
+    why: "Energy over the inverter's AC ceiling. Step 5 estimates this against ILR properly — take the figure from there, or from PVsyst, when the ratio is aggressive." },
+  { k: "invThresh", stage: "inv", name: "Power threshold", pct: 0.05, on: true,
+    why: "Dawn and dusk below the inverter's start-up threshold. Small and rarely worth arguing about." },
+  { k: "invVolt", stage: "inv", name: "Voltage window (threshold and over-voltage)", pct: 0.0, on: false,
+    why: "Operation outside the MPPT window. Zero if step 4 passes — that check exists to keep it zero. Non-zero here means the string sizing wants revisiting, not that the loss wants entering." },
+  { k: "invNight", stage: "inv", name: "Night consumption", pct: 0.05, on: true,
+    why: "Inverter electronics drawing overnight. Reported as a loss because it is metered as import." },
+
+  { k: "acOhmic", stage: "ac", name: "AC ohmic, inverter to transformer", pct: 0.5, on: true,
+    why: "LV run from inverter to the MV transformer. Short runs and it disappears; long LV runs are the usual reason a layout is wrong." },
+  { k: "mvTx", stage: "ac", name: "MV transformer (iron and copper)", pct: 1.0, on: true,
+    why: "No-load iron loss runs all year, load loss follows current squared. Around 1% combined for a station transformer." },
+  { k: "mvLine", stage: "ac", name: "MV network", pct: 0.3, on: true,
+    why: "Ring or radial MV cable back to the substation. Scales with how spread out the site is." },
+  { k: "hvTx", stage: "ac", name: "HV / grid transformer", pct: 0.5, on: true,
+    why: "The plant's own grid transformer where there is one. Set to zero if the connection is at MV and the transformer belongs to the DNO." },
+  { k: "aux", stage: "ac", name: "Auxiliaries", pct: 0.2, on: true,
+    why: "Trackers, cooling, SCADA, security, lighting, and the site building. Metered as import, so it lands on the export figure." },
+
+  { k: "unavail", stage: "avail", name: "System unavailability", pct: 1.5, on: true,
+    why: "Faults, maintenance windows and grid outages. PVsyst's default is 1.5%, about five days a year — hold the O&M contract to it rather than assuming better." },
+  { k: "curtail", stage: "avail", name: "Grid curtailment / export limit", pct: 0.0, on: false,
+    why: "Zero unless the connection agreement caps export or the market pays you to stop. When it bites it is usually the largest line here, and it belongs in the financial model too." },
+];
+
+/** Compound the ticked lines the way PVsyst chains them: each takes its
+    bite out of what is left, so the total sits below the plain sum. */
+function lossTotal(items) {
+  const on = items.filter((i) => i.on && Number.isFinite(Number(i.pct)));
+  const keep = on.reduce((a, i) => a * (1 - Number(i.pct) / 100), 1);
+  return { pct: (1 - keep) * 100, sum: on.reduce((a, i) => a + Number(i.pct), 0), n: on.length };
+}
+
+/** Per-line note on whether the loss is already accounted for elsewhere. */
+function lossStatus(it, pvcalcOn) {
+  if (it.geom && it.on) return { text: "counted twice — the row model already applies it", tone: C.warn };
+  if (it.pvcalc && pvcalcOn && it.on) return { text: "counted twice — in the PVGIS baseline already", tone: C.warn };
+  if (it.geom) return { text: "modelled above", tone: C.muted };
+  if (it.pvcalc) return pvcalcOn
+    ? { text: "in the PVGIS baseline", tone: C.muted }
+    : { text: "nothing else covers it on clear-sky", tone: "#7fd694" };
+  return null;
+}
+
+function LossLadder({ losses, setLosses, bos, pvcalcOn }) {
+  const items = losses.items;
+  const set = (k, patch) =>
+    setLosses({ ...losses, items: items.map((i) => (i.k === k ? { ...i, ...patch } : i)) });
+  const t = lossTotal(items);
+  const clash = items.some((i) => i.on && (i.geom || (i.pvcalc && pvcalcOn)));
+
+  const cell = { padding: "5px 8px", verticalAlign: "top" };
+  const numIn = (v, on) => (
+    <input type="number" value={v} step={0.1}
+      onChange={(e) => on(e.target.value === "" ? 0 : Number(e.target.value))}
+      style={{ width: 68, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 4,
+        color: C.text, font: "12px var(--mono)", padding: "4px 7px", outline: "none" }} />
+  );
+
+  return (
+    <>
+      <div className="readout">
+        The single balance-of-system figure above is one number standing in for two dozen
+        separate effects. This is the same list PVsyst reports, opened up: tick what belongs
+        in your case, argue with the percentages, add lines of your own. Losses <b>compound</b>
+        {" "}rather than add, so {fmt(t.sum, 2)}% of listed loss comes out as{" "}
+        <b>{fmt(t.pct, 2)}%</b> overall.
+        <br /><br />
+        Lines already handled elsewhere in this tool are off on purpose — the row geometry
+        above computes shading, and the PVGIS baseline brings its own temperature, reflection
+        and spectral handling. Ticking those counts the loss twice, so each line says where it
+        is handled. The default set is what PVGIS means by its <span style={{ font: "11px var(--mono)" }}>loss</span> parameter,
+        and it compounds to the {fmt(bos, 0)}% it replaces.
+      </div>
+
+      <label className="chk" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%",
+        font: "12px system-ui", color: C.text, cursor: "pointer" }}>
+        <input type="checkbox" checked={losses.use} style={{ accentColor: C.accent }}
+          onChange={(e) => setLosses({ ...losses, use: e.target.checked })} />
+        Drive the model from this ladder instead of the single balance-of-system figure
+      </label>
+
+      <div className="readout" style={{ borderLeft: `2px solid ${losses.use ? C.accent : C.line}` }}>
+        {losses.use ? (
+          <>In force: <b>{fmt(t.pct, 2)}%</b> from {t.n} ticked lines. The{" "}
+          {fmt(bos, 0)}% balance-of-system field above is ignored while this is on, and the
+          PVGIS PVcalc request uses the ladder figure too.</>
+        ) : (
+          <>Not in force. The model is using the single <b>{fmt(bos, 1)}%</b> figure; the ladder
+          would give <b>{fmt(t.pct, 2)}%</b>. Nothing here changes a number until you tick the
+          box above.</>
+        )}
+      </div>
+
+      {clash && (
+        <div className="warn" style={{ width: "100%" }}>
+          ⚠ At least one ticked line is already modelled elsewhere — see the lines marked
+          <i> counted twice</i>. That is allowed, in case you would rather trust the flat
+          figure than the model, but it is a choice worth making deliberately.
+        </div>
+      )}
+
+      <div style={{ width: "100%", overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 640, font: "12px var(--mono)" }}>
+          <thead><tr>
+            {["", "Loss", "%", "Where it is handled"].map((hd, i) => (
+              <th key={i} style={{ padding: "6px 8px", borderBottom: `1px solid ${C.line}`,
+                font: "600 10px system-ui", color: C.muted, textAlign: "left",
+                textTransform: "uppercase", letterSpacing: "0.07em" }}>{hd}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {LOSS_STAGES.map(([stage, title]) => {
+              const rows = items.filter((i) => i.stage === stage);
+              if (!rows.length && stage !== "custom") return null;
+              return (
+                <React.Fragment key={stage}>
+                  <tr><td colSpan={4} style={{ padding: "14px 8px 4px", font: "600 10px system-ui",
+                    color: C.accent, textTransform: "uppercase", letterSpacing: "0.07em" }}>{title}</td></tr>
+                  {rows.map((it) => {
+                    const st = lossStatus(it, pvcalcOn);
+                    return (
+                      <tr key={it.k} style={{ borderTop: `1px solid ${C.line}` }}>
+                        <td style={{ ...cell, width: 24 }}>
+                          <input type="checkbox" checked={it.on} style={{ accentColor: C.accent }}
+                            onChange={(e) => set(it.k, { on: e.target.checked })} />
+                        </td>
+                        <td style={cell}>
+                          {it.custom ? (
+                            <input value={it.name} placeholder="What is it?"
+                              onChange={(e) => set(it.k, { name: e.target.value })}
+                              style={{ width: 200, background: C.panel2, border: `1px solid ${C.line}`,
+                                borderRadius: 4, color: C.text, font: "12px var(--mono)",
+                                padding: "4px 7px", outline: "none" }} />
+                          ) : (
+                            <span style={{ color: it.on ? C.text : C.muted, font: "12px system-ui" }}>{it.name}</span>
+                          )}
+                          {it.custom ? (
+                            <input value={it.why} placeholder="Why it is here — worth writing down"
+                              onChange={(e) => set(it.k, { why: e.target.value })}
+                              style={{ display: "block", marginTop: 4, width: 300, background: C.panel2,
+                                border: `1px solid ${C.line}`, borderRadius: 4, color: C.muted,
+                                font: "10.5px system-ui", padding: "4px 7px", outline: "none" }} />
+                          ) : (
+                            <div style={{ font: "10.5px system-ui", color: C.muted, marginTop: 3,
+                              maxWidth: 460, lineHeight: 1.45 }}>{it.why}</div>
+                          )}
+                        </td>
+                        <td style={cell}>{numIn(it.pct, (v) => set(it.k, { pct: v }))}</td>
+                        <td style={{ ...cell, font: "10.5px system-ui", color: st ? st.tone : C.muted }}>
+                          {st ? st.text : "this ladder only"}
+                          {it.custom && (
+                            <button className="btn" style={{ marginLeft: 8 }}
+                              onClick={() => setLosses({ ...losses, items: items.filter((x) => x.k !== it.k) })}>×</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {stage === "custom" && !rows.length && (
+                    <tr><td colSpan={4} style={{ ...cell, font: "10.5px system-ui", color: C.muted }}>
+                      Nothing yet. Anything the standard list misses — a shade structure, an
+                      agreed availability penalty, a wash regime you have not costed — goes here.
+                    </td></tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+          <tfoot><tr style={{ borderTop: `1px solid ${C.line}` }}>
+            <td />
+            <td style={{ ...cell, font: "600 12px system-ui", color: C.text }}>
+              Compounded total, {t.n} lines
+            </td>
+            <td style={{ ...cell, font: "600 13px var(--mono)", color: C.accent }}>{fmt(t.pct, 2)}%</td>
+            <td style={{ ...cell, font: "10.5px system-ui", color: C.muted }}>
+              plain sum {fmt(t.sum, 2)}% · yield keeps {fmt(100 - t.pct, 2)}%
+            </td>
+          </tr></tfoot>
+        </table>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
+        <button className="btn" onClick={() => setLosses({ ...losses, items: [...items, {
+          k: `custom-${Date.now()}`, stage: "custom", name: "", pct: 0, on: true, custom: true, why: "",
+        }] })}>+ Add a loss line</button>
+        <button className="btn" onClick={() => setLosses({ ...losses, items: LOSS_LINES.map((l) => ({ ...l })) })}>
+          Reset to defaults
+        </button>
+      </div>
+
+      <div className="readout">
+        <b>What this is not.</b> A loss ladder is bookkeeping, not simulation: it applies flat
+        annual percentages, where PVsyst derives most of these hour by hour from the module
+        model, the shading scene and the inverter's own efficiency curve. Use it to interrogate
+        a number, to sanity-check a PVsyst report line by line, or to see what a change of
+        assumption is worth. PVsyst remains the number of record.
+      </div>
+    </>
+  );
+}
+
+function ShadeTab({ frame, mod, elec, reg, loc, uiMode }) {
   const geo = computeFrameGeometry(mod, frame);
   const cw = geo.collectW;
   const [metric, setMetric] = useState("yield");
@@ -5609,6 +5875,12 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
   });
   const [range, setRange] = useState(null);
   const rng = range || { lo: +(cw * 1.15).toFixed(1), hi: +(cw * 2.6).toFixed(1) };
+
+  // Itemised losses. Off by default, so the model keeps using mp.bos until
+  // the ladder is deliberately switched on.
+  const [losses, setLosses] = useState({ use: false, items: LOSS_LINES.map((l) => ({ ...l })) });
+  const ladder = lossTotal(losses.items);
+  const effBos = losses.use ? +ladder.pct.toFixed(2) : mp.bos;
 
   const fetchTmy = async () => {
     setWx({ state: "busy", msg: "Requesting typical meteorological year…", url: "" });
@@ -5641,7 +5913,7 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
   const fetchPvcalc = async () => {
     setPvc({ state: "busy", ey: null, msg: "Asking PVGIS PVcalc…", url: "" });
     const tracking = frame.mounting === "fixed" ? 0 : 1;   // 1 = horizontal N-S axis
-    const qs = `?lat=${loc?.lat ?? lat}&lon=${loc?.lon ?? 0}&peakpower=1&loss=${mp.bos}` +
+    const qs = `?lat=${loc?.lat ?? lat}&lon=${loc?.lon ?? 0}&peakpower=1&loss=${effBos}` +
       `&pvtechchoice=crystSi&mountingplace=free&trackingtype=${tracking}` +
       (tracking === 0 ? `&angle=${frame.tilt}` : "") + `&usehorizon=1&outputformat=json`;
     const hosts = ["https://re.jrc.ec.europa.eu/api/v5_3/PVcalc", "https://re.jrc.ec.europa.eu/api/PVcalc"];
@@ -5673,8 +5945,8 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
     tilt: frame.tilt, maxRot: mp.maxRot, backtrack: mp.backtrack,
     albedo: mp.albedo, bifaciality: mp.bifaciality, kRear: mp.kRear,
     mismatch: frame.mounting === "fixed" ? mp.mismatch : 1,
-    gammaP: mod.gPmax ?? -0.29, bosLoss: mp.bos,
-  }), [cw, frame.mounting, frame.tilt, mp, mod.gPmax]);
+    gammaP: mod.gPmax ?? -0.29, bosLoss: effBos,
+  }), [cw, frame.mounting, frame.tilt, mp, mod.gPmax, effBos]);
 
   const sweep = useMemo(() => {
     const n = Math.max(3, Math.min(14, Math.round(mp.steps)));
@@ -5719,13 +5991,21 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
   const shadeAng = gap > 0 ? Math.atan(h / gap) * 180 / Math.PI : 90;
 
   if (reg) reg.current.shade = {
-    get: () => ({ runs, metric, lat, pitch }),
+    get: () => ({ runs, metric, lat, pitch, losses }),
     set: (s) => {
       if (!s) return;
       if (s.runs) setRuns(s.runs);
       if (s.metric) setMetric(s.metric);
       if (s.lat !== undefined) setLat(s.lat);
       if (s.pitch !== undefined) setPitch(s.pitch);
+      if (s.losses?.items) {
+        // Merge rather than replace: a project saved before a line was added
+        // should still pick that line up, at its default.
+        const saved = new Map(s.losses.items.map((i) => [i.k, i]));
+        const merged = LOSS_LINES.map((l) => ({ ...l, ...(saved.get(l.k) || {}) }));
+        const extras = s.losses.items.filter((i) => !LOSS_LINES.some((l) => l.k === i.k));
+        setLosses({ use: !!s.losses.use, items: [...merged, ...extras] });
+      }
     },
   };
   return (
@@ -5862,7 +6142,8 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
           onChange={(v) => setMp({ ...mp, albedo: v })} />
         <Num label="Bifaciality" value={mp.bifaciality} step={0.05} min={0} max={1}
           onChange={(v) => setMp({ ...mp, bifaciality: v })} />
-        <Num label="Balance-of-system losses" unit="%" value={mp.bos} step={1} min={0} max={40}
+        <Num label={losses.use ? "Balance-of-system losses (ladder in force)" : "Balance-of-system losses"}
+          unit="%" value={mp.bos} step={1} min={0} max={40}
           onChange={(v) => setMp({ ...mp, bos: v })} />
         {frame.mounting !== "fixed" ? (
           <Num label="Max tracker rotation" unit="°" value={mp.maxRot} step={5} min={10} max={75}
@@ -5930,9 +6211,16 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
           trusting the rear column. For fixed tilt the mismatch factor is a blunt stand-in for
           bypass-diode behaviour, which PVsyst models properly at module level. Terrain and far
           horizon shading are not applied here. Soiling, availability and inverter losses sit
-          inside the single balance-of-system figure.
+          inside the single balance-of-system figure above — open them up line by line in{" "}
+          <b>6D</b> below.
         </div>
       </Section>
+
+      {uiMode !== "stupid" && (
+        <Section code="6D" title="Loss ladder (PVsyst categories, itemised)">
+          <LossLadder losses={losses} setLosses={setLosses} bos={mp.bos} pvcalcOn={pvc.ey > 0} />
+        </Section>
+      )}
 
       <Section code="6B" title="Solstice clearance check">
           <Num label="Site latitude" unit="°" value={lat} step={0.1} onChange={setLat} />
@@ -6291,7 +6579,7 @@ export default function App() {
           ilrCap={ilrCap} setIlrCap={setIlrCap} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "shade" ? "flex" : "none" }}>
-        <ShadeTab frame={frame} mod={pvMod} elec={elec} reg={reg} loc={siteLoc} />
+        <ShadeTab frame={frame} mod={pvMod} elec={elec} reg={reg} loc={siteLoc} uiMode={uiMode} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "layout" ? "flex" : "none" }}>
         <LayoutTool module={pvMod} setModule={setMod2} frame={frame} setFrame={setFrame}
