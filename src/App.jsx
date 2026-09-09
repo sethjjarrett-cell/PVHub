@@ -1,6 +1,12 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import PDF_WORKER_TEXT from "./pdfWorkerText.js";
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import {
+  fmt, fmtDim, fmtKm, fmtArea, areaUnit, areaVal,
+  C, Num, Sel, Section, WarnList, useNarrow, COARSE,
+  Working, NumS, NumO, Page,
+} from "./ui.jsx";
+import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 
 /* =====================================================================
    LAYOUT GENERATOR — Phase 2
@@ -1273,18 +1279,6 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
 }
 
 /* ---------------- formatting ---------------- */
-const fmt = (v, dp = 2) =>
-  Number(v).toLocaleString("en-GB", { maximumFractionDigits: dp, minimumFractionDigits: 0 });
-const fmtDim = (v) => {
-  const s = Number(v).toFixed(3);
-  return s.replace(/\.?0+$/, "");
-};
-const fmtKm = (m) => (m >= 2000 ? `${fmt(m / 1000, 2)} km` : `${fmt(m, 0)} m`);
-/** Area in m² up to 1 km², then km² — no hectares. */
-const fmtArea = (m2) =>
-  m2 >= 1e6 ? `${fmt(m2 / 1e6, 3)} km²` : `${fmt(m2, 0)} m²`;
-const areaUnit = (m2) => (m2 >= 1e6 ? "km²" : "m²");
-const areaVal = (m2) => (m2 >= 1e6 ? fmt(m2 / 1e6, 3) : fmt(m2, 0));
 
 /* ---------------- example boundary ---------------- */
 const EXAMPLE_BOUNDARY = [
@@ -1294,81 +1288,7 @@ const EXAMPLE_BOUNDARY = [
   { x: 105, y: 115 },
 ];
 
-/* ---------------- palette ---------------- */
-const C = {
-  chrome: "#14171c", panel: "#1c2128", panel2: "#22272f", line: "#2c333d",
-  text: "#dde3ea", muted: "#8b95a3", accent: "#e8820c",
-  paper: "#1b1e24", grid: "#22262e", gridMajor: "#2c313b",
-  boundary: "#e8820c", frame: "#8b95a3", moduleRed: "#d4564f",
-  inverter: "#3fb457", transformer: "#3d95ea", ac: "#d8dade", warn: "#e0a63a",
-  navy: "#31435f", navyLight: "#9fb4d8", steel: "#7d838c", soil: "#33362e", soilLine: "#5d6355",
-};
 
-/* ---------------- small UI atoms ---------------- */
-function Num({ label, unit, value, onChange, step = 0.01, min, max, width }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => {
-    if (draft === "" || Number(draft) !== value) setDraft(String(value));
-    // eslint-disable-next-line
-  }, [value]);
-  return (
-    <label className="fld" style={width ? { width } : undefined}>
-      <span className="fld-l">{label}</span>
-      <span className="fld-box">
-        <input
-          type="number" value={draft} step={step} min={min} max={max}
-          onChange={(e) => {
-            const s = e.target.value;
-            setDraft(s);
-            const v = Number(s);
-            if (s !== "" && !Number.isNaN(v)) onChange(v);
-          }}
-          onBlur={() => { if (draft === "" || Number.isNaN(Number(draft))) setDraft(String(value)); }}
-        />
-        {unit ? <span className="fld-u">{unit}</span> : null}
-      </span>
-    </label>
-  );
-}
-
-function Sel({ label, value, onChange, options, width }) {
-  return (
-    <label className="fld" style={width ? { width } : undefined}>
-      <span className="fld-l">{label}</span>
-      <span className="fld-box">
-        <select value={value} onChange={(e) => onChange(e.target.value)}>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      </span>
-    </label>
-  );
-}
-
-function Section({ code, title, children }) {
-  return (
-    <details open className="sec">
-      <summary>
-        <span className="sec-code">{code}</span>
-        <span className="sec-title">{title}</span>
-        <span className="sec-caret">▾</span>
-      </summary>
-      <div className="sec-body">{children}</div>
-    </details>
-  );
-}
-
-function WarnList({ items }) {
-  if (!items.length) return null;
-  return (
-    <div className="warns">
-      {items.map((w, i) => (
-        <div key={i} className="warn">⚠ {w}</div>
-      ))}
-    </div>
-  );
-}
 
 /* =====================================================================
    Frame drawing — datasheet style: SECTION (post, tilted module, arc)
@@ -1639,17 +1559,6 @@ function RowSpacing({ geo, pitch }) {
   </svg>);
 }
 
-function useNarrow(bp = 900) {
-  const [n, setN] = useState(typeof window !== "undefined" && window.innerWidth <= bp);
-  useEffect(() => {
-    const on = () => setN(window.innerWidth <= bp);
-    window.addEventListener("resize", on);
-    return () => window.removeEventListener("resize", on);
-  }, [bp]);
-  return n;
-}
-const COARSE = typeof window !== "undefined" &&
-  window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
 function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
   const W = 1000, H = 660;
@@ -3835,25 +3744,6 @@ const RISE_TABLE = [
   { label: "Top of a pole / freefield", rise: 25 },
 ];
 
-function Working({ n, title, formula, sub, result, unit, why, status }) {
-  return (
-    <div className="wk">
-      <div className="wk-head">
-        <span className="wk-n">{n}</span>
-        <span className="wk-title">{title}</span>
-        {status && (
-          <span className={`wk-status ${status === "OK" || status === "Within window" ? "ok" : "bad"}`}>
-            {status}
-          </span>
-        )}
-      </div>
-      <div className="wk-formula">{formula}</div>
-      <div className="wk-sub">{sub} <b>= {result}{unit ? ` ${unit}` : ""}</b></div>
-      <div className="wk-why">{why}</div>
-    </div>
-  );
-}
-
 
 function ModuleIV({ mod }) {
   const W=420,H=170,L=42,B=138,R=W-14,T=16;
@@ -3965,31 +3855,6 @@ function MpptWidget({ vocCold, vmpHot, vmpCold, ceiling, mpptLo, mpptHi, N }) {
   );
 }
 
-function NumS({ label, unit, obj, set, k, step = 0.01 }) {
-  return (
-    <Num label={label} unit={unit} value={obj[k]} step={step}
-      onChange={(v) => set({ ...obj, [k]: v })} />
-  );
-}
-
-function NumO({ label, unit, value, onChange, step = 0.01, ph = "optional" }) {
-  return (
-    <label className="fld">
-      <span className="fld-l">{label}</span>
-      <span className="fld-box">
-        <input type="number" value={value === null || value === undefined ? "" : value}
-          step={step} placeholder={ph}
-          onChange={(e) => {
-            const t = e.target.value;
-            if (t === "") { onChange(null); return; }
-            const v = Number(t);
-            if (!Number.isNaN(v)) onChange(v);
-          }} />
-        {unit ? <span className="fld-u">{unit}</span> : null}
-      </span>
-    </label>
-  );
-}
 
 function StringSizingTool({ mod, setMod, inv, setInv, frameP, onAdopt, uiMode, loc, setLoc }) {
   const [tSrc, setTSrc] = useState([
@@ -4457,10 +4322,6 @@ function StringSizingTool({ mod, setMod, inv, setInv, frameP, onAdopt, uiMode, l
    Workflow shell — parameter pages feed shared state into the design
    steps. Simple mode strips each page to the essentials.
    ===================================================================== */
-function Page({ children, wide }) {
-  return <div className="pv-page" style={{ flex: 1, overflowY: "auto", padding: "20px 24px", minWidth: 0 }}>
-    <div style={{ maxWidth: wide ? 1500 : 860 }}>{children}</div></div>;
-}
 
 
 /* =====================================================================
@@ -5112,8 +4973,12 @@ function InverterTab({ inv, setInv, uiMode }) {
           )}
           <NumO label="AC rating at design ambient" unit="kVA" value={inv.acKva} step={5}
             onChange={(v) => setInv({ ...inv, acKva: v })} />
+          <NumO label="AC line voltage" unit="V" value={inv.vAc} step={5}
+            onChange={(v) => setInv({ ...inv, vAc: v })} />
           <div className="readout">
             The AC rating drives the paralleling/clipping table and the layout's AC targets.
+            Line voltage sets the feeder current the cable tools size against — the same kVA
+            at 800 V needs 40 % less copper than at 480 V.
           </div>
           <div style={{ width: "100%" }}><InverterWindow inv={inv} /></div>
         </Section>
@@ -6056,6 +5921,56 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
   );
 }
 
+
+/* Cable-tool defaults. Every figure here is a starting point a designer is
+   expected to overwrite; they are chosen to be typical of a utility-scale
+   site rather than safe, so a run that passes untouched has not been
+   checked, it has merely been left alone. */
+const CABLE_DEFAULTS = {
+  dc: {
+    sf: 1.25, iscOv: null, impOv: null, vmpOv: null, nModOv: null,
+    tAir: 40, tGnd: 25, soil: 2.5, depth: 0.8,
+    rows: {
+      air: { size: 6, par: 1, circ: 20, aux: 0, spacing: "touching" },
+      duct: { size: 6, par: 1, circ: 20, aux: 0, spacing: "s10" },
+      ground: { size: 6, par: 1, circ: 6, aux: 0, spacing: "dia" },
+    },
+    rMode: "table", vdSize: 6, rManual: 0.00396, tCond: 70,
+    length: 150, loop: 2, vdLimit: 1,
+  },
+  ac: {
+    iOv: null, tAir: 40, tGnd: 25, soil: 2.5, depth: 0.8,
+    rows: {
+      air: { size: 630, par: 1, circ: 2, aux: 0, spacing: "touching" },
+      duct: { size: 300, par: 2, circ: 2, aux: 0, spacing: "touching" },
+      ground: { size: 300, par: 2, circ: 2, aux: 0, spacing: "touching" },
+    },
+    rMode: "table", vdSize: 300, rManual: 0.0001, xManual: 0.000085, tCond: 90,
+    theta: 0, vRef: 800, length: 50, par: 2, vdLimit: 1,
+  },
+  mv: {
+    kv: 33, kva: 352, tGnd: 20, depth: 1.0, soil: 2.5, safety: 5,
+    ductCirc: 3, ductSp: "s400", dirCirc: 3, dirSp: "s400",
+    theta: 0, vdLimit: 2, tCond: 90, slack: 1.2, spares: 20,
+    runs: [
+      { branch: 1, from: "1", to: "2", inv: 20, install: "duct", size: 150, dist: 344 },
+      { branch: 1, from: "2", to: "3", inv: 19, install: "duct", size: 300, dist: 288 },
+      { branch: 1, from: "3", to: "POC", inv: 18, install: "duct", size: 630, dist: 886 },
+      { branch: 2, from: "4", to: "5", inv: 14, install: "duct", size: 150, dist: 173 },
+      { branch: 2, from: "5", to: "6", inv: 10, install: "duct", size: 150, dist: 242 },
+    ],
+  },
+  sc: {
+    level: "mv", uMv: 33, uLv: 800, skMva: 500, txKva: 3000, uk: 8,
+    nInv: 8, invFactor: 1.15, ikOv: null, rOverX: 0.1, freq: 50,
+    material: "aluminium", insulation: "xlpe", thetaI: 90, t: 0.5,
+    useIth: true, size: 240, par: 1,
+    scrMaterial: "copper", scrArea: 25, iEarth: 5, tEarth: 0.5,
+    scrThetaI: 70, scrThetaF: 250,
+    dcStrings: 24, dcT: 1,
+  },
+};
+
 export default function App() {
   const [tool, setTool] = useState("module");
   const [uiMode, setUiMode] = useState("engineer");
@@ -6069,7 +5984,7 @@ export default function App() {
   const setMod2 = (m) => setPvMod({ ...m, pmax: m.power });
   const [pvInv, setPvInv] = useState({
     vMax: 1500, fpHi: 1330, fpLo: 880, trackLo: null, vStart: null,
-    iMppt: null, connMax: null, nMppt: 12, acKva: 350,
+    iMppt: null, connMax: null, nMppt: 12, acKva: 350, vAc: 800,
   });
   const [elec, setElec] = useState({ modulesPerString: 27, stringsPerInverter: 24, invertersPerTx: 4 });
   const [frame, setFrame] = useState({
@@ -6081,6 +5996,8 @@ export default function App() {
   const [ilrCap, setIlrCap] = useState(1.2);
   const [siteLoc, setSiteLoc] = useState({ lat: 8.687, lon: -8.653 });
   const [summary, setSummary] = useState(null);
+  const [cables, setCables] = useState(CABLE_DEFAULTS);
+  const setCable = (k) => (v) => setCables((c0) => ({ ...c0, [k]: v }));
   const [rates, setRates] = useState({
     cur: "£", lv: 38, mv: 62, modWp: 0.13, mountWp: 0.09, invKw: 32,
   });
@@ -6088,7 +6005,7 @@ export default function App() {
   const saveProject = () => {
     const data = {
       app: "PVhub", version: 1, saved: new Date().toISOString(),
-      pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc,
+      pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables,
       layout: reg.current.layout?.get(), shade: reg.current.shade?.get(),
     };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -6111,6 +6028,14 @@ export default function App() {
         if (d.uiMode) setUiMode(d.uiMode);
         if (d.rates) setRates(d.rates);
         if (d.siteLoc) setSiteLoc(d.siteLoc);
+        // Merge rather than replace, so a project saved before a cable
+        // input existed still opens with a sensible value for it.
+        if (d.cables) setCables({
+          dc: { ...CABLE_DEFAULTS.dc, ...d.cables.dc },
+          ac: { ...CABLE_DEFAULTS.ac, ...d.cables.ac },
+          mv: { ...CABLE_DEFAULTS.mv, ...d.cables.mv },
+          sc: { ...CABLE_DEFAULTS.sc, ...d.cables.sc },
+        });
         reg.current.layout?.set(d.layout);
         reg.current.shade?.set(d.shade);
       } catch (e) { /* invalid file — ignore */ }
@@ -6122,11 +6047,13 @@ export default function App() {
     ["module", "Module"], ["inverter", "Inverter"], ["frame", "Frame"],
     ["string", "String Sizing"], ["clip", "Paralleling"],
     ["shade", "Pitch & Yield"], ["layout", "Layout"], ["summary", "Summary"],
+    ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
   ];
   const GROUPS = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Layout", ["layout"]],
+    ["Cables", ["cdc", "cac", "cmv", "csc"]],
     ["Yield & Summary", ["shade", "summary"]],
   ];
   const visGroups = uiMode === "stupid"
@@ -6297,6 +6224,18 @@ export default function App() {
         <LayoutTool module={pvMod} setModule={setMod2} frame={frame} setFrame={setFrame}
           elec={elec} setElec={setElec} invAcKw={pvInv.acKva || 0} uiMode={uiMode} reg={reg}
           onSummary={setSummary} inv={pvInv} setInv={setPvInv} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "cdc" ? "flex" : "none" }}>
+        <CableDcTab mod={pvMod} elec={elec} st={cables.dc} set={setCable("dc")} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "cac" ? "flex" : "none" }}>
+        <CableAcTab inv={pvInv} setInv={setPvInv} st={cables.ac} set={setCable("ac")} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "cmv" ? "flex" : "none" }}>
+        <CableMvTab st={cables.mv} set={setCable("mv")} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "csc" ? "flex" : "none" }}>
+        <ShortCircuitTab mod={pvMod} inv={pvInv} elec={elec} st={cables.sc} set={setCable("sc")} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "summary" ? "flex" : "none" }}>
         <SummaryTab s={summary} rates={rates} setRates={setRates}
