@@ -1564,6 +1564,9 @@ function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
   const W = 1000, H = 660;
   const svgRef = useRef(null);
   const dragRef = useRef(null);
+  // Live pointers for the pinch gesture; a mouse only ever fills one slot.
+  const ptrsRef = useRef(new Map());
+  const pinchRef = useRef(null);
   const [cam, setCam] = useState({ az: -35, el: 32, zoom: 1, px: 0, py: 0 });
   const camRef = useRef(cam); camRef.current = cam;
 
@@ -1676,19 +1679,55 @@ function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
 
   /* interaction: drag to orbit, shift-drag to pan, wheel to zoom */
   const onDown = (ev) => {
+    ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (ptrsRef.current.size === 2) {
+      // Two fingers zoom and pan; one finger orbits. Shift-drag with a
+      // mouse does the same pan, since a mouse has no second pointer.
+      dragRef.current = null;
+      const [a, b] = [...ptrsRef.current.values()];
+      pinchRef.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y),
+        mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        cam: { ...camRef.current },
+      };
+      return;
+    }
+    if (ptrsRef.current.size > 2) return;
     dragRef.current = {
       x: ev.clientX, y: ev.clientY, cam: { ...camRef.current }, pan: ev.shiftKey || ev.button === 2,
     };
     ev.currentTarget.setPointerCapture(ev.pointerId);
   };
   const onMove = (ev) => {
+    if (ptrsRef.current.has(ev.pointerId)) {
+      ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    }
+    const pin = pinchRef.current;
+    if (pin && ptrsRef.current.size >= 2) {
+      const [a, b] = [...ptrsRef.current.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (dist > 0 && pin.dist > 0) {
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        setCam({
+          ...pin.cam,
+          zoom: Math.min(12, Math.max(0.25, (pin.cam.zoom * dist) / pin.dist)),
+          px: pin.cam.px + (mid.x - pin.mid.x),
+          py: pin.cam.py + (mid.y - pin.mid.y),
+        });
+      }
+      return;
+    }
     const d = dragRef.current;
     if (!d) return;
     const mx = ev.clientX - d.x, my = ev.clientY - d.y;
     if (d.pan) setCam({ ...d.cam, px: d.cam.px + mx, py: d.cam.py + my });
     else setCam({ ...d.cam, az: d.cam.az - mx * 0.35, el: Math.max(6, Math.min(88, d.cam.el + my * 0.3)) });
   };
-  const onUp = () => { dragRef.current = null; };
+  const onUp = (ev) => {
+    if (ev) ptrsRef.current.delete(ev.pointerId);
+    if (ptrsRef.current.size < 2) pinchRef.current = null;
+    dragRef.current = null;
+  };
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -1706,6 +1745,7 @@ function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
         style={{ width: "100%", height: "100%", display: "block", cursor: "grab", touchAction: "none" }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
+        onPointerCancel={onUp}
         onContextMenu={(ev) => ev.preventDefault()}>
         {items.map((it, i) => (
           it.line
@@ -1725,7 +1765,8 @@ function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
         <br />{terrain
           ? `terrain ${fmt(terrain.zmax - terrain.zmin, 0)} m relief, true vertical scale`
           : "flat ground — no terrain loaded"}
-        <br />drag to orbit · shift-drag to pan · scroll to zoom
+        <br />{COARSE ? "drag to orbit · two fingers to pan and zoom"
+          : "drag to orbit · shift-drag to pan · scroll to zoom"}
       </div>
       <button className="btn" style={{ position: "absolute", top: 10, right: 12 }}
         onClick={() => setCam({ az: -35, el: 32, zoom: 1, px: 0, py: 0 })}>Reset view</button>
@@ -1759,6 +1800,26 @@ function SiteCanvas({
   const vbRef = useRef(vb);
   vbRef.current = vb;
   const dragRef = useRef(null);
+  /* Live pointers, so two fingers can pinch. A mouse only ever puts one
+     pointer down, so this costs nothing on the desktop path. */
+  const ptrsRef = useRef(new Map());
+  const pinchRef = useRef(null);
+
+  /* Zoom about a point given in client coordinates, k > 1 zooming out.
+     Shared by the wheel, the pinch and the on-screen buttons so all
+     three keep the same world point under the cursor. */
+  const zoomAbout = useCallback((k, clientX, clientY, from) => {
+    const el = svgRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const v = from || vbRef.current;
+    const nw = Math.min(Math.max(v.w * k, 5), 50000);
+    const nh = (nw / v.w) * v.h;
+    const fx = (clientX - r.left) / r.width;
+    const fy = (clientY - r.top) / r.height;
+    const wx = v.x + fx * v.w, wy = v.y + fy * v.h;
+    setVb({ x: wx - fx * nw, y: wy - fy * nh, w: nw, h: nh });
+  }, []);
 
   const fitTo = useCallback((pts) => {
     const el = wrapRef.current;
@@ -1797,20 +1858,28 @@ function SiteCanvas({
     if (!el) return;
     const onWheel = (e) => {
       e.preventDefault();
-      const r = el.getBoundingClientRect();
-      const v = vbRef.current;
-      const k = Math.pow(1.0015, e.deltaY);
-      const mx = v.x + ((e.clientX - r.left) / r.width) * v.w;
-      const my = v.y + ((e.clientY - r.top) / r.height) * v.h;
-      const nw = Math.min(Math.max(v.w * k, 5), 50000);
-      const nh = (nw / v.w) * v.h;
-      setVb({ x: mx - ((mx - v.x) / v.w) * nw, y: my - ((my - v.y) / v.h) * nh, w: nw, h: nh });
+      zoomAbout(Math.pow(1.0015, e.deltaY), e.clientX, e.clientY);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [zoomAbout]);
 
   const onPointerDown = (e) => {
+    ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrsRef.current.size === 2) {
+      /* A second finger arrived: abandon whatever the first one had
+         started — half-drawn vertex drags and pans included — and pinch
+         instead. Anything else makes zooming move the boundary. */
+      dragRef.current = null;
+      const [a, b] = [...ptrsRef.current.values()];
+      pinchRef.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y),
+        mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        vb0: { ...vbRef.current },
+      };
+      return;
+    }
+    if (ptrsRef.current.size > 2) return;
     const p = world(e);
     if (calib?.active) { onCalibPick && onCalibPick(p); return; }
     if (showSs && mode !== "draw" && mode !== "aline" && ss && Math.hypot(ss.x - p.x, ss.y - p.y) < pxTol(COARSE ? 22 : 12)) {
@@ -1872,6 +1941,28 @@ function SiteCanvas({
   };
 
   const onPointerMove = (e) => {
+    if (ptrsRef.current.has(e.pointerId)) {
+      ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+    const pin = pinchRef.current;
+    if (pin && ptrsRef.current.size >= 2) {
+      const [a, b] = [...ptrsRef.current.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (dist > 0 && pin.dist > 0) {
+        const r = svgRef.current.getBoundingClientRect();
+        const v = pin.vb0;
+        const nw = Math.min(Math.max((v.w * pin.dist) / dist, 5), 50000);
+        const nh = (nw / v.w) * v.h;
+        // The world point the fingers started around stays under the
+        // point they are around now, so pinch pans as well as zooms.
+        const wx = v.x + ((pin.mid.x - r.left) / r.width) * v.w;
+        const wy = v.y + ((pin.mid.y - r.top) / r.height) * v.h;
+        const fx = ((a.x + b.x) / 2 - r.left) / r.width;
+        const fy = ((a.y + b.y) / 2 - r.top) / r.height;
+        setVb({ x: wx - fx * nw, y: wy - fy * nh, w: nw, h: nh });
+      }
+      return;
+    }
     const d = dragRef.current;
     if (!d) return;
     if (d.kind === "pan") {
@@ -1896,6 +1987,8 @@ function SiteCanvas({
   };
 
   const onPointerUp = (e) => {
+    ptrsRef.current.delete(e.pointerId);
+    if (ptrsRef.current.size < 2) pinchRef.current = null;
     const d = dragRef.current;
     if (d && d.kind === "clickcheck" && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) {
       const p = world(e);
@@ -1970,6 +2063,7 @@ function SiteCanvas({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onDoubleClick={onDblClick}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -2247,6 +2341,26 @@ function SiteCanvas({
           no terrain loaded
         </div>
       )}
+      {/* Zoom controls. A trackpad has a pinch and a mouse has a wheel;
+          a phone held one-handed has neither to spare, so the buttons
+          are the reliable affordance rather than a convenience. */}
+      <div style={{
+        position: "absolute", top: 10, right: 12, display: "flex",
+        flexDirection: "column", gap: 5,
+      }}>
+        {[["+", 1 / 1.5], ["−", 1.5]].map(([lbl, k]) => (
+          <button key={lbl} className="btn zoombtn" title={k < 1 ? "Zoom in" : "Zoom out"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              const r = svgRef.current?.getBoundingClientRect();
+              if (r) zoomAbout(k, r.left + r.width / 2, r.top + r.height / 2);
+            }}>{lbl}</button>
+        ))}
+        <button className="btn zoombtn" title="Zoom to fit the boundary"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => fitTo(polygon.length >= 3 ? polygon : draft)}
+          style={{ fontSize: 12 }}>⤢</button>
+      </div>
       {mode === "edit" && polygon.length >= 3 && (
         <div style={{
           position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)",
@@ -2302,7 +2416,10 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   const [importMsg, setImportMsg] = useState("");
   const [view3d, setView3d] = useState(false);
   const narrow = useNarrow();
-  const [panelOpen, setPanelOpen] = useState(true);
+  // On a phone the map is the landing view: the inputs sheet is one tap
+  // away, but you cannot draw a boundary on a form.
+  const [panelOpen, setPanelOpen] = useState(
+    !(typeof window !== "undefined" && window.innerWidth <= 900));
   const [dxfBoundaries, setDxfBoundaries] = useState(null);
   const [geoOrigin, setGeoOrigin] = useState(null);
   const [bg, setBg] = useState(null);           // {url, wPx, hPx, scale m/px}
@@ -2932,13 +3049,21 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
         width: 356, minWidth: 356, background: C.panel, borderRight: `1px solid ${C.line}`,
         display: narrow && !panelOpen ? "none" : "flex", flexDirection: "column",
       }}>
-        <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid ${C.line}` }}>
-          <div style={{ font: "700 13px var(--mono)", letterSpacing: "0.04em", color: C.text }}>
-            LAYOUT GENERATOR
+        <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid ${C.line}`,
+          display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "700 13px var(--mono)", letterSpacing: "0.04em", color: C.text }}>
+              LAYOUT GENERATOR
+            </div>
+            <div style={{ font: "11px system-ui, sans-serif", color: C.muted, marginTop: 3 }}>
+              Phase 3 — staggered rows, paired corridors, frame sizing
+            </div>
           </div>
-          <div style={{ font: "11px system-ui, sans-serif", color: C.muted, marginTop: 3 }}>
-            Phase 3 — staggered rows, paired corridors, frame sizing
-          </div>
+          {narrow && (
+            <button className="btn primary" onClick={() => setPanelOpen(false)}>
+              Show map
+            </button>
+          )}
         </div>
 
         <div style={{ overflowY: "auto", flex: 1 }}>
@@ -3557,14 +3682,14 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       </div>
 
       {/* ================= viewport column ================= */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div style={{ flex: 1, display: narrow && panelOpen ? "none" : "flex",
+        flexDirection: "column", minWidth: 0 }}>
         <div style={{
           display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
           background: C.panel, borderBottom: `1px solid ${C.line}`, flexWrap: "wrap",
         }}>
           {narrow && (
-            <button className={`btn ${panelOpen ? "on" : ""}`}
-              onClick={() => setPanelOpen(!panelOpen)}>{panelOpen ? "✕ Inputs" : "☰ Inputs"}</button>
+            <button className="btn" onClick={() => setPanelOpen(true)}>☰ Inputs</button>
           )}
           {["draw", "edit", "pan"].map((m) => (
             <button key={m} className={`btn ${mode === m ? "on" : ""}`}
@@ -5973,6 +6098,8 @@ const CABLE_DEFAULTS = {
 
 export default function App() {
   const [tool, setTool] = useState("module");
+  const phone = useNarrow(760);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [uiMode, setUiMode] = useState("engineer");
   const [entered, setEntered] = useState(false);
   const [pvMod, setPvMod] = useState({
@@ -6131,22 +6258,48 @@ export default function App() {
     .pvhub-tabs { scrollbar-width: none; -ms-overflow-style: none; }
     .pvhub-tabs::-webkit-scrollbar { display: none; }
     .pv-head { flex: 0 0 auto; }
+    /* Every scrollable pane gets momentum scrolling and stops its
+       overscroll from becoming the page's, which is what makes a nested
+       pane feel stuck on a touch screen. */
+    .pv-page, .pv-side, .pv-side > div, .pvhub-tabs, .pvhub-sub {
+      -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+    /* Zoom controls sit over the canvas, so they need a real hit area. */
+    .zoombtn { width: 34px; height: 34px; padding: 0; font: 600 17px system-ui, sans-serif;
+      line-height: 1; background: rgba(27,30,36,0.92); display: flex;
+      align-items: center; justify-content: center; }
     @media (max-width: 900px) {
       .app { flex-direction: column !important; }
-      .pv-side { width: 100% !important; min-width: 0 !important; max-height: 45vh;
+      /* On a phone the inputs sheet and the map each take the whole area
+         and swap; splitting the screen leaves neither usable. */
+      .pv-side { width: 100% !important; min-width: 0 !important; max-height: none;
+        flex: 1 1 auto; min-height: 0;
         border-right: none !important; border-bottom: 1px solid ${C.line}; overflow-y: auto; }
       .fld { width: 100% !important; }
       .pv-page { padding: 14px 12px !important; }
       .pvhub-tab { padding: 0 11px; font-size: 12.5px; }
-      .pvhub-sub { padding: 0 10px; height: 38px; }
+      .pvhub-sub { padding: 0 10px; height: 38px; overflow-x: auto; }
       .btn { padding: 8px 12px; }
       .tbcell { min-width: 64px; padding: 6px 9px 7px; }
       .tbv { font-size: 13px; }
       .hide-narrow { display: none !important; }
       .pvhub-tabs { -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
         mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%); }
-      .pv-side { max-height: 52vh; }
-      .pv-root .app > div:last-child { min-height: 48vh; }
+    }
+    @media (max-width: 760px) {
+      .pv-head { height: 52px !important; gap: 8px !important; padding: 0 10px !important; }
+      /* Safari zooms the whole page when a focused input is under 16px.
+         Below this width the fields are full width anyway, so there is
+         room to make them big enough that it does not. */
+      .fld-box input, .fld-box select, input[type="number"], input[type="text"],
+      select, textarea { font-size: 16px !important; }
+      .fld-box input, .fld-box select { padding: 9px 8px; }
+      .sec summary { padding: 13px 14px; }
+      .sec-body { padding: 2px 14px 14px; }
+      .btn { padding: 9px 13px; font-size: 12.5px; }
+      .pv-page { padding: 12px 10px !important; }
+      /* Wide tables scroll inside their own box rather than stretching
+         the page sideways. */
+      table { font-size: 12px; }
     }
   `;
   return (
@@ -6174,21 +6327,51 @@ export default function App() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <div style={{ display: "flex", gap: 4, flexShrink: 0, marginRight: 8 }}>
-          <button className="btn" onClick={saveProject}>Save project</button>
-          <label className="btn" style={{ cursor: "pointer" }}>Open
-            <input type="file" accept=".json" style={{ display: "none" }}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) loadProject(f); e.target.value = ""; }} />
-          </label>
-        </div>
-        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+        {/* On a phone there is no room for eight buttons beside the tab
+            strip, and squeezing them in is what leaves the tabs
+            unreachable. They move into a sheet instead. */}
+        {phone ? (
+          <button className="btn" style={{ flexShrink: 0, padding: "8px 12px" }}
+            onClick={() => setMenuOpen((o) => !o)}>{menuOpen ? "✕" : "⋯"}</button>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 4, flexShrink: 0, marginRight: 8 }}>
+              <button className="btn" onClick={saveProject}>Save project</button>
+              <label className="btn" style={{ cursor: "pointer" }}>Open
+                <input type="file" accept=".json" style={{ display: "none" }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) loadProject(f); e.target.value = ""; }} />
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+              {["stupid", "simple", "engineer"].map((m) => (
+                <button key={m} className="btn" style={uiMode === m
+                  ? { background: C.accent, borderColor: C.accent, color: "#181206", fontWeight: 600 } : {}}
+                  onClick={() => { setUiMode(m); if (m === "stupid") setTool("layout"); }}>{m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}</button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      {phone && menuOpen && (
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: 6, padding: "10px 12px",
+          background: "#0d0f12", borderBottom: `1px solid ${C.line}`, flexShrink: 0,
+        }}>
           {["stupid", "simple", "engineer"].map((m) => (
             <button key={m} className="btn" style={uiMode === m
               ? { background: C.accent, borderColor: C.accent, color: "#181206", fontWeight: 600 } : {}}
-              onClick={() => { setUiMode(m); if (m === "stupid") setTool("layout"); }}>{m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}</button>
+              onClick={() => { setUiMode(m); if (m === "stupid") setTool("layout"); setMenuOpen(false); }}>
+              {m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}
+            </button>
           ))}
+          <div style={{ flexBasis: "100%" }} />
+          <button className="btn" onClick={() => { saveProject(); setMenuOpen(false); }}>Save project</button>
+          <label className="btn" style={{ cursor: "pointer" }}>Open project
+            <input type="file" accept=".json" style={{ display: "none" }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) loadProject(f); e.target.value = ""; setMenuOpen(false); }} />
+          </label>
         </div>
-      </div>
+      )}
       {activeGroup[1].length > 1 && (
         <div className="pvhub-sub">
           <span style={{ font: "600 10px system-ui", letterSpacing: "0.09em", color: "#5c6572",

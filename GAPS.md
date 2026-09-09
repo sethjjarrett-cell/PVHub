@@ -13,8 +13,15 @@ of that build being the only thing present, and have been removed rather than re
 
 ### G1. `src/App.jsx` is 6,300 lines and 84 top-level functions
 
-Everything is in one file: seven tools, the layout generator, the yield simulation, the PDF
-datasheet parser, the styling, the components. It is genuinely well written — real names,
+Almost everything is in one file: the layout generator, the yield simulation, the PDF
+datasheet parser, the styling, most of the components.
+
+*Partly addressed.* The cable tools were added as separate modules rather than appended:
+`src/cableData.js` (reference data and the adiabatic physics, no React), `src/CableTools.jsx`
+(the four tabs) and `src/ui.jsx` (the atoms both sides share). That establishes the seam the
+recommendation below describes and proves it works — `cableData.js` is pure and importable,
+and the verification below was written against it directly. The rest of the file has not
+moved. It is genuinely well written — real names,
 useful comments, coherent sections — which is the only reason it remains workable at this
 size. But it is at the limit.
 
@@ -179,6 +186,37 @@ in a 6,300-line file where those are easy to introduce.
 **Recommendation.** ESLint with `eslint-plugin-react-hooks`, run in CI on pull requests.
 The hooks rule is the valuable one here, given how much `useMemo` dependency management the
 file does by hand.
+
+---
+
+### G15. Cable sizing and the layout do not talk to each other
+
+The MV tab sizes ring runs from route distances typed in by hand, while the layout generator
+already computes cable routes for exactly those runs and reports their lengths. Nothing
+carries one into the other, so the cable schedule can silently describe a different plant
+from the layout beside it.
+
+**Recommendation.** Feed `planCabling`'s segments into the MV runs table as a starting set,
+the way `onAdopt` already carries a string length from string sizing into the electrical
+config. The layout knows the inverter count per run too, which is the other column being
+typed by hand.
+
+### G16. MV ratings above 400 mm² are extrapolated
+
+IEC 60502-2 Table B.3 stops at 400 mm². The 500 and 630 mm² rows extend the 300–400 gradient
+linearly and subtract a safety reduction. Real ratings flatten off above 400 mm² as skin and
+proximity effects grow, so the straight line over-predicts and the reduction only partly
+offsets it. The rows are flagged in the table and in a warning, which is the right handling
+for a preliminary tool, but they are a placeholder for a manufacturer rating and not a
+standard value.
+
+### G17. The short-circuit check claims no non-adiabatic credit
+
+IEC 60949 permits a non-adiabatic uplift for screens and for durations past about a second,
+which can be worth a size on a screen. Not claiming it is safe, and stated in the interface,
+but it means the screen result is pessimistic rather than accurate. Electrodynamic force on
+cleats and supports is not computed either; the peak current is reported so it can be, but
+the calculation itself is absent.
 
 ---
 

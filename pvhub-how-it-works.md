@@ -118,6 +118,99 @@ any simulation exists.
 
 The generator. Covered in detail below.
 
+### 8–10 · DC, AC and MV cable
+
+Three sizing tools sharing one engine, one per voltage level. Each asks the same
+two questions in the same order, because they bind in that order.
+
+**Will it carry the current without cooking?** The base current-carrying capacity
+comes from IEC 60364-5-52 (LV) or IEC 60502-2 Annex B (MV) for the conductor
+material, insulation and arrangement stated in the tab's title — copper XLPO
+two-core for DC, aluminium XLPE single-cores in trefoil for AC and MV. It is then
+multiplied by four derating factors, each shown separately rather than rolled into
+one number, so a failing run can be traced to the factor that actually cost the
+capacity:
+
+| Factor | Depends on | Typically worth |
+|---|---|---|
+| `f_temp` | ambient air or ground temperature | 0.85 – 0.96 |
+| `f_grp` | how many circuits share the trench or tray, and their spacing | 0.34 – 1.0 |
+| `f_soil` | soil thermal resistivity | 0.79 – 1.0 |
+| `f_depth` | burial depth | 0.86 – 1.06 |
+
+Grouping is nearly always what decides the size, and it is the one most often got
+wrong, because it counts **circuits, not cables**: IEC 60364-5-52 Tables B.52.18
+and B.52.19 NOTE 3 make a circuit with *m* conductors per pole in parallel count as
+*m* circuits. Four cables per phase in a trench with five other runs is twenty-four
+circuits for the lookup, not six. A trench cross-section is drawn from the same
+inputs the factor is looked up with, so a wrong count or spacing is visible rather
+than buried in a cell.
+
+**Will the volt drop and the loss be acceptable?** DC uses a loop factor, because
+the circuit is out and back and both legs drop volts; AC and MV use
+√3·I·(R·cos θ + X·sin θ)·L, where the reactance term is negligible at unity power
+factor and emphatically is not once the inverter is asked for reactive power. Each
+tab gives the drop, the I²R loss, the maximum route length at the stated limit and
+the headroom against the actual run — the last of these being the number that
+usually decides whether to upsize the cable or move the transformer.
+
+The MV tab adds ring runs: current accumulates along a branch and resets at each new
+branch, so a radial feeder is one branch numbered from its far end inwards. It ends
+in a cable schedule by size with a spares allowance, which is the bill of materials.
+
+Two departures from a spreadsheet doing the same job, both stated in the interface.
+Continuous variables — temperature, depth, soil resistivity, circuit count — are
+interpolated between tabulated points rather than stepped down to the row below,
+which is optimistic; at a tabulated point interpolation returns the tabulated value
+exactly, so ordinary inputs agree to the digit. And conductor resistance is corrected
+from the IEC 60228 20 °C value to an operating temperature you set, because a
+conductor at its 90 °C limit is 27 % more resistive than the table says. Set it to
+20 °C to reproduce a sheet that uses the table value raw.
+
+### 11 · Short circuit
+
+The check that normal operation never reveals. A cable sized for load current and
+volt drop can still be destroyed by a fault it has to hold for a few hundred
+milliseconds, and it will run perfectly until the day it does not.
+
+**Fault level** is built up per IEC 60909 from the grid infeed, the transformer and
+the inverters, with the voltage factor *c* (1.1 on MV, 1.05 on LV). The inverter
+contribution is deliberately modest — an inverter is a current source, not a machine
+behind a subtransient reactance, so it delivers about 1.1 to 1.2 × rated for a few
+cycles. That is why PV collector networks have low fault levels, and why grading
+protection on one is harder than on a conventional network rather than easier. The
+peak factor κ gives the mechanical duty and the thermal equivalent current *I_th*,
+including the heat in the decaying d.c. component, gives the duty the cable sees.
+
+**The adiabatic check** is `S ≥ I·√t / k`. Adiabatic means no heat leaves the
+conductor during the fault, which is true enough below about five seconds and
+conservative above. Rather than reading *k* from a table, the tool derives it:
+
+```
+K = √( Q_c·(β + 20) / ρ₂₀ )          material constant: 226 Cu, 148 Al
+k = K · √( ln((β + θ_f) / (β + θ_i)) )
+```
+
+which reproduces the familiar 143 for copper in XLPE and 94 for aluminium, and also
+gives a part-loaded cable proper credit for starting cooler than its 90 °C limit.
+Inverting the same equation gives the temperature the conductor actually reaches.
+
+Three things come out of it: the minimum area, the one-second withstand rating that
+cable schedules quote, and the maximum permitted clearing time — the last being what
+the protection engineer's grading margin has to fit inside, against the slowest
+credible backup stage rather than the fastest main one.
+
+A separate check covers the screen or armour on an earth fault, which is usually
+what governs on an MV cable rather than the conductor: a 240 mm² aluminium core with
+a 25 mm² copper screen withstands about 22 kA for a second on the phase and about
+3.5 kA on the screen.
+
+The withstand curves are the diagram worth reading. Each is `I = k·S / √t` for one
+size — a straight line of slope −½ on log-log axes — and the fault point must sit
+below and left of the curve for the size installed. The `√t` is the lesson: halving
+the clearing time reduces the required area by only 29 %, so upsizing shifts the
+whole curve right and buys far more than shaving milliseconds off the protection.
+
 ---
 
 ## How the layout generator works
@@ -329,8 +422,18 @@ enough to say *that fits* or *that doesn't*, not good enough to build from.
 - **Clipping figures** on the Paralleling tab are a parametric estimate for
   ordering the table. PVsyst governs the accepted number.
 - **Pitch and shading** are not simulated. That tab compares runs you supply.
-- **Cable lengths** are straight-line estimates for ranking variants, not a
-  cable schedule. Cable sizing is not yet implemented.
+- **Layout cable lengths** are straight-line estimates for ranking variants. The
+  MV tab produces a real cable schedule, but from route distances you enter; it
+  does not read them back from the layout, so the two are not yet joined up.
+- **MV ratings above 400 mm²** are extrapolated, not IEC data — IEC 60502-2
+  Table B.3 stops at 400. Those rows are flagged in the table. Real ratings
+  flatten off above 400 mm² as skin and proximity effects grow, so a straight
+  line over-predicts and the safety reduction only partly offsets it.
+- **The short-circuit check is adiabatic.** IEC 60949 permits a non-adiabatic
+  credit for screens and for long durations that is not claimed here, so screen
+  results in particular are on the safe side. Nothing checks electrodynamic
+  forces on cleats and supports; the peak current is reported for that purpose
+  but the force calculation is not done.
 - **Free global DEM data** at roughly 30 m posting is adequate for deciding
   which ground to avoid, not for per-tracker slope compliance at a 5.5 m pitch.
   Use surveyed data for anything past preliminary.

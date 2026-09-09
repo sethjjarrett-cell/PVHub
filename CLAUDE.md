@@ -11,7 +11,10 @@ the layout generator, which is the most intricate part. This file covers only wh
 two do not: how to work on the code without breaking it.
 
 ```
-src/App.jsx            the entire application — 6,300 lines, 84 top-level functions
+src/App.jsx            the shell and most of the application — ~6,300 lines
+src/ui.jsx             shared atoms: palette C, formatters, Num/Sel/Section/Working/Page
+src/cableData.js       IEC reference tables and the adiabatic k physics — data, no React
+src/CableTools.jsx     the four Cables tabs (DC, AC, MV, short circuit)
 src/main.jsx           mount + boot-overlay teardown
 src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
 index.html             Vite entry shell
@@ -25,9 +28,14 @@ Build: `npm install`, then `npm run dev` (hot reload) or `npm run build` (into `
 
 ## The one thing to know before editing
 
-**Everything is in `src/App.jsx`.** Seven tools, the layout generator, the yield
-simulation, the PDF datasheet parser, all the styling and all the components. It is
-readable and well-commented, but it is one file, so:
+**Almost everything is in `src/App.jsx`.** The layout generator, the yield simulation, the
+PDF datasheet parser, all the styling and most of the components. The cable tools are the
+exception — they live in `src/CableTools.jsx` and `src/cableData.js`, and they import their
+UI atoms from `src/ui.jsx` rather than from App.jsx, because importing App.jsx back into a
+tool it renders is a cycle. If you extract anything else, take the same route: move the
+shared piece into `ui.jsx` first, then import it from both sides.
+
+App.jsx is readable and well-commented, but it is still one large file, so:
 
 - Search by function name — they are real names (`simulatePitch`, `buildEnv`, `skyVF`,
   `parseTmy`, `frameGeom`), not minified.
@@ -63,10 +71,17 @@ Chromium and Playwright are available (`executablePath: '/opt/pw-browsers/chromi
 never run `playwright install`). Serve over `http://` — `file://` blocks the outbound API
 calls.
 
-**Healthy baseline:** boot overlay clears, `pageerror` count is 0, and four tab groups
+**Healthy baseline:** boot overlay clears, `pageerror` count is 0, and five tab groups
 render — `Technologies` (module, inverter, frame), `Calculations` (string, clip), `Layout`,
-`Yield & Summary` (shade, summary). The seven tools still exist; `GROUPS` in `src/App.jsx`
-maps them onto the four tabs, and Stupid mode filters to Layout + Yield & Summary.
+`Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, summary). `GROUPS` in
+`src/App.jsx` maps the tools onto those groups, and Stupid mode filters to Layout +
+Yield & Summary.
+
+Check the phone path too, because it is a separate layout rather than the same one
+narrowed: at an iPhone viewport `document.documentElement.scrollWidth` must equal
+`clientWidth` on every tab (a wide table scrolls inside its own box, never the document),
+the Layout tool lands on the map with an `☰ Inputs` button rather than on a split screen,
+and a two-finger pinch on the site canvas must change its `viewBox` width.
 
 **Known pre-existing noise:** ~270 console errors of the form
 `<line> attribute y1: Expected length, "-Infinity"` fire on load, plus a favicon 404. That
@@ -101,6 +116,14 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **`N_rec` trades modules for frame divisibility**, falling back to the electrical maximum
   if the divisible candidate drops below `N_min`.
 - **Parallel strings take the lower** of connector limit and MPPT current headroom.
+- **Cable grouping counts circuits, not cables.** A circuit with m conductors per pole in
+  parallel counts as m circuits (IEC 60364-5-52 B.52.18/19 NOTE 3). Own circuits =
+  circuits routed together × parallel N.
+- **The two soil-resistivity bases are never mixed.** IEC 60364-5-52 references its factors
+  to 2.5 K·m/W, IEC 60502-2 to 1.5. Separate tables, deliberately.
+- **Conductor resistance is corrected from 20 °C.** IEC 60228 tabulates R at 20 °C; the
+  tools apply α(θ−20) with the operating temperature as an input. Setting it to 20
+  reproduces a spreadsheet that uses the table value raw.
 - **Frames are never rotated to follow a boundary** — alignment is done by staggering frame
   ends, so tracking geometry and yield are preserved.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.

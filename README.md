@@ -1,8 +1,12 @@
 # PVhub — PVhub
 
 Browser-based tools for utility-scale PV preliminary design: parameter capture,
-string sizing, string paralleling, pitch comparison, and an automatic layout
-generator with terrain awareness.
+string sizing, string paralleling, pitch comparison, DC/AC/MV cable sizing,
+short-circuit withstand, and an automatic layout generator with terrain awareness.
+
+It works on a phone: the tables scroll inside their own boxes, the site canvas
+takes pinch-zoom and two-finger pan, and the layout inputs open as a full-screen
+sheet rather than fighting the map for half a screen.
 
 Everything runs in the browser. No server, no account, no data leaves the machine.
 
@@ -27,6 +31,10 @@ Everything below is only needed if you want to change the code or host it online
 | 5 | Paralleling | Strings per inverter vs ILR and clipping; enter PVsyst results to compare |
 | 6 | Pitch & Shading | Compare your PVsyst pitch runs side by side |
 | 7 | Layout | Site boundary, terrain, automatic block layout, ranked variants |
+| 8 | DC cable | String and array cable: IEC derating chain, volt drop, I²R loss |
+| 9 | AC cable | Inverter-to-transformer feeder, three-phase drop with R and X |
+| 10 | MV cable | Collector ring runs, cumulative current, cable schedule and BOM |
+| 11 | Short circuit | Fault levels and the adiabatic withstand check, with curves |
 
 Three interface modes, top right:
 
@@ -65,7 +73,9 @@ npm run dev     # local dev server, hot reload
 npm run build   # production build into dist/
 ```
 
-All application code lives in `src/App.jsx`.
+Most application code lives in `src/App.jsx`. The cable and short-circuit tools
+are in `src/CableTools.jsx` with their IEC reference data in `src/cableData.js`,
+and the UI atoms both sides share are in `src/ui.jsx`.
 
 ---
 
@@ -119,7 +129,14 @@ gh repo create pvhub --public --source=. --push
   those to decide.
 - The Pitch & Shading tab does not simulate. It compares PVsyst runs you enter.
 - Layout cable lengths are straight-line estimates for ranking variants, not a
-  cable schedule.
+  cable schedule. The MV tab produces a real schedule, but from route distances
+  you enter — it does not read them from the layout.
+- MV cable ratings above 400 mm² are **extrapolated, not IEC data**: IEC 60502-2
+  Table B.3 stops there. Those rows are flagged in the table and should be
+  replaced with a manufacturer rating before anything is ordered.
+- The short-circuit check is adiabatic. IEC 60949 permits a non-adiabatic credit
+  for screens and long durations which is not claimed here, so screen results are
+  on the safe side.
 - Free global DEM data (~30 m posting) is fine for deciding which ground to
   avoid; it is not accurate enough for per-tracker slope compliance.
 - Frames are axis-aligned to true north–south (or east–west for fixed tilt).

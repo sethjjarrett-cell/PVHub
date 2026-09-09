@@ -7,7 +7,13 @@
 <title>PVhub &mdash; PV Design Tools</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#14171c;
-    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%;
+    /* No pull-to-refresh or rubber-band: both fight a drag on the site
+       canvas, and the app never scrolls as a document anyway. */
+    overscroll-behavior:none;
+    /* Kills the 300 ms tap delay and double-tap-to-zoom without
+       disabling pinch zoom on the page as a whole. */
+    touch-action:manipulation}
   #root{height:100%}
   #boot{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:15px;background:#14171c;color:#8b95a3}
