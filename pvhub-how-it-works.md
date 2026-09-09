@@ -167,6 +167,49 @@ from the IEC 60228 20 °C value to an operating temperature you set, because a
 conductor at its 90 °C limit is 27 % more resistive than the table says. Set it to
 20 °C to reproduce a sheet that uses the table value raw.
 
+### 12 · Yield report
+
+The tab that answers the question a client asks first: what will it make?
+
+**One place that pulls.** Three optional outbound calls, each with its status and its
+provenance on screen — ERA5 daily temperature extremes for the cold-morning voltage
+check, a PVGIS TMY for the pitch model, and PVGIS PVcalc for a validated absolute yield.
+Each is bounded by a timeout, because a blocked network does not always refuse a
+connection: a proxy will accept one and then say nothing, and a fetch with no timeout
+leaves a button spinning for ever. All three are optional and the tool works without
+them, but a generation figure quoted to a client from a fallback model is worse than no
+figure, so nothing is assumed.
+
+**Absolute against relative.** PVGIS supplies the absolute yield for one kWp, because
+its model is validated and ours is not. It knows nothing about row spacing — no public
+API takes a pitch — so the row-geometry effect is applied on top from our own model. The
+consequence is worth stating plainly: the absolute number is PVGIS's and the differences
+between pitches are ours, and the differences hold up far better. Swap the irradiance
+dataset and every pitch moves together, which is exactly why the comparison is worth
+reading before any simulation exists.
+
+**Pitch against everything it costs.** Widening the pitch always adds yield per kWp, so a
+model that charges nothing for the extra ground would answer "wider" for ever — an
+artefact, not advice. What the space costs depends on which constraint is actually real,
+and on a given job exactly one of them is:
+
+| Constraint | What moves | What it costs |
+|---|---|---|
+| Fixed site — the boundary is the boundary | Capacity falls as 1/pitch: fewer rows fit | Lost energy, against saved array capex |
+| Fixed capacity — the plant is the plant | Area grows with pitch | More cable (as √area), more land and civils |
+
+Cable length at the pitch in use is the layout's own routed figure; every other row scales
+away from that anchor. The net column is extra revenue over the appraisal period less the
+extra capex, and it is the column to read: in the fixed-capacity case it rises, peaks and
+falls, so there is a real optimum, and it sits well short of the pitch that maximises
+yield alone.
+
+The shading curve behind it is two parameters standing in for an hourly simulation,
+calibrated so a backtracking tracker at GCR 0.41 loses about 2.2 % against a very wide
+pitch and fixed tilt at the same GCR about 5.5 %. The coefficient is an input: run two
+pitches in PVsyst, turn the dial until the model reproduces the gap between them, and
+everything on the tab sharpens at once.
+
 ### 11 · Short circuit
 
 The check that normal operation never reveals. A cable sized for load current and
@@ -429,6 +472,13 @@ enough to say *that fits* or *that doesn't*, not good enough to build from.
   Table B.3 stops at 400. Those rows are flagged in the table. Real ratings
   flatten off above 400 mm² as skin and proximity effects grow, so a straight
   line over-predicts and the safety reduction only partly offsets it.
+- **The yield report's absolute figure is PVGIS's model, not a simulation.** It carries no
+  soiling schedule, no availability assumption, no degradation profile and no measured
+  horizon. Expect a bankable figure to sit below it. The pitch comparison is a ratio from a
+  two-parameter shading curve and is for ranking pitches against each other only.
+- **Cable length away from the pitch in use is scaled, not routed.** Only the row at the
+  current pitch is the layout's real figure; the rest follow a scaling law. Re-running the
+  layout at each pitch would give the true answer and is the obvious next step.
 - **The short-circuit check is adiabatic.** IEC 60949 permits a non-adiabatic
   credit for screens and for long durations that is not claimed here, so screen
   results in particular are on the safe side. Nothing checks electrodynamic

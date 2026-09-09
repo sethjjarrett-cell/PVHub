@@ -35,6 +35,7 @@ Everything below is only needed if you want to change the code or host it online
 | 9 | AC cable | Inverter-to-transformer feeder, three-phase drop with R and X |
 | 10 | MV cable | Collector ring runs, cumulative current, cable schedule and BOM |
 | 11 | Short circuit | Fault levels and the adiabatic withstand check, with curves |
+| 12 | Yield report | Pulls ERA5 / PVGIS, states expected generation, trades pitch against cable |
 
 Three interface modes, top right:
 
@@ -49,8 +50,12 @@ Use **Save project** / **Open** in the header to keep work between sessions
 
 ## Importing a site
 
-Layout tab, section 01 → **Import DXF / XYZ / CSV**.
+Layout tab, section 01 → **Import KMZ / KML / DXF / XYZ / CSV**.
 
+- **KMZ / KML** straight from Google Earth. A drawn polygon becomes the boundary; a pin with
+  no extent sets the site coordinates instead, which is what drives the temperature pull,
+  the TMY and the yield model. Coordinates are projected to metres about the site's own
+  latitude, and the import says so.
 - **DXF** (ASCII, not DWG — in AutoCAD/Civil 3D use `SAVEAS` → DXF).
   One file can carry both: closed polylines are offered as boundary options,
   and POINT / 3DFACE entities are read as terrain.
@@ -128,6 +133,10 @@ gh repo create pvhub --public --source=. --push
   comparison only**. Enter real PVsyst figures in the adjacent column and use
   those to decide.
 - The Pitch & Shading tab does not simulate. It compares PVsyst runs you enter.
+- On the Yield report, the absolute yield is PVGIS's validated model and the differences
+  between pitches are ours. The differences are the trustworthy half — swap the irradiance
+  dataset and every pitch moves together. Treat the absolute as a figure to start a
+  conversation, never as a bankable one.
 - Layout cable lengths are straight-line estimates for ranking variants, not a
   cable schedule. The MV tab produces a real schedule, but from route distances
   you enter — it does not read them from the layout.

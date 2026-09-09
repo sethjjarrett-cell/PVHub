@@ -8,6 +8,7 @@ import {
   Working, NumS, NumO, Page,
 } from "./ui.jsx";
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
+import { YieldReportTab } from "./YieldReport.jsx";
 
 /* =====================================================================
    LAYOUT GENERATOR — Phase 2
@@ -3182,9 +3183,15 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       combo: cabling?.combo ?? [], spare: cabling?.spare ?? 0,
       roadLen: (v.roads || []).length ? null : null,
       invAcKw,
+      // geometry the yield report needs to trade pitch against cable
+      pitch: pitchCfg.rowPitch, collectW: geo.collectW ?? null,
+      dcAvg: v.dc?.avg ?? null, dcTotal: v.dc?.total ?? null,
+      mounting: frame.mounting, tilt: frame.tilt,
+      modPower: module.power,
     } : null);
     // eslint-disable-next-line
-  }, [variants, activeIdx, cabling, areaM2, invAcKw]);
+  }, [variants, activeIdx, cabling, areaM2, invAcKw, pitchCfg.rowPitch,
+      geo.collectW, frame.mounting, frame.tilt, module.power]);
 
   const applyImport = () => {
     const pts = [];
@@ -6306,6 +6313,21 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
    expected to overwrite; they are chosen to be typical of a utility-scale
    site rather than safe, so a run that passes untouched has not been
    checked, it has merely been left alone. */
+const REPORT_DEFAULTS = {
+  bos: 14,          // PVGIS system losses, %
+  geomKeep: null,   // null = modelled from the pitch in use; a number overrides
+  pLo: 4, pHi: 12,  // pitch sweep, m
+  // Row-shading coefficient. Calibrated so a backtracking tracker at
+  // GCR 0.41 loses about 2.2 % against a very wide pitch and a fixed-tilt
+  // array at the same GCR loses about 5.5 %, which is the right order for
+  // both. Calibrate it against a PVsyst run when there is one.
+  shadeK: 0.65,
+  constraint: "site",   // the drawn boundary is usually what is fixed
+  landCost: 1.2,        // land + civils, £/m² of array area
+  tariff: 55,           // £/MWh
+  years: 25,
+};
+
 const CABLE_DEFAULTS = {
   dc: {
     sf: 1.25, iscOv: null, impOv: null, vmpOv: null, nModOv: null,
@@ -6380,6 +6402,7 @@ export default function App() {
   const [siteLoc, setSiteLoc] = useState({ lat: 8.616413, lon: -8.860021 });
   const [summary, setSummary] = useState(null);
   const [cables, setCables] = useState(CABLE_DEFAULTS);
+  const [report, setReport] = useState(REPORT_DEFAULTS);
   const setCable = (k) => (v) => setCables((c0) => ({ ...c0, [k]: v }));
   const [rates, setRates] = useState({
     cur: "£", lv: 38, mv: 62, modWp: 0.13, mountWp: 0.09, invKw: 32,
@@ -6388,7 +6411,7 @@ export default function App() {
   const saveProject = () => {
     const data = {
       app: "PVhub", version: 1, saved: new Date().toISOString(),
-      pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables,
+      pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables, report,
       layout: reg.current.layout?.get(), shade: reg.current.shade?.get(),
     };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -6413,6 +6436,7 @@ export default function App() {
         if (d.siteLoc) setSiteLoc(d.siteLoc);
         // Merge rather than replace, so a project saved before a cable
         // input existed still opens with a sensible value for it.
+        if (d.report) setReport({ ...REPORT_DEFAULTS, ...d.report });
         if (d.cables) setCables({
           dc: { ...CABLE_DEFAULTS.dc, ...d.cables.dc },
           ac: { ...CABLE_DEFAULTS.ac, ...d.cables.ac },
@@ -6431,13 +6455,14 @@ export default function App() {
     ["string", "String Sizing"], ["clip", "Paralleling"],
     ["shade", "Pitch & Yield"], ["layout", "Layout"], ["summary", "Summary"],
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
+    ["report", "Yield report"],
   ];
   const GROUPS = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Layout", ["layout"]],
     ["Cables", ["cdc", "cac", "cmv", "csc"]],
-    ["Yield & Summary", ["shade", "summary"]],
+    ["Yield & Summary", ["shade", "report", "summary"]],
   ];
   const visGroups = uiMode === "stupid"
     ? GROUPS.filter(([g]) => g === "Layout" || g === "Yield & Summary")
@@ -6676,6 +6701,10 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "csc" ? "flex" : "none" }}>
         <ShortCircuitTab mod={pvMod} inv={pvInv} elec={elec} st={cables.sc} set={setCable("sc")} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "report" ? "flex" : "none" }}>
+        <YieldReportTab loc={siteLoc} setLoc={setSiteLoc} mod={pvMod} inv={pvInv} elec={elec}
+          frame={frame} summary={summary} rates={rates} st={report} set={setReport} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "summary" ? "flex" : "none" }}>
         <SummaryTab s={summary} rates={rates} setRates={setRates}

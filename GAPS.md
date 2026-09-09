@@ -218,6 +218,26 @@ but it means the screen result is pessimistic rather than accurate. Electrodynam
 cleats and supports is not computed either; the peak current is reported so it can be, but
 the calculation itself is absent.
 
+### G18. The pitch trade-off scales cable rather than re-routing it
+
+The yield report anchors on the cable length the layout actually routed at the pitch in use, then
+scales every other pitch by a law — with capacity on a fixed site, as √area at fixed capacity. The
+honest answer is to re-run the layout generator at each pitch and route the cable for real, which
+the generator is already capable of; it is a question of cost, not capability, since a sweep of
+nine pitches is nine full generations.
+
+**Recommendation.** Run the generator across the sweep in a worker, or on demand behind a button,
+and replace the scaling law with routed figures. The scaling law can stay as the instant answer.
+
+### G19. Outbound calls outside src/pvgis.js still have no timeout
+
+`src/pvgis.js` bounds every request, because a proxy that accepts a connection and then says
+nothing leaves the UI spinning for ever. The older fetches inside `ShadeTab` and the string-sizing
+temperature pull do not, and they are the same class of bug.
+
+**Recommendation.** Move those two onto `fetchTmy` / `fetchEra5` from `src/pvgis.js`. They already
+duplicate the logic, so this removes code as well as fixing the hang.
+
 ---
 
 ## Severity 4 — Polish

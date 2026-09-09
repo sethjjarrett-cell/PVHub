@@ -15,6 +15,8 @@ src/App.jsx            the shell and most of the application — ~6,300 lines
 src/ui.jsx             shared atoms: palette C, formatters, Num/Sel/Section/Working/Page
 src/cableData.js       IEC reference tables and the adiabatic k physics — data, no React
 src/CableTools.jsx     the four Cables tabs (DC, AC, MV, short circuit)
+src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
+src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
 src/main.jsx           mount + boot-overlay teardown
 src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
 index.html             Vite entry shell
@@ -73,7 +75,7 @@ calls.
 
 **Healthy baseline:** boot overlay clears, `pageerror` count is 0, and five tab groups
 render — `Technologies` (module, inverter, frame), `Calculations` (string, clip), `Layout`,
-`Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, summary). `GROUPS` in
+`Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, report, summary). `GROUPS` in
 `src/App.jsx` maps the tools onto those groups, and Stupid mode filters to Layout +
 Yield & Summary.
 
@@ -81,7 +83,9 @@ Check the phone path too, because it is a separate layout rather than the same o
 narrowed: at an iPhone viewport `document.documentElement.scrollWidth` must equal
 `clientWidth` on every tab (a wide table scrolls inside its own box, never the document),
 the Layout tool lands on the map with an `☰ Inputs` button rather than on a split screen,
-and a two-finger pinch on the site canvas must change its `viewBox` width.
+and a two-finger pinch on the site canvas must change its `viewBox` width. Drawing is the
+case that broke before: four *finger* taps (a tap carries ~10 px of wobble, so simulate it
+with a touchmove between down and up) must place four corners, not zero.
 
 **Known pre-existing noise:** ~270 console errors of the form
 `<line> attribute y1: Expected length, "-Infinity"` fire on load, plus a favicon 404. That
@@ -124,6 +128,14 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **Conductor resistance is corrected from 20 °C.** IEC 60228 tabulates R at 20 °C; the
   tools apply α(θ−20) with the operating temperature as an input. Setting it to 20
   reproduces a spreadsheet that uses the table value raw.
+- **Absolute yield is PVGIS's, differences between pitches are ours.** No public API takes a
+  pitch, so the report scales a PVGIS PVcalc baseline by a row-geometry ratio. The ratios
+  survive a change of irradiance dataset; the absolute does not. Never present the two as
+  having the same standing.
+- **The pitch trade-off always charges for the space.** Widening a pitch adds yield, so a
+  model that costs nothing for the extra ground answers "wider" for ever. Cable, land and
+  array capex are all in the net figure, and which of capacity or site is held fixed is an
+  explicit choice, not an assumption.
 - **Frames are never rotated to follow a boundary** — alignment is done by staggering frame
   ends, so tracking geometry and yield are preserved.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
