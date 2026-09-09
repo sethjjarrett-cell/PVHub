@@ -1162,6 +1162,7 @@ function buildCableGraph(blocks, polygon, stagger, laneMid, vertical) {
 
 function nearestNode(graph, p) {
   let best = -1, bd = Infinity;
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return { i: -1, d: Infinity };
   for (let i = 0; i < graph.nodes.length; i++) {
     const n = graph.nodes[i];
     const d = Math.hypot(n.x - p.x, n.y - p.y);
@@ -1218,9 +1219,14 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
     const ov = overrides && overrides[gi];
     const seed = ov ? ov : { x: cxs, y: cys };
     const nn = nearestNode(graph, seed);
+    // nearestNode returns -1 if it cannot compare against the seed at all.
+    // Fall back to the group centroid's nearest node rather than indexing
+    // nodes[-1], which used to crash the whole layout tool.
+    const idx = nn.i >= 0 ? nn.i : nearestNode(graph, { x: cxs, y: cys }).i;
+    if (idx < 0) return;
     subs.push({
       ways, used: take, spare: ways - take, group,
-      node: nn.i, x: graph.nodes[nn.i].x, y: graph.nodes[nn.i].y,
+      node: idx, x: graph.nodes[idx].x, y: graph.nodes[idx].y,
     });
   });
 
@@ -1788,6 +1794,15 @@ function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
   );
 }
 
+/* Hit sizes in screen pixels. A fingertip contact patch is around 40 px
+   across and the finger hides what it is over, so a coarse pointer needs a
+   target it can find without seeing it — roughly twice the mouse figure.
+   Handles are drawn at these sizes too, so what you can hit is what you
+   can see. */
+const TOUCH_TOL = COARSE
+  ? { grab: 26, snap: 30, handle: 12, midHandle: 9 }
+  : { grab: 9, snap: 12, handle: 5.5, midHandle: 3.5 };
+
 function SiteCanvas({
   polygon, setPolygon, mode, setMode, draft, setDraft,
   variant, geo, viewFitToken, ss, setSs, alignEdge, showSs,
@@ -1796,9 +1811,17 @@ function SiteCanvas({
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
-  const [vb, setVb] = useState({ x: -50, y: -50, w: 620, h: 700 });
+  const [vb, setVbRaw] = useState({ x: -50, y: -50, w: 620, h: 700 });
   const vbRef = useRef(vb);
   vbRef.current = vb;
+  /* A single non-finite viewBox poisons every later pan and zoom, because
+     each one is computed from the last. Refusing it at the door is the
+     only place one guard covers all of them. */
+  const setVb = useCallback((next) => {
+    if (!next || ![next.x, next.y, next.w, next.h].every(Number.isFinite)
+        || !(next.w > 0) || !(next.h > 0)) return;
+    setVbRaw(next);
+  }, []);
   const dragRef = useRef(null);
   /* Live pointers, so two fingers can pinch. A mouse only ever puts one
      pointer down, so this costs nothing on the desktop path. */
@@ -1821,27 +1844,58 @@ function SiteCanvas({
     setVb({ x: wx - fx * nw, y: wy - fy * nh, w: nw, h: nh });
   }, []);
 
+  /* Every tab is mounted at once and the inactive ones are display:none,
+     so this can be asked to fit a box with no size. Dividing by that zero
+     put Infinity in the viewBox, which came back as NaN from world() the
+     moment anything was dragged, and a NaN substation seed then indexed
+     graph.nodes[-1] and took the whole tool down. So: refuse, remember,
+     and fit for real once the element has a size. */
+  const pendingFit = useRef(null);
   const fitTo = useCallback((pts) => {
     const el = wrapRef.current;
-    if (!pts || pts.length < 3 || !el) return;
+    if (!pts || pts.length < 3 || !el) return false;
+    const cw = el.clientWidth, ch = el.clientHeight;
+    if (!(cw > 0) || !(ch > 0)) { pendingFit.current = pts; return false; }
     const bb = bboxOf(pts);
     const pad = Math.max(bb.maxX - bb.minX, bb.maxY - bb.minY) * 0.08 + 10;
     let w = bb.maxX - bb.minX + 2 * pad;
     let h = bb.maxY - bb.minY + 2 * pad;
-    const ar = el.clientWidth / Math.max(1, el.clientHeight);
+    if (!(w > 0) || !(h > 0)) return false;
+    const ar = cw / ch;
     if (w / h > ar) h = w / ar; else w = h * ar;
+    pendingFit.current = null;
     setVb({
       x: (bb.minX + bb.maxX) / 2 - w / 2,
       y: (bb.minY + bb.maxY) / 2 - h / 2,
       w, h,
     });
+    return true;
   }, []);
+
+  /* The pane changes size when a tab is shown, when the phone rotates and
+     when the inputs sheet closes. Any of those is the moment to serve a
+     fit that was refused for having nowhere to put it. */
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (pendingFit.current) fitTo(pendingFit.current);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitTo]);
 
   useEffect(() => { fitTo(polygon); /* eslint-disable-next-line */ }, [viewFitToken]);
 
+  /* null rather than a NaN point when the canvas has no size on screen:
+     every caller checks, so a bad pointer event is dropped instead of
+     being written into the boundary or the substation position. */
   const world = (e) => {
-    const r = svgRef.current.getBoundingClientRect();
+    const r = svgRef.current?.getBoundingClientRect();
     const v = vbRef.current;
+    if (!r || !(r.width > 0) || !(r.height > 0) || !Number.isFinite(v.w) || !Number.isFinite(v.h)) {
+      return null;
+    }
     return {
       x: v.x + ((e.clientX - r.left) / r.width) * v.w,
       y: v.y + ((e.clientY - r.top) / r.height) * v.h,
@@ -1849,8 +1903,9 @@ function SiteCanvas({
   };
   const pxTol = (px) => {
     const r = svgRef.current?.getBoundingClientRect();
-    if (!r) return 1;
-    return (px * vbRef.current.w) / r.width;
+    const w = vbRef.current.w;
+    if (!r || !(r.width > 0) || !Number.isFinite(w)) return 1;
+    return (px * w) / r.width;
   };
 
   useEffect(() => {
@@ -1881,15 +1936,19 @@ function SiteCanvas({
     }
     if (ptrsRef.current.size > 2) return;
     const p = world(e);
+    if (!p) return;
     if (calib?.active) { onCalibPick && onCalibPick(p); return; }
-    if (showSs && mode !== "draw" && mode !== "aline" && ss && Math.hypot(ss.x - p.x, ss.y - p.y) < pxTol(COARSE ? 22 : 12)) {
+    // The POI is grabbable in Edit only. It used to be grabbable in Pan too,
+    // and with a finger-sized grab radius that meant a drag starting anywhere
+    // near it moved the connection point instead of the map — Pan has one job.
+    if (showSs && mode === "edit" && ss && Math.hypot(ss.x - p.x, ss.y - p.y) < pxTol(TOUCH_TOL.snap)) {
       dragRef.current = { kind: "ss" };
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
     // align-line handles: ends rotate/reshape, middle moves the whole line
     if (mode === "edit" && alignLine) {
-      const tol = pxTol(10);
+      const tol = pxTol(TOUCH_TOL.grab);
       const mid = { x: (alignLine.p.x + alignLine.q.x) / 2, y: (alignLine.p.y + alignLine.q.y) / 2 };
       if (Math.hypot(alignLine.p.x - p.x, alignLine.p.y - p.y) < tol) {
         dragRef.current = { kind: "alineEnd", end: "p" };
@@ -1911,7 +1970,7 @@ function SiteCanvas({
       dragRef.current = { kind: "pan", start: p, vb0: { ...vbRef.current } };
       e.currentTarget.setPointerCapture(e.pointerId);
     } else if (mode === "edit") {
-      const tol = pxTol(COARSE ? 18 : 9);
+      const tol = pxTol(TOUCH_TOL.grab);
       // edge midpoints insert a new vertex, CAD-style
       for (let i = 0; i < polygon.length; i++) {
         const a = polygon[i], b = polygon[(i + 1) % polygon.length];
@@ -1966,34 +2025,60 @@ function SiteCanvas({
     const d = dragRef.current;
     if (!d) return;
     if (d.kind === "pan") {
-      const r = svgRef.current.getBoundingClientRect();
+      const r = svgRef.current?.getBoundingClientRect();
+      if (!r || !(r.width > 0) || !(r.height > 0)) return;
       const v = d.vb0;
       const px = ((e.clientX - r.left) / r.width) * v.w + v.x;
       const py = ((e.clientY - r.top) / r.height) * v.h + v.y;
       setVb({ x: v.x - (px - d.start.x), y: v.y - (py - d.start.y), w: v.w, h: v.h });
     } else if (d.kind === "vertex") {
       const p = world(e);
+      if (!p) return;
       setPolygon((poly) => poly.map((v, i) => (i === d.idx ? p : v)));
     } else if (d.kind === "ss") {
-      setSs(world(e));
+      const p = world(e);
+      if (p) setSs(p);
     } else if (d.kind === "alineEnd") {
       const p = world(e);
+      if (!p) return;
       setAlignLine((l) => ({ ...l, [d.end]: p }));
     } else if (d.kind === "alineMove") {
       const p = world(e);
+      if (!p) return;
       const dx = p.x - d.start.x, dy = p.y - d.start.y;
       setAlignLine({ p: { x: d.p0.x + dx, y: d.p0.y + dy }, q: { x: d.q0.x + dx, y: d.q0.y + dy } });
     }
   };
 
+  const lastTapRef = useRef(null);
   const onPointerUp = (e) => {
     ptrsRef.current.delete(e.pointerId);
     if (ptrsRef.current.size < 2) pinchRef.current = null;
+    /* Touch has no dblclick worth relying on, and the delete-a-vertex
+       gesture is the only way to undo a misplaced corner. Detect the
+       double tap ourselves and route it to the same handler. */
+    if (e.pointerType === "touch") {
+      const now = Date.now();
+      const prev = lastTapRef.current;
+      lastTapRef.current = { t: now, x: e.clientX, y: e.clientY };
+      if (prev && now - prev.t < 320
+          && Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 28) {
+        lastTapRef.current = null;
+        dragRef.current = null;
+        onDblClick(e);
+        return;
+      }
+    }
     const d = dragRef.current;
-    if (d && d.kind === "clickcheck" && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) {
+    // A mouse click moves a pixel or two; a finger tap routinely wobbles
+    // ten. At 5 px every tap on a phone was read as a tiny drag and threw
+    // the vertex away, which is why drawing a boundary by touch did nothing.
+    const tapSlop = e.pointerType === "touch" ? 14 : 5;
+    if (d && d.kind === "clickcheck" && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < tapSlop) {
       const p = world(e);
+      if (!p) { dragRef.current = null; return; }
       if (mode === "draw") {
-        if (draft.length >= 3 && Math.hypot(p.x - draft[0].x, p.y - draft[0].y) < pxTol(COARSE ? 22 : 12)) {
+        if (draft.length >= 3 && Math.hypot(p.x - draft[0].x, p.y - draft[0].y) < pxTol(TOUCH_TOL.snap)) {
           setPolygon(draft);
           setDraft([]);
           setMode("edit");
@@ -2020,7 +2105,8 @@ function SiteCanvas({
     }
     if (mode !== "edit" || polygon.length <= 3) return;
     const p = world(e);
-    const tol = pxTol(COARSE ? 18 : 9);
+    if (!p) return;
+    const tol = pxTol(TOUCH_TOL.grab);
     const idx = polygon.findIndex((v) => Math.hypot(v.x - p.x, v.y - p.y) < tol);
     if (idx >= 0) { onBeforeEdit && onBeforeEdit(); setPolygon((poly) => poly.filter((_, i) => i !== idx)); }
   };
@@ -2246,7 +2332,8 @@ function SiteCanvas({
         {/* grid connection point */}
         {showSs && ss && (
           <g style={{ cursor: "move" }}>
-            <rect x={ss.x - pxTol(COARSE ? 18 : 9)} y={ss.y - pxTol(COARSE ? 18 : 9)} width={pxTol(18)} height={pxTol(18)}
+            <rect x={ss.x - pxTol(TOUCH_TOL.handle)} y={ss.y - pxTol(TOUCH_TOL.handle)}
+              width={pxTol(TOUCH_TOL.handle * 2)} height={pxTol(TOUCH_TOL.handle * 2)}
               fill={C.transformer} stroke="#ffffff" strokeWidth="1.5" vectorEffect="non-scaling-stroke">
               <title>Grid connection point — drag to move (MV runs update)</title>
             </rect>
@@ -2265,7 +2352,7 @@ function SiteCanvas({
         {mode === "edit" && (
           <g>
             {polygon.map((p, i) => {
-              const s = pxTol(COARSE ? 9 : 5.5);
+              const s = pxTol(TOUCH_TOL.handle);
               return (
                 <rect key={`v${i}`} x={p.x - s} y={p.y - s} width={s * 2} height={s * 2}
                   fill="#fff" stroke={C.boundary} strokeWidth="1.6"
@@ -2276,7 +2363,7 @@ function SiteCanvas({
             })}
             {polygon.map((p, i) => {
               const q = polygon[(i + 1) % polygon.length];
-              const s = pxTol(COARSE ? 6.5 : 3.5);
+              const s = pxTol(TOUCH_TOL.midHandle);
               return (
                 <rect key={`m${i}`} x={(p.x + q.x) / 2 - s} y={(p.y + q.y) / 2 - s}
                   width={s * 2} height={s * 2} fill="none" stroke={C.boundary}
@@ -2368,7 +2455,9 @@ function SiteCanvas({
           background: "rgba(27,30,36,0.9)", padding: "3px 11px", borderRadius: 4,
           border: "1px solid #2c313b", pointerEvents: "none",
         }}>
-          Drag ■ to move a vertex · drag □ on an edge to add one · double-click a vertex to delete
+          {COARSE
+            ? "Drag ■ to move a corner · drag □ on an edge to add one · double-tap a corner to delete · two fingers to zoom"
+            : "Drag ■ to move a vertex · drag □ on an edge to add one · double-click a vertex to delete"}
         </div>
       )}
       {mode === "draw" && (
@@ -2379,8 +2468,10 @@ function SiteCanvas({
           border: `1px solid ${C.gridMajor}`,
         }}>
           {draft.length === 0
-            ? "Click to place the first vertex"
-            : `${draft.length} vertices — click the first one, double-click, or right-click to finish · Esc to cancel`}
+            ? (COARSE ? "Tap to place the first corner" : "Click to place the first vertex")
+            : COARSE
+              ? `${draft.length} corners — tap the first one, or use Close boundary above`
+              : `${draft.length} vertices — click the first one, double-click, or right-click to finish · Esc to cancel`}
         </div>
       )}
       {polygon.length < 3 && draft.length === 0 && (
@@ -3713,6 +3804,11 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               setAlign((a) => (a.mode === "line" ? { ...a, mode: "north" } : a));
             }}>
               Clear line
+            </button>
+          )}
+          {mode === "draw" && draft.length > 0 && (
+            <button className="btn" onClick={() => setDraft((d) => d.slice(0, -1))}>
+              Undo point
             </button>
           )}
           {mode === "draw" && draft.length >= 3 && (
