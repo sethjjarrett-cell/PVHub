@@ -1,5 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import PDF_WORKER_TEXT from "./pdfWorkerText.js";
+import { unzipSync, strFromU8 } from "fflate";
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   fmt, fmtDim, fmtKm, fmtArea, areaUnit, areaVal,
@@ -863,6 +864,84 @@ function parseDxf(text) {
 
 /** Choose the terrain points: prefer a terrain-named layer, drop stray
     outliers (survey markers, origin junk) that would blow up the grid. */
+/* =====================================================================
+   KML / KMZ
+
+   Google Earth is where a site usually starts life, so this is often the
+   first file a project has. KML is lon/lat degrees on WGS84, which the
+   rest of the tool cannot use directly — everything downstream is metres
+   on a local plane — so the import projects about a reference latitude
+   and the projection is stated in the import message rather than being
+   silently applied.
+   ===================================================================== */
+
+/** Metres per degree at latitude φ, WGS84 series. Good to a few parts in
+    10⁵ over a site, which is far below the accuracy of a traced boundary. */
+function metresPerDegree(latDeg) {
+  const f = (latDeg * Math.PI) / 180;
+  return {
+    lat: 111132.92 - 559.82 * Math.cos(2 * f) + 1.175 * Math.cos(4 * f),
+    lon: 111412.84 * Math.cos(f) - 93.5 * Math.cos(3 * f),
+  };
+}
+
+/** Project lon/lat to local metres about a reference point. Northing is
+    negated because the canvas is Y-down and north is up, the same
+    convention the DXF import uses. */
+function projectLonLat(coords, ref) {
+  const m = metresPerDegree(ref.lat);
+  return coords.map(([lon, lat]) => ({
+    x: (lon - ref.lon) * m.lon,
+    y: -(lat - ref.lat) * m.lat,
+  }));
+}
+
+const parseCoordBlock = (txt) =>
+  String(txt || "")
+    .trim()
+    .split(/\s+/)
+    .map((tok) => tok.split(",").map(Number))
+    .filter((a) => a.length >= 2 && Number.isFinite(a[0]) && Number.isFinite(a[1]))
+    .map((a) => [a[0], a[1], Number.isFinite(a[2]) ? a[2] : 0]);
+
+/**
+ * Pull rings, tracks and markers out of a KML document.
+ * Rings come from Polygon outer boundaries and from any LineString that
+ * closes on itself; a LineString that does not close is offered anyway,
+ * because a boundary traced in Google Earth frequently does not quite
+ * meet and closing it is what the user wanted.
+ */
+function parseKml(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("not valid XML");
+  const rings = [], marks = [];
+  const local = (el, tag) => [...el.getElementsByTagName("*")]
+    .filter((n) => n.localName === tag);
+  for (const pm of local(doc, "Placemark")) {
+    const name = (local(pm, "name")[0]?.textContent || "").trim();
+    for (const poly of local(pm, "Polygon")) {
+      const outer = local(poly, "outerBoundaryIs")[0] || poly;
+      const c = local(outer, "coordinates")[0];
+      if (!c) continue;
+      const pts = parseCoordBlock(c.textContent);
+      if (pts.length >= 3) rings.push({ name, pts, kind: "polygon" });
+    }
+    for (const ls of local(pm, "LineString")) {
+      const c = local(ls, "coordinates")[0];
+      if (!c) continue;
+      const pts = parseCoordBlock(c.textContent);
+      if (pts.length >= 3) rings.push({ name, pts, kind: "line" });
+    }
+    for (const pt of local(pm, "Point")) {
+      const c = local(pt, "coordinates")[0];
+      if (!c) continue;
+      const pts = parseCoordBlock(c.textContent);
+      if (pts.length) marks.push({ name, lon: pts[0][0], lat: pts[0][1], alt: pts[0][2] });
+    }
+  }
+  return { rings, marks };
+}
+
 function pickTerrainPoints(points) {
   if (!points.length) return { pts: [], layer: null, dropped: 0 };
   const TERR = /terrain|topo|surface|contour|elev|spot|dem|tin|ground/i;
@@ -2490,7 +2569,7 @@ function SiteCanvas({
 /* =====================================================================
    App
    ===================================================================== */
-function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw, uiMode, reg, onSummary, inv, setInv }) {
+function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw, uiMode, reg, onSummary, inv, setInv, loc, setLoc }) {
   const [pitchCfg, setPitchCfg] = useState({ rowPitch: 5.5, endGap: 1.0, spacingMode: "pitch" });
   const [site, setSite] = useState({ setback: 10 });
   const [blockCfg, setBlockCfg] = useState({ gapLane: 3, gapSlot: 8, rowsPerCorridor: 2 });
@@ -2587,6 +2666,65 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     [terrain, slopes, showSlope]
   );
 
+  /* Turn a parsed KML into a boundary and a site location. A ring becomes
+     the boundary; a lone marker sets the coordinates that drive ambient
+     temperature, the TMY pull and the yield model, which is what a
+     Google Earth pin is usually for. */
+  const applyKml = ({ rings, marks }, fname) => {
+    if (!rings.length && !marks.length) {
+      setImportMsg("That KML has no polygons, paths or placemarks in it.");
+      return;
+    }
+    // Reference point: the middle of the largest ring if there is one,
+    // otherwise the first marker. Everything projects about the same
+    // point so boundary and marker stay registered.
+    const ringLL = rings.map((r) => ({ ...r, ll: r.pts.map((q) => [q[0], q[1]]) }));
+    const ref = ringLL.length
+      ? (() => {
+          const all = ringLL.flatMap((r) => r.ll);
+          return {
+            lon: all.reduce((a, c) => a + c[0], 0) / all.length,
+            lat: all.reduce((a, c) => a + c[1], 0) / all.length,
+          };
+        })()
+      : { lon: marks[0].lon, lat: marks[0].lat };
+
+    const cand = ringLL
+      .map((r) => {
+        const pts = projectLonLat(r.ll, ref);
+        // Google Earth repeats the first point to close a ring; the tool
+        // closes implicitly, so a duplicated last vertex is a stray handle.
+        const last = pts[pts.length - 1], first = pts[0];
+        const trimmed = pts.length > 3 && Math.hypot(last.x - first.x, last.y - first.y) < 0.5
+          ? pts.slice(0, -1) : pts;
+        return { ...r, pts: trimmed, layer: r.name || "(unnamed)", area: Math.abs(polygonArea(trimmed)) };
+      })
+      .filter((r) => r.pts.length >= 3 && r.area > 100)
+      .sort((a, b) => b.area - a.area);
+
+    if (setLoc) setLoc({ lat: Number(ref.lat.toFixed(6)), lon: Number(ref.lon.toFixed(6)) });
+    setGeoOrigin(null);
+
+    if (cand.length) {
+      setDxfBoundaries(cand.slice(0, 8));
+      replaceBoundary(cand[0].pts);
+      setImportMsg(
+        `KML read from ${fname}: ${cand.length} closed area(s), largest ` +
+        `${fmtArea(cand[0].area)} — boundary set to “${cand[0].layer}”, pick another below if that is wrong. ` +
+        `Site coordinates set to ${ref.lat.toFixed(5)}, ${ref.lon.toFixed(5)} and shared with string sizing and yield. ` +
+        `Projected to metres about that latitude, so distances are true near the site and stretch slightly at its edges.`
+      );
+    } else {
+      const m = marks[0];
+      setImportMsg(
+        `KML read from ${fname}: ${marks.length} placemark(s), no closed area. ` +
+        `Site coordinates set to ${m.lat.toFixed(5)}, ${m.lon.toFixed(5)}${m.name ? ` from “${m.name}”` : ""} — ` +
+        `that drives the temperature pull, the TMY and the yield model. ` +
+        `A marker carries no extent, so the boundary is still yours to draw or import.`
+      );
+    }
+  };
+
   const handleImportFile = (file) => {
     if (/\.pdf$/i.test(file.name)) {
       (async () => {
@@ -2608,6 +2746,27 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           );
           try { doc.destroy(); } catch (e) { /* noop */ }
         } catch (e) { setImportMsg(`PDF could not be rendered (${e.message}).`); }
+      })();
+      return;
+    }
+    if (/\.(kmz|kml)$/i.test(file.name)) {
+      (async () => {
+        try {
+          let text;
+          if (/\.kmz$/i.test(file.name)) {
+            // A KMZ is a zip holding a doc.kml plus whatever icons the
+            // author used; take the first .kml in it.
+            const zip = unzipSync(new Uint8Array(await file.arrayBuffer()));
+            const key = Object.keys(zip).find((k) => /\.kml$/i.test(k));
+            if (!key) throw new Error("no .kml inside the .kmz");
+            text = strFromU8(zip[key]);
+          } else {
+            text = await file.text();
+          }
+          applyKml(parseKml(text), file.name);
+        } catch (err) {
+          setImportMsg(`KML/KMZ could not be read — ${err.message}.`);
+        }
       })();
       return;
     }
@@ -3200,12 +3359,12 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
             </div>
             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
               <label className="btn" style={{ textAlign: "center", cursor: "pointer" }}>
-                Import DXF / XYZ / CSV (boundary + terrain)
-                <input type="file" accept=".dxf,.csv,.xyz,.txt" style={{ display: "none" }}
+                Import KMZ / KML / DXF / XYZ / CSV (boundary + terrain)
+                <input type="file" accept=".kmz,.kml,.dxf,.csv,.xyz,.txt" style={{ display: "none" }}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
               </label>
               {importMsg && <div className="readout">{importMsg}
-                <br /><span style={{ color: C.muted }}>DWG must be saved as ASCII DXF first (Civil 3D / PVcase: SAVEAS → DXF). Terrain: surface → extract points, or export XYZ.</span>
+                <br /><span style={{ color: C.muted }}>KMZ/KML comes straight from Google Earth — a drawn polygon becomes the boundary, a pin sets the site coordinates. DWG must be saved as ASCII DXF first (Civil 3D / PVcase: SAVEAS → DXF). Terrain: surface → extract points, or export XYZ.</span>
               </div>}
               {polygon.length < 3 && (
                 <div className="readout" style={{ border: `1px solid ${C.accent}55` }}>
@@ -6217,7 +6376,8 @@ export default function App() {
     tilt: 25, clearance: 0.5, maxRot: 60,
   });
   const [ilrCap, setIlrCap] = useState(1.2);
-  const [siteLoc, setSiteLoc] = useState({ lat: 8.687, lon: -8.653 });
+  // Beyla, Simandou — the mine PV array that is the worked example.
+  const [siteLoc, setSiteLoc] = useState({ lat: 8.616413, lon: -8.860021 });
   const [summary, setSummary] = useState(null);
   const [cables, setCables] = useState(CABLE_DEFAULTS);
   const setCable = (k) => (v) => setCables((c0) => ({ ...c0, [k]: v }));
@@ -6502,7 +6662,8 @@ export default function App() {
       <div style={{ flex: 1, minHeight: 0, display: tool === "layout" ? "flex" : "none" }}>
         <LayoutTool module={pvMod} setModule={setMod2} frame={frame} setFrame={setFrame}
           elec={elec} setElec={setElec} invAcKw={pvInv.acKva || 0} uiMode={uiMode} reg={reg}
-          onSummary={setSummary} inv={pvInv} setInv={setPvInv} />
+          onSummary={setSummary} inv={pvInv} setInv={setPvInv}
+          loc={siteLoc} setLoc={setSiteLoc} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cdc" ? "flex" : "none" }}>
         <CableDcTab mod={pvMod} elec={elec} st={cables.dc} set={setCable("dc")} />
