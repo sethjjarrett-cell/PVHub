@@ -9,6 +9,7 @@ import {
 } from "./ui.jsx";
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { YieldReportTab } from "./YieldReport.jsx";
+import { parsePvsystFile } from "./pvsystFiles.js";
 
 /* =====================================================================
    LAYOUT GENERATOR — Phase 2
@@ -5033,6 +5034,17 @@ function saveLib(lib) {
   catch (e) { return false; }
 }
 
+/* Fields a PVsyst file supplies that no datasheet scrape ever produced,
+   so they have no entry in MOD_FIELDS / INV_FIELDS to take a label from. */
+const EXTRA_LABELS = {
+  length: { label: "Length", unit: "m" },
+  width: { label: "Width", unit: "m" },
+  cells: { label: "Cells in series", unit: "" },
+  ideality: { label: "Diode ideality γ", unit: "" },
+  bifaciality: { label: "Bifaciality", unit: "" },
+  vAc: { label: "AC line voltage", unit: "V" },
+};
+
 function ConfBadge({ c }) {
   const col = c === "high" ? "#59b56f" : c === "medium" ? "#d9a441" : "#d67070";
   return <span style={{ font: "700 8.5px system-ui", letterSpacing: "0.06em", color: col,
@@ -5055,6 +5067,34 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
     setBinIdx(0);
   };
   const run = () => runText(text);
+  /* A PVsyst component file needs no scraping: the manufacturer's own
+     numbers, already named and typed. Where one exists it beats the PDF
+     outright, so it gets its own path rather than going through the
+     text extractor. */
+  const [pvsyst, setPvsyst] = useState(null);
+  const onPvsyst = async (file) => {
+    setPdfBusy(true); setPdfMsg(""); setPvsyst(null);
+    try {
+      const raw = await file.text();
+      const { fields: f, meta } = parsePvsystFile(raw, kind);
+      if (!Object.keys(f).length) throw new Error("no readable parameters in it");
+      // The file states Pmax, Vmp and Imp independently, so they can be
+      // checked against each other exactly as a multi-bin PDF is.
+      let valid = null;
+      const P = f.pmax?.vals[0], V = f.vmp?.vals[0], I = f.imp?.vals[0];
+      if (P && V && I) valid = Math.abs(V * I - P) / P < 0.02;
+      setPvsyst(meta);
+      setRes({ empty: false, fields: f, template: "pvsyst", valid });
+      setPicks(Object.fromEntries(Object.keys(f).map((k) => [k, 0])));
+      setBinIdx(0);
+      setText("");
+      setPdfMsg(`Read ${file.name} — ${meta.manufacturer || "?"} ${meta.model || ""}`.trim());
+    } catch (e) {
+      setPdfMsg(`Could not read that file: ${e.message}.`);
+      setRes(null);
+    } finally { setPdfBusy(false); }
+  };
+
   const onPdf = async (file) => {
     setPdfBusy(true); setPdfMsg("");
     try {
@@ -5083,7 +5123,7 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
     for (const [k, v] of rows) patch[k] = valueOf(k, v);
     setPrev({ ...current });
     onApply(patch);
-    setRes(null); setText("");
+    setRes(null); setText(""); setPvsyst(null);
   };
   const missing = res && !res.empty
     ? fields.filter((f) => !found[f.key]).map((f) => f.label) : [];
@@ -5101,13 +5141,19 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
         onChange={(e) => setText(e.target.value)} />
       <div style={{ display: "flex", gap: 8, width: "100%", flexWrap: "wrap" }}>
         <label className="btn primary" style={{ cursor: pdfBusy ? "wait" : "pointer" }}>
-          {pdfBusy ? "Reading PDF…" : "Upload PDF"}
-          <input type="file" accept=".pdf,application/pdf" style={{ display: "none" }}
+          {pdfBusy ? "Reading…" : `Upload ${kind === "module" ? ".PAN" : ".OND"} or PDF`}
+          <input type="file" accept=".pan,.ond,.pdf,application/pdf" style={{ display: "none" }}
             disabled={pdfBusy}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) onPdf(f); e.target.value = ""; }} />
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              // Route on the extension, but the parser checks the file's
+              // own declared object type and says so if they disagree.
+              if (f) (/\.(pan|ond)$/i.test(f.name) ? onPvsyst(f) : onPdf(f));
+              e.target.value = "";
+            }} />
         </label>
         <button className="btn" onClick={run} disabled={!text.trim() || pdfBusy}>Read pasted text</button>
-        {res && <button className="btn" onClick={() => { setRes(null); setText(""); setPdfMsg(""); }}>Clear</button>}
+        {res && <button className="btn" onClick={() => { setRes(null); setText(""); setPdfMsg(""); setPvsyst(null); }}>Clear</button>}
       </div>
       {pdfMsg && <div style={{ font: "11px system-ui", color: C.muted }}>{pdfMsg}</div>}
 
@@ -5131,6 +5177,25 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
 
       {rows.length > 0 && (
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
+          {pvsyst && (
+            <div style={{ background: "#1b2a1e", border: "1px solid #2f5c39", borderRadius: 4,
+              padding: "8px 10px" }}>
+              <div style={{ font: "600 11.5px system-ui", color: "#7fc78f" }}>
+                PVsyst {pvsyst.kind} file — {pvsyst.manufacturer || "unknown maker"} {pvsyst.model || ""}
+              </div>
+              <div style={{ font: "11px system-ui", color: C.muted, marginTop: 3, lineHeight: 1.5 }}>
+                {pvsyst.dataSource ? <>Data source <b style={{ color: C.text }}>{pvsyst.dataSource}</b>. </> : null}
+                {pvsyst.version ? <>Written by PVsyst {pvsyst.version}. </> : null}
+                {pvsyst.tRef !== null && pvsyst.tRef !== undefined
+                  ? <>STC {fmt(pvsyst.gRef, 0)} W/m² at {fmt(pvsyst.tRef, 0)} °C. </> : null}
+                {pvsyst.tolUp ? <>Power tolerance {fmt(pvsyst.tolLow, 1)} to +{fmt(pvsyst.tolUp, 1)} %. </> : null}
+                {pvsyst.effEuro ? <>Euro efficiency {fmt(pvsyst.effEuro, 2)} %, peak {fmt(pvsyst.effMax, 2)} %. </> : null}
+                {pvsyst.phases ? <>{pvsyst.phases === "Tri" ? "Three-phase" : pvsyst.phases}. </> : null}
+                These are the manufacturer's own numbers as PVsyst holds them — no scraping, no
+                column guessing, and every row below shows the line it came from.
+              </div>
+            </div>
+          )}
           {res.decoded && (
             <div className="readout">This sheet used a non-standard font encoding — it has
               been decoded automatically. Give the values a harder look than usual.</div>
@@ -5145,7 +5210,8 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
           )}
           {res.valid === true && (
             <div style={{ font: "11px system-ui", color: "#59b56f" }}>
-              ✓ Cross-checked: Pmax ≈ Vmp × Imp holds for every power bin.
+              ✓ Cross-checked: Pmax ≈ Vmp × Imp
+              {res.template === "pvsyst" ? " — the file is internally consistent." : " holds for every power bin."}
             </div>
           )}
           {res.valid === false && (
@@ -5171,7 +5237,7 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
 
           {rows.map(([k, v]) => {
             const f = fields.find((x) => x.key === k) ||
-              { label: k === "length" ? "Length" : "Width", unit: "m" };
+              EXTRA_LABELS[k] || { label: k, unit: "" };
             const linked = binKeys.includes(k);
             return (
               <div key={k} style={{ background: C.panel2, border: `1px solid ${C.line}`,
@@ -5315,6 +5381,10 @@ function ModuleTab({ mod, setMod, uiMode }) {
             <NumO label="β Vmp (if published)" unit="%/°C" value={mod.bVmp}
               onChange={(v) => setMod({ ...mod, bVmp: v })} />
             <NumS label="Max system voltage" unit="V" obj={mod} set={setMod} k="vSysMax" step={50} />
+            <NumO label="Cells in series" value={mod.cells} step={1}
+              onChange={(v) => setMod({ ...mod, cells: v })} />
+            <NumO label="Bifaciality" value={mod.bifaciality} step={0.05}
+              onChange={(v) => setMod({ ...mod, bifaciality: v })} />
           </>)}
           <div className="readout">
             These flow into every later step — string sizing uses the voltages and
@@ -6114,6 +6184,12 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
           onChange={(v) => setMp({ ...mp, albedo: v })} />
         <Num label="Bifaciality" value={mp.bifaciality} step={0.05} min={0} max={1}
           onChange={(v) => setMp({ ...mp, bifaciality: v })} />
+        {mod.bifaciality != null && Math.abs(mod.bifaciality - mp.bifaciality) > 0.005 && (
+          <button className="btn" style={{ alignSelf: "flex-end" }}
+            onClick={() => setMp({ ...mp, bifaciality: mod.bifaciality })}>
+            Module file says {fmt(mod.bifaciality, 2)} — use it
+          </button>
+        )}
         <Num label="Balance-of-system losses" unit="%" value={mp.bos} step={1} min={0} max={40}
           onChange={(v) => setMp({ ...mp, bos: v })} />
         {frame.mounting !== "fixed" ? (
@@ -6384,6 +6460,7 @@ export default function App() {
     voc: 49.97, vmp: 41.67, isc: 16.3, imp: 15.6,
     bVoc: -0.25, bVmp: null, gPmax: -0.29, aIsc: 0.045, vSysMax: 1500,
     vmpNoct: null, noct: null, cells: null, ideality: null, pmax: 650,
+    bifaciality: null,
   });
   const setMod2 = (m) => setPvMod({ ...m, pmax: m.power });
   const [pvInv, setPvInv] = useState({

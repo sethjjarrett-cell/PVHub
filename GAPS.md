@@ -238,6 +238,18 @@ temperature pull do not, and they are the same class of bug.
 **Recommendation.** Move those two onto `fetchTmy` / `fetchEra5` from `src/pvgis.js`. They already
 duplicate the logic, so this removes code as well as fixing the hang.
 
+### G20. The .OND reader is unverified against a real inverter file
+
+`src/pvsystFiles.js` parses both PVsyst component formats. The `.PAN` side is verified against
+a real Suntech file, value by value, including the two unit conversions. The `.OND` side was
+written from the documented structure and exercised only against a file constructed for the
+purpose, so key names that differ between PVsyst versions or manufacturers would come through
+empty rather than wrong — the parser takes only what it recognises.
+
+**Recommendation.** Run two or three real `.OND` files through it and widen the key aliases
+where they miss. `PMaxOUT` versus `PNomConv` for the AC rating, and whether a per-MPPT current
+is stated at all, are the fields most likely to vary.
+
 ---
 
 ## Severity 4 — Polish

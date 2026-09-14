@@ -16,6 +16,7 @@ src/ui.jsx             shared atoms: palette C, formatters, Num/Sel/Section/Work
 src/cableData.js       IEC reference tables and the adiabatic k physics — data, no React
 src/CableTools.jsx     the four Cables tabs (DC, AC, MV, short circuit)
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
+src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
 src/main.jsx           mount + boot-overlay teardown
 src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
@@ -87,6 +88,13 @@ and a two-finger pinch on the site canvas must change its `viewBox` width. Drawi
 case that broke before: four *finger* taps (a tap carries ~10 px of wobble, so simulate it
 with a touchmove between down and up) must place four corners, not zero.
 
+The PVsyst readers have a trap worth knowing: the format nests blocks, and a counted
+sub-block (`Remarks, Count=7`) closes with `End of Remarks`. Treating any `End of …` line as
+a generic pop closes the *enclosing* block early and silently dumps the whole electrical
+section onto the root, where the module lookup cannot see it — the file appears to parse and
+yields two fields instead of fourteen. `parsePvsystTree` pops only when the closing line
+names the block that opened. Files also carry a UTF-8 BOM.
+
 **Known pre-existing noise:** ~270 console errors of the form
 `<line> attribute y1: Expected length, "-Infinity"` fire on load, plus a favicon 404. That
 is GAPS §G3 (unguarded `Math.min(...)` over an empty collection), not something you broke.
@@ -128,6 +136,16 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **Conductor resistance is corrected from 20 °C.** IEC 60228 tabulates R at 20 °C; the
   tools apply α(θ−20) with the operating temperature as an input. Setting it to 20
   reproduces a spreadsheet that uses the table value raw.
+- **A PVsyst file beats a datasheet PDF, always.** A `.PAN` or `.OND` is the manufacturer's
+  data already named and typed; the PDF path exists only for when no file is available. Do
+  not "improve" the scraper at the expense of the file reader.
+- **Temperature coefficients are converted, not read.** PAN stores muISC in mA/°C and
+  muVocSpec in mV/°C; PVhub works in %/°C. The conversion needs Isc and Voc from the same
+  file, so those two fields are marked derived and show their arithmetic.
+- **An OND's MPPT range is the tracking range, not the full-power range.** `VMppMin` maps to
+  `trackLo`. It is also offered as `fpLo` at low confidence with a note to read the real
+  knee off the P-V curve — never silently as the full-power bound, which would widen the
+  string minimum and break the `N_min` convention above.
 - **Absolute yield is PVGIS's, differences between pitches are ours.** No public API takes a
   pitch, so the report scales a PVGIS PVcalc baseline by a row-geometry ratio. The ratios
   survive a change of irradiance dataset; the absolute does not. Never present the two as

@@ -24,8 +24,8 @@ Everything below is only needed if you want to change the code or host it online
 
 | Step | Tool | What it does |
 |------|------|--------------|
-| 1 | Module | Datasheet parameters, live I–V and P–V curves |
-| 2 | Inverter | Voltage windows and ratings, power-vs-voltage envelope |
+| 1 | Module | Datasheet parameters, live I–V and P–V curves; reads PVsyst `.PAN` files |
+| 2 | Inverter | Voltage windows and ratings, power-vs-voltage envelope; reads `.OND` files |
 | 3 | Frame | Mounting type, 1P–4P, frame dimensions, live frame drawing |
 | 4 | String Sizing | IEC 62548 basis, full workings shown, MPPT window widget |
 | 5 | Paralleling | Strings per inverter vs ILR and clipping; enter PVsyst results to compare |
@@ -47,6 +47,24 @@ Use **Save project** / **Open** in the header to keep work between sessions
 (a single `.json` file holding parameters, boundary, terrain and comparison runs).
 
 ---
+
+## Importing a component
+
+Module tab section 1C, or Inverter tab section 2C → **Upload .PAN / .OND or PDF**.
+
+A PVsyst `.PAN` (module) or `.OND` (inverter) is the best input the tool can be given: it is
+the manufacturer's own data already named and typed, so nothing is scraped and no column has
+to be guessed. Every value shows the exact line it came from, and the module cross-check
+(Pmax ≈ Vmp × Imp) runs on it just as it does on a PDF.
+
+Two values are converted rather than read, and say so: PVsyst stores the Isc coefficient in
+mA/°C and the Voc coefficient in mV/°C, while everything here works in %/°C.
+
+One value is deliberately not trusted. An `.OND` states the MPPT *tracking* range; PVhub
+sizes strings on the full-power lower bound from the P-V curve, which is a different and
+higher number. The tracking bound is filled in at low confidence with a note to overwrite it.
+
+Datasheet PDFs still work, for components with no PVsyst file.
 
 ## Importing a site
 

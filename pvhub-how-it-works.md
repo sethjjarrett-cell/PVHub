@@ -35,6 +35,21 @@ discovering it three steps later in the string sizing.
 **Feeds:** string sizing (voltages and coefficients), frame geometry
 (dimensions), layout capacity (rated power).
 
+**Reading a PVsyst file.** A `.PAN` or `.OND` short-circuits all of the datasheet-scraping
+machinery below. The format is a nested tree of `Key=Value` lines, so the values arrive
+already named — no label patterns, no row-position heuristics, no power-bin column to pick.
+Where a component has one, it is the input to use.
+
+Two conversions happen on the way in, both flagged as derived rather than read, because they
+need two values from the file rather than one: PVsyst stores the Isc coefficient in mA/°C and
+the Voc coefficient in mV/°C, and dividing by the STC Isc and Voc turns them into the %/°C
+that datasheets and the rest of this tool use. For the Suntech example that is 6.52 mA/°C ÷
+14.56 A = 0.0448 %/°C, and −141 mV/°C ÷ 51.81 V = −0.2721 %/°C.
+
+The file also supplies things no datasheet scrape ever recovered: cells in series, the diode
+ideality factor, and the bifaciality factor, which the pitch model will adopt on request
+rather than silently.
+
 ### 2 · Inverter
 
 Voltage windows and current limits, taken from the datasheet **and the P–V
@@ -472,6 +487,10 @@ enough to say *that fits* or *that doesn't*, not good enough to build from.
   Table B.3 stops at 400. Those rows are flagged in the table. Real ratings
   flatten off above 400 mm² as skin and proximity effects grow, so a straight
   line over-predicts and the safety reduction only partly offsets it.
+- **The `.OND` reader has not been checked against a real file.** The `.PAN` reader has, in
+  detail. The inverter side follows the documented structure and was exercised against a
+  constructed file, so field names that vary between PVsyst versions or manufacturers may
+  come through empty. Nothing is invented when a field is missing — it simply stays blank.
 - **The yield report's absolute figure is PVGIS's model, not a simulation.** It carries no
   soiling schedule, no availability assumption, no degradation profile and no measured
   horizon. Expect a bankable figure to sit below it. The pitch comparison is a ratio from a
