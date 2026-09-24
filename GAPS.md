@@ -250,6 +250,45 @@ empty rather than wrong — the parser takes only what it recognises.
 where they miss. `PMaxOUT` versus `PNomConv` for the AC rating, and whether a per-MPPT current
 is stated at all, are the fields most likely to vary.
 
+### G21. Extrapolated cable ratings over-predict, and the safety reduction is a guess
+
+Where IEC stops tabulating — 400 mm² and above for some LV methods, above 400 mm² in
+IEC 60502-2 Table B.3 — `ratingFor` and `mvTable` extend the last two tabulated sizes in a
+straight line and subtract a user-set reduction, 5 % by default. The interface labels every
+such figure as not IEC data, colours it separately, names the two rows it extended from and
+tells the reader to replace it with a manufacturer rating, so nothing is passed off as a
+standard value.
+
+The physics is still wrong in a known direction. Real ratings flatten off as size grows,
+because skin and proximity effects put an increasing share of the current in the outer
+annulus of the conductor, so a straight line over-predicts and the error widens with size.
+The 5 % reduction is not derived from anything; it was chosen to be roughly one standard
+size of margin at the sizes where extrapolation starts, and at 630 mm² it is very likely
+insufficient.
+
+**Recommendation.** Replace the linear extension with a fit to a manufacturer's published
+range over the tabulated sizes, or drop the extrapolation entirely for MV and require a
+manufacturer figure above 400 mm². A curve fitted to the tabulated rows themselves would at
+least reproduce the flattening rather than ignore it.
+
+### G22. Trench independence is asserted by the user, not checked
+
+Splitting a run across trenches divides the circuit count the grouping factor is looked up
+on, which is correct only if the trenches are thermally independent. The tools state this
+plainly and say that two trenches a metre apart are still one group, but nothing enforces
+it: the trench separation is not an input, so a user can split into four trenches a metre
+apart and get a grouping factor that does not exist in practice.
+
+The same applies to the circuit widths behind the trench-width calculation. `CIRCUIT_WIDTH_MM`
+is an indicative overall-diameter figure interpolated by size, not a manufacturer dimension,
+and there is an override input precisely because it is approximate. The width figure is good
+enough to answer "does this need one trench or three", not good enough for a civil drawing.
+
+**Recommendation.** Add trench centre-to-centre separation as an input and refuse to divide
+the circuit count below a separation where the trenches genuinely decouple — IEC 60502-2
+Table B.19 already tabulates by centre spacing and gives a defensible threshold. Take the
+cable diameter from the `.PAN`-equivalent manufacturer data where one is loaded.
+
 ---
 
 ## Severity 4 — Polish
@@ -285,4 +324,5 @@ by more than half.
 5. **G7, G8** — reconcile the README with the code, and write the assumptions down while
    the reasoning is still in someone's head.
 6. **G11** — ESLint in CI.
-7. **G5, G10, G12–G14**.
+7. **G21, G22** — cable extrapolation physics and trench independence.
+8. **G5, G10, G12–G14**.

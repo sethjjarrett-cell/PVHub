@@ -6409,6 +6409,7 @@ const CABLE_DEFAULTS = {
   dc: {
     sf: 1.25, iscOv: null, impOv: null, vmpOv: null, nModOv: null,
     tAir: 40, tGnd: 25, soil: 2.5, depth: 0.8,
+    focus: "duct", trenches: 1, maxTrenchW: 2, odOverride: 0, safetyPct: 5,
     rows: {
       air: { size: 6, par: 1, circ: 20, aux: 0, spacing: "touching" },
       duct: { size: 6, par: 1, circ: 20, aux: 0, spacing: "s10" },
@@ -6419,6 +6420,7 @@ const CABLE_DEFAULTS = {
   },
   ac: {
     iOv: null, tAir: 40, tGnd: 25, soil: 2.5, depth: 0.8,
+    focus: "duct", trenches: 1, maxTrenchW: 2, odOverride: 0, safetyPct: 5,
     rows: {
       air: { size: 630, par: 1, circ: 2, aux: 0, spacing: "touching" },
       duct: { size: 300, par: 2, circ: 2, aux: 0, spacing: "touching" },
@@ -6430,6 +6432,7 @@ const CABLE_DEFAULTS = {
   mv: {
     kv: 33, kva: 352, tGnd: 20, depth: 1.0, soil: 2.5, safety: 5,
     ductCirc: 3, ductSp: "s400", dirCirc: 3, dirSp: "s400",
+    refInstall: "duct", refSize: 150,
     theta: 0, vdLimit: 2, tCond: 90, slack: 1.2, spares: 20,
     runs: [
       { branch: 1, from: "1", to: "2", inv: 20, install: "duct", size: 150, dist: 344 },

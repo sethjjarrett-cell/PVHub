@@ -15,6 +15,8 @@ src/App.jsx            the shell and most of the application — ~6,300 lines
 src/ui.jsx             shared atoms: palette C, formatters, Num/Sel/Section/Working/Page
 src/cableData.js       IEC reference tables and the adiabatic k physics — data, no React
 src/CableTools.jsx     the four Cables tabs (DC, AC, MV, short circuit)
+src/CableRefTables.jsx the reference-table display layer — RefCard, the three
+                       highlight states, the factor chain
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
@@ -35,7 +37,8 @@ Build: `npm install`, then `npm run dev` (hot reload) or `npm run build` (into `
 
 **Almost everything is in `src/App.jsx`.** The layout generator, the yield simulation, the
 PDF datasheet parser, all the styling and most of the components. The cable tools are the
-exception — they live in `src/CableTools.jsx` and `src/cableData.js`, and they import their
+exception — they live in `src/CableTools.jsx`, `src/CableRefTables.jsx` and
+`src/cableData.js`, and they import their
 UI atoms from `src/ui.jsx` rather than from App.jsx, because importing App.jsx back into a
 tool it renders is a cycle. If you extract anything else, take the same route: move the
 shared piece into `ui.jsx` first, then import it from both sides.
@@ -136,9 +139,22 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **`N_rec` trades modules for frame divisibility**, falling back to the electrical maximum
   if the divisible candidate drops below `N_min`.
 - **Parallel strings take the lower** of connector limit and MPPT current headroom.
+- **Every factor shows the row it was read from.** The sizing tools print the IEC
+  tables they used and pick out the cell in green. A value that was interpolated is
+  amber on *both* bracketing rows with the result stated separately, because no such
+  row exists in the standard and colouring one of them green would be a lie. A value
+  extrapolated past where the table stops is purple and labelled as not IEC data
+  everywhere it appears. Do not collapse the three states into one.
+- **Extrapolated ratings are never presented as standard values.** Where IEC stops
+  tabulating, `ratingFor` extends the last two rows in a straight line and then
+  subtracts a safety reduction, because real ratings flatten off as skin and
+  proximity effects grow, so the straight line over-predicts. The tool says so, names
+  the two rows it extended from, and tells the reader to get a manufacturer figure.
 - **Cable grouping counts circuits, not cables.** A circuit with m conductors per pole in
   parallel counts as m circuits (IEC 60364-5-52 B.52.18/19 NOTE 3). Own circuits =
-  circuits routed together × parallel N.
+  circuits routed together × parallel N. Splitting the run across trenches divides
+  that count, because each trench is its own thermal group — but only if they are far
+  enough apart to be independent, which the interface says rather than assumes.
 - **The two soil-resistivity bases are never mixed.** IEC 60364-5-52 references its factors
   to 2.5 K·m/W, IEC 60502-2 to 1.5. Separate tables, deliberately.
 - **Conductor resistance is corrected from 20 °C.** IEC 60228 tabulates R at 20 °C; the

@@ -44,6 +44,47 @@ export function interp(table, x) {
   return table[table.length - 1][1];
 }
 
+/**
+ * Interpolate, and say which rows it came from.
+ *
+ * The interface has to show the reader the table and highlight the value
+ * in use, and for a continuous variable that value usually sits between
+ * two tabulated rows rather than on one. Returning the bracket lets the
+ * table highlight both rows and state the interpolated result, instead of
+ * pretending a number came from a row it did not.
+ */
+export function interpBracket(table, x) {
+  if (!table.length) return { value: null, lo: null, hi: null, exact: false, clamped: null };
+  const first = table[0], last = table[table.length - 1];
+  if (x <= first[0]) {
+    return { value: first[1], lo: first, hi: first, exact: x === first[0], clamped: x < first[0] ? "lo" : null };
+  }
+  if (x >= last[0]) {
+    return { value: last[1], lo: last, hi: last, exact: x === last[0], clamped: x > last[0] ? "hi" : null };
+  }
+  for (let i = 1; i < table.length; i++) {
+    const lo = table[i - 1], hi = table[i];
+    if (x === hi[0]) return { value: hi[1], lo: hi, hi, exact: true, clamped: null };
+    if (x < hi[0]) {
+      const f = (x - lo[0]) / (hi[0] - lo[0]);
+      return { value: lo[1] + (hi[1] - lo[1]) * f, lo, hi, exact: x === lo[0], clamped: null };
+    }
+  }
+  return { value: last[1], lo: last, hi: last, exact: false, clamped: null };
+}
+
+/** The same, for the grouping tables, which are rows of objects. */
+export function groupFactorBracket(rows, circuits, col) {
+  const pts = rows
+    .filter((r) => r[col] !== null && r[col] !== undefined)
+    .map((r) => [r.circuits, r[col]]);
+  if (!pts.length) return { value: null, lo: null, hi: null, exact: false, beyond: false };
+  if (circuits > pts[pts.length - 1][0]) {
+    return { value: null, lo: null, hi: null, exact: false, beyond: true };
+  }
+  return { ...interpBracket(pts, circuits), beyond: false };
+}
+
 /** True when x sits outside the tabulated range — the caller warns. */
 export const outsideRange = (table, x) =>
   table.length ? x < table[0][0] || x > table[table.length - 1][0] : true;
@@ -90,6 +131,12 @@ export const DC_CCC = [
   { size: 185, air: 542, duct: 343, ground: 387 },
   { size: 240, air: 641, duct: 395, ground: 448 },
   { size: 300, air: 741, duct: 446, ground: 502 },
+  // IEC 60364-5-52 does not tabulate 2-core copper above 300 mm². These are
+  // offered so a run can be sized past it, and every value for them is
+  // extrapolated and flagged as such wherever it appears.
+  { size: 400, air: null, duct: null, ground: null },
+  { size: 500, air: null, duct: null, ground: null },
+  { size: 630, air: null, duct: null, ground: null },
 ];
 
 /**
@@ -155,6 +202,44 @@ export const AL_X_TREFOIL = [
   { size: 240, x: 0.000086 }, { size: 300, x: 0.000085 }, { size: 400, x: 0.000085 },
   { size: 500, x: 0.000084 }, { size: 630, x: 0.000084 },
 ];
+
+/**
+ * A base current-carrying capacity for a size that the standard does not
+ * tabulate for that installation method.
+ *
+ * IEC stops where it stops: 2-core copper above 300 mm², and buried
+ * aluminium single-cores above 300 mm², are simply not in the tables.
+ * Rather than refuse to size the run, the last two tabulated sizes are
+ * extended in a straight line and a safety reduction is taken off.
+ *
+ * This is a placeholder for a manufacturer rating, not a standard value,
+ * and it is never returned without the flag that says so. Real ratings
+ * flatten off as size grows, because skin and proximity effects rise, so
+ * a straight line over-predicts and the reduction only partly offsets it.
+ */
+export function ratingFor(table, size, col, safetyPct = 5) {
+  const row = rowFor(table, size);
+  if (!row) return { value: null, extrapolated: false, reason: `${size} mm² is not in this table.` };
+  if (row[col] !== null && row[col] !== undefined) {
+    return { value: row[col], extrapolated: false, reason: null };
+  }
+  // The last two sizes that do have a rating in this column set the slope.
+  const known = table.filter((r) => r[col] !== null && r[col] !== undefined);
+  if (known.length < 2) {
+    return { value: null, extrapolated: false, reason: "Not enough tabulated rows to extend from." };
+  }
+  const a = known[known.length - 2], b = known[known.length - 1];
+  const slope = (b[col] - a[col]) / (b.size - a.size);
+  const raw = b[col] + slope * (size - b.size);
+  const value = raw * (1 - safetyPct / 100);
+  return {
+    value: value > 0 ? value : null,
+    extrapolated: true,
+    basis: { from: a.size, to: b.size, slope, raw, safetyPct },
+    reason: `IEC does not tabulate ${size} mm² for this method. Extended from the `
+      + `${a.size} and ${b.size} mm² rows, less ${safetyPct}%.`,
+  };
+}
 
 /* ---------------------------------------------------------------
    3.  LV derating — IEC 60364-5-52 Annex B
@@ -449,3 +534,175 @@ export function dcHeatFactor(kappa, f, tk) {
 export const SIZES = [
   1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500, 630,
 ];
+
+/* ---------------------------------------------------------------
+   6.  Trenches and physical arrangement
+
+   Grouping factors assume the circuits share one thermal environment.
+   A real trench has a width limit, usually about 2 m for a machine-dug
+   trench that a person can still work in, so twenty circuits at half a
+   metre apart is not one trench, it is several. Splitting them is not
+   only a civils question: it changes the grouping factor, because the
+   lookup is on circuits per trench rather than circuits in total.
+   --------------------------------------------------------------- */
+
+/** Clear spacing between circuits, in metres, for the LV grouping tables. */
+export const LV_DUCT_SPACING_M = { touching: 0, s025: 0.25, s05: 0.5, s10: 1.0 };
+export const LV_DIRECT_SPACING_M = { touching: 0, dia: "oneDiameter", s0125: 0.125, s025: 0.25, s05: 0.5 };
+/** IEC 60502-2 states MV spacing centre to centre, not clear. */
+export const MV_SPACING_CENTRE_M = { touching: "touching", s200: 0.2, s400: 0.4, s600: 0.6, s800: 0.8 };
+
+/**
+ * Indicative overall width of one circuit, in millimetres: a two-core or
+ * a trefoil bundle, not a single core. Enough to size a trench to the
+ * nearest sensible width; replace with the manufacturer's figure before
+ * anything is dug.
+ */
+export const CIRCUIT_WIDTH_MM = {
+  dc: [[1.5, 11], [2.5, 12], [4, 13], [6, 14], [10, 17], [16, 20], [25, 24], [35, 27],
+    [50, 31], [70, 35], [95, 40], [120, 44], [150, 48], [185, 54], [240, 60], [300, 66],
+    [400, 76], [500, 85], [630, 95]],
+  ac: [[25, 36], [35, 39], [50, 43], [70, 48], [95, 54], [120, 58], [150, 62], [185, 68],
+    [240, 76], [300, 82], [400, 92], [500, 102], [630, 114]],
+  mv: [[16, 66], [25, 70], [35, 74], [50, 80], [70, 86], [95, 94], [120, 100], [150, 106],
+    [185, 114], [240, 124], [300, 132], [400, 146], [500, 160], [630, 176]],
+};
+export const circuitWidthMm = (kind, size) => interp(CIRCUIT_WIDTH_MM[kind] || CIRCUIT_WIDTH_MM.dc, size);
+
+/**
+ * Work out how the circuits divide between trenches and whether each one
+ * is diggable. Returns the minimum number of trenches that fits as well,
+ * so the interface can recommend rather than only complain.
+ *
+ * Separate trenches are assumed far enough apart to be thermally
+ * independent. That is the whole point of splitting, but it is an
+ * assumption the interface has to state: two trenches a metre apart are
+ * still one thermal group and the grouping factor should be looked up on
+ * the total, not on the half.
+ */
+export function trenchPlan({
+  ownCircuits, auxCircuits = 0, trenches = 1,
+  clearSpacingM = 0, circuitWidthM = 0.05, maxWidthM = 2, edgeM = 0.15, centreSpacingM = null,
+}) {
+  const total = Math.max(0, Math.round(ownCircuits + auxCircuits));
+  const n = Math.max(1, Math.round(trenches));
+  const perTrench = Math.ceil(total / n);
+  const centre = centreSpacingM !== null
+    ? Math.max(centreSpacingM, circuitWidthM)
+    : (clearSpacingM === "oneDiameter" ? circuitWidthM * 2 : clearSpacingM + circuitWidthM);
+  const widthOf = (k) => (k <= 0 ? 0 : (k - 1) * centre + circuitWidthM + 2 * edgeM);
+  const width = widthOf(perTrench);
+
+  let minTrenches = 1;
+  while (minTrenches < 200 && widthOf(Math.ceil(total / minTrenches)) > maxWidthM) minTrenches++;
+
+  return {
+    total, trenches: n, perTrench, centreSpacingM: centre, widthM: width,
+    fits: width <= maxWidthM, maxWidthM, minTrenches,
+    spare: n * perTrench - total,
+  };
+}
+
+/* ---------------------------------------------------------------
+   7.  The LV derating chain, and sizing against it
+   --------------------------------------------------------------- */
+
+/**
+ * Derate one candidate size, returning not just the answer but every
+ * lookup that produced it, so the interface can show the reader the
+ * table each factor came from and highlight the row in use.
+ */
+export function derateLV({
+  table, install, size, tAir, tGnd, soil, depth, circuits, spacing, safetyPct = 5,
+}) {
+  const notes = [];
+  const rating = ratingFor(table, size, install, safetyPct);
+  if (rating.reason && !rating.extrapolated) notes.push(rating.reason);
+
+  const tempTable = install === "air" ? LV_TEMP_AIR : LV_TEMP_GROUND;
+  const fTemp = interpBracket(tempTable, install === "air" ? tAir : tGnd);
+
+  let fGroup, groupRows, groupCol;
+  if (circuits <= 1) {
+    fGroup = { value: 1, lo: null, hi: null, exact: true, beyond: false };
+    groupRows = null; groupCol = null;
+  } else if (install === "air") {
+    groupRows = LV_GROUP_AIR.map(([c, f]) => ({ circuits: c, f }));
+    groupCol = "f";
+    fGroup = groupFactorBracket(groupRows, circuits, groupCol);
+  } else {
+    groupRows = install === "duct" ? LV_GROUP_DUCT : LV_GROUP_DIRECT;
+    groupCol = spacing;
+    fGroup = groupFactorBracket(groupRows, circuits, groupCol);
+  }
+  if (fGroup.beyond) {
+    notes.push(`${circuits} circuits in one group is past the last row IEC tabulates at this spacing. `
+      + "Split the run across more trenches, or widen the spacing.");
+  }
+
+  const soilTable = install === "duct" ? LV_SOIL_DUCT : LV_SOIL_DIRECT;
+  const fSoil = install === "air"
+    ? { value: 1, lo: null, hi: null, exact: true, clamped: null }
+    : interpBracket(soilTable, soil);
+
+  const depthTable = install === "air" ? null
+    : install === "duct" ? (size <= 185 ? DEPTH_DUCT_LE185 : DEPTH_DUCT_GT185)
+      : (size <= 185 ? DEPTH_DIRECT_LE185 : DEPTH_DIRECT_GT185);
+  const fDepth = install === "air"
+    ? { value: 1, lo: null, hi: null, exact: true, clamped: null }
+    : interpBracket(depthTable, depth);
+
+  const ok = rating.value !== null && fGroup.value !== null;
+  const df = ok ? fTemp.value * fGroup.value * fSoil.value * fDepth.value : null;
+  return {
+    size, install,
+    base: rating.value, extrapolated: rating.extrapolated, extrapBasis: rating.basis || null,
+    extrapReason: rating.extrapolated ? rating.reason : null,
+    fTemp, fGroup, fSoil, fDepth,
+    tempTable, groupRows, groupCol, soilTable, depthTable,
+    df, derated: ok ? rating.value * df : null,
+    notes,
+  };
+}
+
+/**
+ * The smallest size in the table that carries the current, given the
+ * same installation. Returns the whole chain for the winner so the
+ * interface can show why, plus how far the current choice misses by.
+ *
+ * Sizing up is only one of three ways out of a failing check, so the
+ * alternatives are returned too: more cables in parallel spreads the
+ * current, and more trenches improves the grouping factor. Which is
+ * cheapest is a site question, not one this can answer.
+ */
+export function recommendSize(params, designCurrent, parallel = 1) {
+  const { table } = params;
+  const perCable = designCurrent / Math.max(1, parallel);
+  const candidates = [];
+  for (const row of table) {
+    const d = derateLV({ ...params, size: row.size });
+    candidates.push({ size: row.size, derated: d.derated, extrapolated: d.extrapolated, chain: d });
+    if (d.derated !== null && perCable <= d.derated) {
+      return {
+        found: true, size: row.size, derated: d.derated, extrapolated: d.extrapolated,
+        chain: d, perCable, candidates,
+        headroomA: d.derated - perCable,
+        utilPct: (perCable / d.derated) * 100,
+      };
+    }
+  }
+  return { found: false, perCable, candidates };
+}
+
+/** How far a failing check misses by, in the terms a designer thinks in. */
+export function shortfall(perCable, derated) {
+  if (derated === null || derated === undefined || !(derated > 0)) return null;
+  const overA = perCable - derated;
+  return {
+    overA,
+    overPct: (overA / derated) * 100,
+    utilPct: (perCable / derated) * 100,
+    /* Parallel cables needed at this size to bring it inside the rating. */
+    parallelNeeded: Math.ceil(perCable / derated),
+  };
+}

@@ -161,6 +161,47 @@ circuits for the lookup, not six. A trench cross-section is drawn from the same
 inputs the factor is looked up with, so a wrong count or spacing is visible rather
 than buried in a cell.
 
+**Every number shows where it came from.** Under each sizing pane the tools print
+the IEC tables they actually read, with the cell they used picked out:
+
+| Colour | Means |
+|---|---|
+| green | read straight off a tabulated row |
+| amber | the two rows an interpolated value sits between, with the result stated separately |
+| purple | extrapolated past where the standard stops — not IEC data |
+
+Both bracketing rows are amber rather than one of them green, because no such row
+exists in the standard and colouring one would misrepresent it. A card the reader
+has collapsed re-opens itself when its value becomes interpolated or extrapolated,
+which is exactly when the working needs to be visible. Above the tables the same
+arithmetic runs as a line of chips — `base × f_temp × f_grp × f_soil × f_depth =
+derated`, against the design current — so the factor that cost the capacity is
+obvious at a glance. It is nearly always grouping.
+
+**Where the standard stops, the tool extends it and says so.** IEC 60364-5-52 does
+not tabulate 400 mm² and above for every method; IEC 60502-2 Table B.3 stops at
+400 mm². Rather than showing a blank, the tool extends the last two tabulated sizes
+in a straight line and subtracts a safety reduction you set (5 % by default), then
+names the two rows it extended from. Real ratings flatten off at large sizes as skin
+and proximity effects grow, so the straight line over-predicts and the reduction only
+partly offsets it. These figures are placeholders for a manufacturer rating, and the
+interface never lets one pass as a standard value.
+
+**When it fails, it says by how much and what to do.** A cable over its derated
+rating gets the shortfall in amps and per cent, the utilisation, and three costed
+ways out: the next size up that actually carries it, the number of parallel cables
+that would do instead, and — for a buried run — the number of trenches that would
+lift the grouping factor enough. Each comes with a button that applies it.
+
+**Trenching.** A trench is typically 2 m wide at most, so twenty circuits at 1 m
+centres do not go in one. The tools work out the width the stated spacing needs,
+compare it against a maximum you set, and if it does not fit say how many trenches
+it takes. Splitting the run divides the circuit count the grouping factor is looked
+up on, because each trench is then its own thermal group — which holds only if they
+are far enough apart to be thermally independent, and the interface says so rather
+than quietly assuming it. Two trenches a metre apart are still one group and the
+lookup belongs on the total.
+
 **Will the volt drop and the loss be acceptable?** DC uses a loop factor, because
 the circuit is out and back and both legs drop volts; AC and MV use
 √3·I·(R·cos θ + X·sin θ)·L, where the reactance term is negligible at unity power
@@ -170,8 +211,10 @@ the headroom against the actual run — the last of these being the number that
 usually decides whether to upsize the cable or move the transformer.
 
 The MV tab adds ring runs: current accumulates along a branch and resets at each new
-branch, so a radial feeder is one branch numbered from its far end inwards. It ends
-in a cable schedule by size with a spares allowance, which is the bill of materials.
+branch, so a radial feeder is one branch numbered from its far end inwards. Any run
+over its rating is listed with the shortfall and the smallest size that carries it,
+or told plainly that no size does and the load has to be split. It ends in a cable
+schedule by size with a spares allowance, which is the bill of materials.
 
 Two departures from a spreadsheet doing the same job, both stated in the interface.
 Continuous variables — temperature, depth, soil resistivity, circuit count — are

@@ -1,0 +1,273 @@
+/* =====================================================================
+   REFERENCE TABLES, SHOWN RATHER THAN HIDDEN
+
+   A derating factor is worthless if the reader cannot see where it came
+   from. Every table the sizing chain touches is printed here with the
+   value in use picked out in green, so the answer can be checked against
+   the standard by eye rather than taken on trust.
+
+   Three highlight states, and they mean different things:
+
+     green   the value in use, read straight off a tabulated row
+     amber   the two rows an interpolated value sits between, with the
+             interpolated result stated separately; no such row exists
+             in the standard, and pretending otherwise would be a lie
+     purple  extrapolated past where the standard stops, which is not
+             IEC data and is labelled as such everywhere it appears
+   ===================================================================== */
+
+import React, { useState } from "react";
+import { fmt, C } from "./ui.jsx";
+
+export const HL = {
+  used: { bg: "rgba(79,176,106,0.22)", line: "#4fb06a", text: "#8fd6a3" },
+  bracket: { bg: "rgba(224,166,58,0.16)", line: "#e0a63a", text: "#e8c07a" },
+  extrap: { bg: "rgba(140,111,208,0.20)", line: "#8c6fd0", text: "#bfa8ee" },
+};
+
+const cellStyle = (state) => ({
+  padding: "4px 9px",
+  font: "12px var(--mono)",
+  whiteSpace: "nowrap",
+  textAlign: "right",
+  ...(state ? {
+    background: HL[state].bg,
+    boxShadow: `inset 0 0 0 1.5px ${HL[state].line}`,
+    color: HL[state].text,
+    fontWeight: 700,
+  } : { color: C.text }),
+});
+
+const headStyle = {
+  padding: "5px 9px", borderBottom: `1px solid ${C.line}`, textAlign: "right",
+  font: "600 9.5px system-ui", textTransform: "uppercase", letterSpacing: "0.06em",
+  color: C.muted, whiteSpace: "nowrap",
+};
+
+/** A table in a collapsible card, so six of them do not drown the page. */
+export function RefCard({ title, source, note, open: openInit = true, emphasis = false, children }) {
+  /* Cards start open: the whole point of this section is that the reader
+     can see the row every number was read from without hunting for it.
+     A card the reader has collapsed re-opens itself if its value later
+     becomes interpolated or extrapolated, because that is exactly when
+     the working needs to be visible rather than taken on trust. */
+  const [open, setOpen] = useState(openInit);
+  const [wasEmph, setWasEmph] = useState(emphasis);
+  if (emphasis && !wasEmph) { setWasEmph(true); setOpen(true); }
+  if (!emphasis && wasEmph) setWasEmph(false);
+  return (
+    <div style={{ width: "100%", background: C.panel2, border: `1px solid ${C.line}`,
+      borderRadius: 6, marginBottom: 8, overflow: "hidden" }}>
+      <button onClick={() => setOpen(!open)} style={{
+        width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer",
+        padding: "9px 11px", display: "flex", alignItems: "baseline", gap: 9,
+      }}>
+        <span style={{ font: "600 12px system-ui", color: C.text }}>{title}</span>
+        <span style={{ font: "10.5px system-ui", color: C.muted, flex: 1 }}>{source}</span>
+        <span style={{ color: C.muted, fontSize: 10 }}>{open ? "▴ hide" : "▾ show"}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "0 11px 11px" }}>
+          {note && <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, marginBottom: 7 }}>{note}</div>}
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{children}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Two-column tables: temperature, soil resistivity, burial depth. */
+export function Table1D({ table, xLabel, yLabel, bracket, fmtX = (v) => v, dp = 2 }) {
+  const loX = bracket?.lo?.[0], hiX = bracket?.hi?.[0];
+  const exact = bracket?.exact;
+  const stateFor = (x) => {
+    if (bracket?.lo === null) return null;
+    if (exact && x === loX) return "used";
+    if (!exact && (x === loX || x === hiX)) return "bracket";
+    return null;
+  };
+  return (
+    <>
+      <table style={{ borderCollapse: "collapse" }}>
+        <thead><tr>
+          <th style={{ ...headStyle, textAlign: "left" }}>{xLabel}</th>
+          {table.map(([x]) => <th key={x} style={headStyle}>{fmtX(x)}</th>)}
+        </tr></thead>
+        <tbody><tr>
+          <td style={{ padding: "4px 9px", font: "12px var(--mono)", color: C.muted, whiteSpace: "nowrap" }}>{yLabel}</td>
+          {table.map(([x, y]) => <td key={x} style={cellStyle(stateFor(x))}>{fmt(y, dp)}</td>)}
+        </tr></tbody>
+      </table>
+      {bracket && !exact && bracket.lo && (
+        <div style={{ marginTop: 6, font: "11px var(--mono)", color: HL.used.text }}>
+          interpolated between {fmtX(loX)} and {fmtX(hiX)}
+          {" → "}<b>{fmt(bracket.value, 3)}</b>
+          {bracket.clamped && <span style={{ color: HL.bracket.text }}>
+            {"  "}(input is outside the table, so the end value is held)
+          </span>}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Grouping tables: rows of circuit counts, columns of spacing. */
+export function TableGroup({ rows, cols, activeCol, circuits, bracket }) {
+  const loC = bracket?.lo?.[0], hiC = bracket?.hi?.[0];
+  const exact = bracket?.exact;
+  const stateFor = (r, colKey) => {
+    if (colKey !== activeCol || bracket?.lo === null) return null;
+    if (exact && r.circuits === loC) return "used";
+    if (!exact && (r.circuits === loC || r.circuits === hiC)) return "bracket";
+    return null;
+  };
+  return (
+    <>
+      <table style={{ borderCollapse: "collapse" }}>
+        <thead><tr>
+          <th style={{ ...headStyle, textAlign: "left" }}>Circuits</th>
+          {cols.map((c) => (
+            <th key={c.value} style={{ ...headStyle,
+              ...(c.value === activeCol ? { color: HL.used.text, borderBottom: `2px solid ${HL.used.line}` } : {}) }}>
+              {c.label}
+            </th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.circuits}>
+              <td style={{ padding: "4px 9px", font: "12px var(--mono)",
+                color: r.circuits === loC || r.circuits === hiC ? C.text : C.muted }}>{r.circuits}</td>
+              {cols.map((c) => (
+                <td key={c.value} style={cellStyle(stateFor(r, c.value))}>
+                  {r[c.value] === null || r[c.value] === undefined ? "—" : fmt(r[c.value], 2)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {bracket?.beyond && (
+        <div style={{ marginTop: 6, font: "11px var(--mono)", color: "#d67070" }}>
+          {circuits} circuits is past the last tabulated row, so no factor can be read.
+        </div>
+      )}
+      {bracket && !exact && !bracket.beyond && bracket.lo && (
+        <div style={{ marginTop: 6, font: "11px var(--mono)", color: HL.used.text }}>
+          interpolated between {loC} and {hiC} circuits {"→ "}<b>{fmt(bracket.value, 3)}</b>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Base current-carrying capacity, with the chosen size and method picked out. */
+export function TableCCC({ table, size, install, methods, extrapolated }) {
+  return (
+    <table style={{ borderCollapse: "collapse" }}>
+      <thead><tr>
+        <th style={{ ...headStyle, textAlign: "left" }}>Size mm&#178;</th>
+        {methods.map((m) => (
+          <th key={m.value} style={{ ...headStyle,
+            ...(m.value === install ? { color: HL.used.text, borderBottom: `2px solid ${HL.used.line}` } : {}) }}>
+            {m.label}
+          </th>
+        ))}
+      </tr></thead>
+      <tbody>
+        {table.map((r) => (
+          <tr key={r.size}>
+            <td style={{ padding: "4px 9px", font: "12px var(--mono)",
+              color: r.size === size ? C.text : C.muted, fontWeight: r.size === size ? 700 : 400 }}>
+              {r.size}
+            </td>
+            {methods.map((m) => {
+              const v = r[m.value];
+              const isPick = r.size === size && m.value === install;
+              const missing = v === null || v === undefined;
+              return (
+                <td key={m.value} style={cellStyle(isPick ? (missing ? "extrap" : "used") : null)}>
+                  {missing
+                    ? <span style={{ color: isPick ? HL.extrap.text : C.muted }}>
+                        {isPick && extrapolated ? fmt(extrapolated, 0) : "not tabulated"}
+                      </span>
+                    : fmt(v, 0)}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/* ---------------------------------------------------------------
+   The derating chain, as one readable line of arithmetic
+   --------------------------------------------------------------- */
+
+function Chip({ label, value, state, sub }) {
+  const col = state ? HL[state] : null;
+  return (
+    <div style={{
+      background: col ? col.bg : C.panel2, border: `1px solid ${col ? col.line : C.line}`,
+      borderRadius: 6, padding: "6px 10px", minWidth: 78, textAlign: "center",
+    }}>
+      <div style={{ font: "10px system-ui", color: C.muted, letterSpacing: "0.03em" }}>{label}</div>
+      <div style={{ font: "650 15px var(--mono)", color: col ? col.text : C.text }}>{value}</div>
+      {sub && <div style={{ font: "9.5px system-ui", color: C.muted, marginTop: 1 }}>{sub}</div>}
+    </div>
+  );
+}
+
+const Times = () => (
+  <div style={{ font: "600 15px var(--mono)", color: C.muted, alignSelf: "center" }}>&#215;</div>
+);
+
+/**
+ * base × f_temp × f_grp × f_soil × f_depth = derated, drawn as chips so
+ * the reader can see at a glance which factor cost the capacity. It is
+ * nearly always grouping.
+ */
+export function FactorChain({ chain, perCable }) {
+  const f = (b) => (b?.value === null || b?.value === undefined ? "—" : fmt(b.value, 3));
+  const st = (b) => (b?.value === null ? null : b?.exact ? "used" : b?.lo ? "bracket" : null);
+  const pass = chain.derated !== null && perCable <= chain.derated;
+  return (
+    <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "stretch", width: "100%" }}>
+      <Chip label="Base rating" value={chain.base === null ? "—" : fmt(chain.base, 0)}
+        state={chain.extrapolated ? "extrap" : "used"}
+        sub={chain.extrapolated ? "extrapolated" : "A, from IEC"} />
+      <Times />
+      <Chip label="f_temp" value={f(chain.fTemp)} state={st(chain.fTemp)} />
+      <Times />
+      <Chip label="f_grp" value={f(chain.fGroup)} state={st(chain.fGroup)} sub="grouping" />
+      <Times />
+      <Chip label="f_soil" value={f(chain.fSoil)} state={st(chain.fSoil)} />
+      <Times />
+      <Chip label="f_depth" value={f(chain.fDepth)} state={st(chain.fDepth)} />
+      <div style={{ font: "600 15px var(--mono)", color: C.muted, alignSelf: "center" }}>=</div>
+      <Chip label="Derated" value={chain.derated === null ? "—" : fmt(chain.derated, 1)}
+        state={pass ? "used" : null} sub="A per cable" />
+      <div style={{ font: "600 15px var(--mono)", color: C.muted, alignSelf: "center" }}>vs</div>
+      <Chip label="Design" value={fmt(perCable, 1)} sub="A per cable" />
+    </div>
+  );
+}
+
+/** Green when the value came straight off a row, amber when interpolated. */
+export function HighlightKey() {
+  return (
+    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", font: "10.5px system-ui",
+      color: C.muted, marginBottom: 8 }}>
+      {[["used", "read from the table"], ["bracket", "interpolated between these rows"],
+        ["extrap", "extrapolated, not IEC data"]].map(([k, label]) => (
+        <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, background: HL[k].bg,
+            boxShadow: `inset 0 0 0 1.5px ${HL[k].line}`, display: "inline-block" }} />
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}

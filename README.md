@@ -117,7 +117,8 @@ npm run build   # production build into dist/
 ```
 
 Most application code lives in `src/App.jsx`. The cable and short-circuit tools
-are in `src/CableTools.jsx` with their IEC reference data in `src/cableData.js`,
+are in `src/CableTools.jsx`, the reference-table display layer in
+`src/CableRefTables.jsx`, the IEC data and sizing logic in `src/cableData.js`,
 and the UI atoms both sides share are in `src/ui.jsx`.
 
 ---

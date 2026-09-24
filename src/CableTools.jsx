@@ -23,7 +23,12 @@
 import React, { useState, useMemo } from "react";
 import { fmt, C, Num, Sel, Section, Page, Working } from "./ui.jsx";
 import {
-  interp, groupFactor, rowFor,
+  RefCard, Table1D, TableGroup, TableCCC, FactorChain, HighlightKey, HL,
+} from "./CableRefTables.jsx";
+import {
+  interp, interpBracket, groupFactorBracket, groupFactor, rowFor, ratingFor, derateLV,
+  recommendSize, shortfall, trenchPlan, circuitWidthMm,
+  LV_DUCT_SPACING_M, LV_DIRECT_SPACING_M, MV_SPACING_CENTRE_M,
   DC_CCC, DC_R20, AC_CCC, AL_R20, AL_X_TREFOIL,
   LV_TEMP_AIR, LV_TEMP_GROUND, LV_GROUP_AIR, LV_GROUP_DUCT, LV_GROUP_DIRECT,
   LV_DUCT_SPACINGS, LV_DIRECT_SPACINGS, LV_SOIL_DUCT, LV_SOIL_DIRECT,
@@ -58,51 +63,26 @@ const INSTALLS = [
    Getting this wrong is the single most common way a trench design ends
    up thermally undersized.
    --------------------------------------------------------------- */
-function derateLV({ table, install, size, tAir, tGnd, soil, depth, circuits, spacing }) {
-  const row = rowFor(table, size);
-  const notes = [];
-  const base = row ? row[install] : null;
-  if (!row) notes.push(`${size} mm² is not in this cable's rating table.`);
-  else if (base === null) notes.push(`IEC does not tabulate ${size} mm² for this installation method.`);
-
-  const fTemp = install === "air"
-    ? interp(LV_TEMP_AIR, tAir)
-    : interp(LV_TEMP_GROUND, tGnd);
-
-  let fGroup;
-  if (circuits <= 1) fGroup = 1;
-  else if (install === "air") fGroup = groupFactor(LV_GROUP_AIR.map(([c, f]) => ({ circuits: c, f })), circuits, "f");
-  else if (install === "duct") fGroup = groupFactor(LV_GROUP_DUCT, circuits, spacing);
-  else fGroup = groupFactor(LV_GROUP_DIRECT, circuits, spacing);
-  if (fGroup === null) notes.push(`${circuits} circuits at this spacing is past the last tabulated row.`);
-
-  const fSoil = install === "air" ? 1
-    : install === "duct" ? interp(LV_SOIL_DUCT, soil) : interp(LV_SOIL_DIRECT, soil);
-  const fDepth = install === "air" ? 1
-    : install === "duct"
-      ? interp(size <= 185 ? DEPTH_DUCT_LE185 : DEPTH_DUCT_GT185, depth)
-      : interp(size <= 185 ? DEPTH_DIRECT_LE185 : DEPTH_DIRECT_GT185, depth);
-
-  const ok = base !== null && base !== undefined && fGroup !== null;
-  const df = ok ? fTemp * fGroup * fSoil * fDepth : null;
-  return { base, fTemp, fGroup, fSoil, fDepth, df, derated: ok ? base * df : null, notes };
-}
 
 /* ---------------------------------------------------------------
    Trench cross-section. Drawn from the same inputs the grouping factor
    is looked up with, so a wrong circuit count or spacing is visible
    rather than buried in a cell.
    --------------------------------------------------------------- */
-function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, aux }) {
-  const W = 420, H = 200;
-  const n = Math.max(1, Math.min(12, Math.round(circuits || 1)));
-  const groundY = 44;
-  const cableY = groundY + Math.min(120, Math.max(34, (depth || 0.8) * 62));
-  const pitch = Math.min(46, (W - 70) / n);
-  const x0 = W / 2 - ((n - 1) * pitch) / 2;
-  const rad = install === "air" ? 7 : 8;
+function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, aux, total, trenches }) {
+  const W = 460, H = 210;
+  const nT = Math.max(1, Math.min(4, Math.round(trenches || 1)));
+  const n = Math.max(1, Math.min(10, Math.round(circuits || 1)));
+  const groundY = 46;
+  const cableY = groundY + Math.min(110, Math.max(34, (depth || 0.8) * 58));
+  // Each trench gets its own slice of the drawing, with a gap between
+  // them, because the whole point of splitting is that they are far
+  // enough apart not to heat one another.
+  const slice = (W - 24) / nT;
+  const pitch = Math.min(34, (slice - 40) / Math.max(1, n));
+  const rad = Math.max(4, Math.min(8, pitch * 0.32));
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", maxWidth: 460 }}>
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", maxWidth: 500 }}>
       <defs>
         <pattern id="soilhatch" width="7" height="7" patternTransform="rotate(45)"
           patternUnits="userSpaceOnUse">
@@ -112,11 +92,20 @@ function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, 
       {install === "air" ? (
         <>
           <rect x="0" y="0" width={W} height={H} fill={C.paper} />
-          <rect x={x0 - 26} y={cableY + 14} width={(n - 1) * pitch + 52} height="7"
-            fill={C.steel} opacity="0.7" />
           <text x="14" y="26" fill={C.muted} style={{ font: "10px system-ui" }}>
-            Cable tray / free air — {n} circuit{n > 1 ? "s" : ""} touching
+            Cable tray or free air, {n} circuit{n > 1 ? "s" : ""} bunched and touching
           </text>
+          <rect x={W / 2 - (n - 1) * pitch / 2 - 26} y={cableY + 14}
+            width={(n - 1) * pitch + 52} height="7" fill={C.steel} opacity="0.7" />
+          {Array.from({ length: n }, (_, i) => {
+            const cx = W / 2 - ((n - 1) * pitch) / 2 + i * pitch;
+            return (
+              <g key={i}>
+                <circle cx={cx} cy={cableY} r={rad} fill={C.navy} stroke={C.navyLight} strokeWidth="1.2" />
+                <circle cx={cx} cy={cableY} r={rad * 0.45} fill={C.accent} opacity="0.85" />
+              </g>
+            );
+          })}
         </>
       ) : (
         <>
@@ -125,43 +114,49 @@ function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, 
           <rect x="0" y={groundY} width={W} height={H - groundY} fill="url(#soilhatch)" opacity="0.5" />
           <line x1="0" y1={groundY} x2={W} y2={groundY} stroke={C.soilLine} strokeWidth="1.5" />
           <text x="14" y="26" fill={C.muted} style={{ font: "10px system-ui" }}>
-            {install === "duct" ? "Cables in buried ducts" : "Direct buried"} — {n} circuit{n > 1 ? "s" : ""}, {spacingLabel}
+            {install === "duct" ? "Cables in buried ducts" : "Direct buried"}
+            {" · "}{nT} trench{nT > 1 ? "es" : ""} of {n} circuit{n > 1 ? "s" : ""}
+            {nT > 1 ? ` (${total} in total)` : ""}{" · "}{spacingLabel}
           </text>
-          {/* depth dimension */}
-          <line x1="20" y1={groundY} x2="20" y2={cableY} stroke={C.navyLight} strokeWidth="1" />
-          <line x1="15" y1={groundY} x2="25" y2={groundY} stroke={C.navyLight} strokeWidth="1" />
-          <line x1="15" y1={cableY} x2="25" y2={cableY} stroke={C.navyLight} strokeWidth="1" />
-          <text x="28" y={(groundY + cableY) / 2 + 3} fill={C.navyLight}
+          <line x1="14" y1={groundY} x2="14" y2={cableY} stroke={C.navyLight} strokeWidth="1" />
+          <line x1="9" y1={groundY} x2="19" y2={groundY} stroke={C.navyLight} strokeWidth="1" />
+          <line x1="9" y1={cableY} x2="19" y2={cableY} stroke={C.navyLight} strokeWidth="1" />
+          <text x="22" y={(groundY + cableY) / 2 + 3} fill={C.navyLight}
             style={{ font: "10px var(--mono)" }}>{fmt(depth, 2)} m</text>
+          {Array.from({ length: nT }, (_, t) => {
+            const x0 = 12 + t * slice + (slice - (n - 1) * pitch) / 2;
+            return (
+              <g key={t}>
+                {Array.from({ length: n }, (_, i) => {
+                  const cx = x0 + i * pitch;
+                  return (
+                    <g key={i}>
+                      {install === "duct" && (
+                        <circle cx={cx} cy={cableY} r={rad + 4} fill="none"
+                          stroke={C.steel} strokeWidth="1.4" strokeDasharray="3 2" />
+                      )}
+                      <circle cx={cx} cy={cableY} r={rad} fill={C.navy} stroke={C.navyLight} strokeWidth="1.1" />
+                      <circle cx={cx} cy={cableY} r={rad * 0.45} fill={C.accent} opacity="0.85" />
+                    </g>
+                  );
+                })}
+                <text x={x0 + ((n - 1) * pitch) / 2} y={cableY + 34} textAnchor="middle"
+                  fill={C.navyLight} style={{ font: "10px var(--mono)" }}>
+                  trench {t + 1}
+                </text>
+              </g>
+            );
+          })}
         </>
       )}
-      {Array.from({ length: n }, (_, i) => {
-        const cx = x0 + i * pitch;
-        return (
-          <g key={i}>
-            {install === "duct" && (
-              <circle cx={cx} cy={cableY} r={rad + 5} fill="none"
-                stroke={C.steel} strokeWidth="1.6" strokeDasharray="3 2" />
-            )}
-            <circle cx={cx} cy={cableY} r={rad} fill={C.navy} stroke={C.navyLight} strokeWidth="1.2" />
-            <circle cx={cx} cy={cableY} r={rad * 0.45} fill={C.accent} opacity="0.85" />
-          </g>
-        );
-      })}
-      {n > 1 && (
-        <>
-          <line x1={x0} y1={cableY + 30} x2={x0 + pitch} y2={cableY + 30}
-            stroke={C.navyLight} strokeWidth="1" />
-          <text x={x0 + pitch / 2} y={cableY + 44} textAnchor="middle" fill={C.navyLight}
-            style={{ font: "10px var(--mono)" }}>{spacingLabel}</text>
-        </>
-      )}
-      <text x={W - 12} y={H - 10} textAnchor="end" fill={C.muted} style={{ font: "10px var(--mono)" }}>
-        {own} own ({parallel}× parallel) + {aux} aux = {circuits} circuits
+      <text x={W - 12} y={H - 9} textAnchor="end" fill={C.muted} style={{ font: "10px var(--mono)" }}>
+        {own} own ({parallel}{"×"} parallel){aux ? ` + ${aux} aux` : ""}
+        {nT > 1 ? ` = ${total}, ${n} per trench` : ` = ${total ?? own + aux}`}
       </text>
     </svg>
   );
 }
+
 
 /* Utilisation bar — green to 80 %, amber to 100 %, red beyond. */
 function UtilBar({ pct }) {
@@ -252,6 +247,333 @@ const ImportedHead = () => (
 /* =====================================================================
    1.  DC — string and array cable
    ===================================================================== */
+/* =====================================================================
+   The LV sizing section, shared by the DC and AC tabs.
+
+   One installation method is in focus at a time, because a derating
+   chain is only legible for one method at once. The other two stay in a
+   comparison strip, so nothing is hidden, and the reference tables
+   underneath highlight whatever the focused method just read.
+   ===================================================================== */
+
+const METHODS = [
+  { value: "air", label: "In air / tray" },
+  { value: "duct", label: "Buried duct" },
+  { value: "ground", label: "Direct buried" },
+];
+
+function spacingOptionsFor(install) {
+  return install === "duct" ? LV_DUCT_SPACINGS
+    : install === "ground" ? LV_DIRECT_SPACINGS
+      : [{ value: "touching", label: "touching" }];
+}
+
+/** Everything about one installation method at one size. */
+function evaluateRow(row, install, st, table, kind, designCurrent) {
+  const own = row.circ * row.par;
+  const spacings = install === "duct" ? LV_DUCT_SPACING_M
+    : install === "ground" ? LV_DIRECT_SPACING_M : { touching: 0 };
+  const widthM = (st.odOverride > 0 ? st.odOverride : circuitWidthMm(kind, row.size)) / 1000;
+  const plan = trenchPlan({
+    ownCircuits: own, auxCircuits: row.aux, trenches: install === "air" ? 1 : st.trenches,
+    clearSpacingM: spacings[row.spacing] ?? 0,
+    circuitWidthM: widthM, maxWidthM: st.maxTrenchW,
+  });
+  const params = {
+    table, install, tAir: st.tAir, tGnd: st.tGnd, soil: st.soil, depth: st.depth,
+    circuits: plan.perTrench, spacing: row.spacing, safetyPct: st.safetyPct,
+  };
+  const chain = derateLV({ ...params, size: row.size });
+  const perCable = row.par > 0 ? designCurrent / row.par : null;
+  const short = chain.derated !== null && perCable !== null && perCable > chain.derated
+    ? shortfall(perCable, chain.derated) : null;
+  const rec = short ? recommendSize(params, designCurrent, row.par) : null;
+  return { own, plan, chain, perCable, short, rec, widthM, params };
+}
+
+function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) {
+  const focus = st.focus || "duct";
+  const row = st.rows[focus];
+  const upd = (patch) => set({ ...st, rows: { ...st.rows, [focus]: { ...row, ...patch } } });
+  const ev = evaluateRow(row, focus, st, table, kind, designCurrent);
+  const { plan, chain, perCable, short, rec } = ev;
+
+  /* Splitting the run lifts the grouping factor, because each trench is
+     its own thermal group. Find the fewest trenches that makes the
+     current size pass, so the advice is a button rather than a hint. */
+  let trenchFix = null;
+  if (short && focus !== "air") {
+    for (let t = st.trenches + 1; t <= st.trenches + 12; t++) {
+      const e = evaluateRow(row, focus, { ...st, trenches: t }, table, kind, designCurrent);
+      if (e.chain.derated !== null && e.perCable <= e.chain.derated) {
+        trenchFix = { trenches: t, derated: e.chain.derated, perTrench: e.plan.perTrench,
+          fGroup: e.chain.fGroup.value, widthM: e.plan.widthM };
+        break;
+      }
+    }
+  }
+  const spacingOpts = spacingOptionsFor(focus);
+  const buried = focus !== "air";
+
+  return (<>
+    <Section code="C3" title="Installation, and how the circuits are trenched">
+      <Sel label="Installation method in focus" value={focus}
+        onChange={(v) => set({ ...st, focus: v })} options={METHODS} />
+      <Sel label="Cable size" value={String(row.size)}
+        onChange={(v) => upd({ size: Number(v) })}
+        options={table.map((x) => ({ value: String(x.size), label: `${x.size} mm²` }))} />
+      <Num label="Cables in parallel per pole" value={row.par} step={1} min={1}
+        onChange={(v) => upd({ par: v })} />
+      <Num label="Circuits routed together" value={row.circ} step={1} min={1}
+        onChange={(v) => upd({ circ: v })} />
+      <Num label="Other loaded circuits sharing the route" value={row.aux} step={1} min={0}
+        onChange={(v) => upd({ aux: v })} />
+      {buried && (
+        <Sel label="Spacing between circuits" value={row.spacing}
+          onChange={(v) => upd({ spacing: v })} options={spacingOpts} />
+      )}
+      <Num label="Air temperature" unit="°C" value={st.tAir} step={1}
+        onChange={(v) => set({ ...st, tAir: v })} />
+      {buried && (<>
+        <Num label="Ground temperature" unit="°C" value={st.tGnd} step={1}
+          onChange={(v) => set({ ...st, tGnd: v })} />
+        <Num label="Soil resistivity" unit="K·m/W" value={st.soil} step={0.1}
+          onChange={(v) => set({ ...st, soil: v })} />
+        <Num label="Burial depth" unit="m" value={st.depth} step={0.05}
+          onChange={(v) => set({ ...st, depth: v })} />
+        <Num label="Trenches to split across" value={st.trenches} step={1} min={1}
+          onChange={(v) => set({ ...st, trenches: v })} />
+        <Num label="Maximum trench width" unit="m" value={st.maxTrenchW} step={0.1} min={0.3}
+          onChange={(v) => set({ ...st, maxTrenchW: v })} />
+      </>)}
+      <Num label="Circuit width override" unit="mm" value={st.odOverride} step={1} min={0}
+        onChange={(v) => set({ ...st, odOverride: v })} />
+
+      <div className="readout">
+        <b>Trenching.</b> {plan.total} circuit{plan.total === 1 ? "" : "s"} in total
+        {" "}({row.circ} routed together {"×"} {row.par} in parallel
+        {row.aux ? `, plus ${row.aux} other loaded circuit${row.aux === 1 ? "" : "s"}` : ""}).
+        {buried ? <>
+          {" "}Split across <b>{plan.trenches} trench{plan.trenches === 1 ? "" : "es"}</b>
+          {plan.trenches === 1
+            ? <>, so all <b>{plan.perTrench}</b> share one</>
+            : <>, <b>{plan.perTrench}</b> in each</>}, needing about <b>{fmt(plan.widthM, 2)} m</b> of width at
+          {" "}{fmt(plan.centreSpacingM * 1000, 0)} mm centres with a
+          {" "}{fmt((st.odOverride > 0 ? st.odOverride : circuitWidthMm(kind, row.size)), 0)} mm circuit.
+          {plan.fits
+            ? " That fits the stated maximum."
+            : ` That exceeds the ${fmt(st.maxTrenchW, 1)} m maximum.`}
+        </> : <> Grouping in air is on the bunch as a whole, so trenching does not apply.</>}
+        <br />
+        {plan.trenches > 1 ? <>
+          <b>The grouping factor is looked up on {plan.perTrench}</b>, not on the full
+          {" "}{plan.total}, because each trench is its own thermal group. That only holds if the
+          trenches are far enough apart to be independent; two trenches a metre apart are still
+          one group and the lookup belongs on the total.
+        </> : <>
+          <b>The grouping factor is looked up on all {plan.total}</b>, since they share one route.
+          Splitting them across trenches would raise it, because each trench is then its own
+          thermal group, provided they are far enough apart to be independent.
+        </>}
+      </div>
+
+      {buried && !plan.fits && (
+        <div className="warn" style={{ width: "100%" }}>
+          &#9888; {plan.perTrench} circuits at {fmt(plan.centreSpacingM * 1000, 0)} mm centres needs
+          {" "}{fmt(plan.widthM, 2)} m of trench, against a {fmt(st.maxTrenchW, 1)} m maximum.
+          {" "}<b>Use at least {plan.minTrenches} trench{plan.minTrenches === 1 ? "" : "es"}</b>
+          {" "}({Math.ceil(plan.total / plan.minTrenches)} circuits each), or bring the spacing in.
+          <button className="btn" style={{ marginLeft: 10, padding: "3px 10px" }}
+            onClick={() => set({ ...st, trenches: plan.minTrenches })}>
+            Split into {plan.minTrenches} trenches
+          </button>
+        </div>
+      )}
+
+      <div style={{ width: "100%", background: C.paper, border: `1px solid ${C.line}`,
+        borderRadius: 6, padding: 8 }}>
+        <TrenchDiagram install={focus} circuits={plan.perTrench} depth={st.depth}
+          parallel={row.par} own={ev.own} aux={row.aux} total={plan.total} trenches={plan.trenches}
+          spacingLabel={focus === "air" ? "touching"
+            : (spacingOpts.find((x) => x.value === row.spacing)?.label ?? row.spacing)} />
+      </div>
+    </Section>
+
+    <Section code="C4" title="Rating check, factor by factor">
+      <HighlightKey />
+      <FactorChain chain={chain} perCable={perCable ?? 0} />
+
+      <div style={{ width: "100%", marginTop: 4 }}>
+        {chain.derated === null ? (
+          <div className="warn" style={{ width: "100%" }}>
+            &#9888; {chain.notes.join(" ") || "This combination cannot be rated."}
+          </div>
+        ) : short ? (
+          <div className="warn" style={{ width: "100%" }}>
+            &#9888; <b>Too small by {fmt(short.overA, 1)} A, which is {fmt(short.overPct, 0)}% over
+            the derated rating</b> ({fmt(perCable, 1)} A against {fmt(chain.derated, 1)} A,
+            {" "}{fmt(short.utilPct, 0)}% utilised). Three ways out, and which is cheapest is a
+            site question:
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
+              <li>
+                {rec?.found
+                  ? <>Go up to <b>{rec.size} mm&#178;</b>, which derates to {fmt(rec.derated, 1)} A
+                      and leaves {fmt(rec.headroomA, 1)} A spare at {fmt(rec.utilPct, 0)}% utilised
+                      {rec.extrapolated ? <span style={{ color: HL.extrap.text }}> (extrapolated rating)</span> : null}.
+                      <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                        onClick={() => upd({ size: rec.size })}>Use {rec.size} mm&#178;</button></>
+                  : <>No size in this table carries it at this grouping, even extrapolated.</>}
+              </li>
+              <li>
+                Run <b>{short.parallelNeeded}</b> cable{short.parallelNeeded === 1 ? "" : "s"} per pole
+                instead of {row.par}. Remember that raises the circuit count for grouping, so it is
+                not a free halving.
+                <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                  onClick={() => upd({ par: short.parallelNeeded })}>
+                  Use {short.parallelNeeded} in parallel
+                </button>
+              </li>
+              {buried && (
+                <li>
+                  {trenchFix
+                    ? <>Split across <b>{trenchFix.trenches} trenches</b>, which puts
+                        {" "}{trenchFix.perTrench} circuits in each, lifts the grouping factor from
+                        {" "}{fmt(chain.fGroup.value ?? 0, 3)} to {fmt(trenchFix.fGroup, 3)} and the
+                        rating to {fmt(trenchFix.derated, 1)} A, at about {fmt(trenchFix.widthM, 2)} m
+                        of width each.
+                        <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                          onClick={() => set({ ...st, trenches: trenchFix.trenches })}>
+                          Split into {trenchFix.trenches}
+                        </button></>
+                    : <>Splitting across more trenches lifts the grouping factor, but not far
+                        enough to carry this current at this size; the factor is currently
+                        {" "}{fmt(chain.fGroup.value ?? 0, 3)}.</>}
+                </li>
+              )}
+            </ul>
+          </div>
+        ) : (
+          <div className="readout" style={{ border: `1px solid ${HL.used.line}`, background: HL.used.bg }}>
+            <b>Passes.</b> {fmt(perCable, 1)} A per cable against {fmt(chain.derated, 1)} A derated,
+            {" "}{fmt((perCable / chain.derated) * 100, 0)}% utilised with
+            {" "}{fmt(chain.derated - perCable, 1)} A of headroom.
+            {chain.derated / Math.max(1e-9, perCable) > 2
+              ? " That is a lot of headroom; a smaller size may be cheaper."
+              : ""}
+          </div>
+        )}
+      </div>
+
+      {chain.extrapolated && (
+        <div className="warn" style={{ width: "100%" }}>
+          &#9888; <b>The base rating is extrapolated, not IEC data.</b> {chain.extrapReason}
+          {" "}Real ratings flatten off as size grows, because skin and proximity effects rise, so a
+          straight line over-predicts and the {fmt(st.safetyPct, 0)}% reduction only partly offsets
+          it. Replace it with the manufacturer&#39;s figure before anything is ordered.
+        </div>
+      )}
+      <Num label="Extrapolation safety reduction" unit="%" value={st.safetyPct} step={1} min={0}
+        onChange={(v) => set({ ...st, safetyPct: v })} />
+    </Section>
+
+    <Section code="C5" title="All three installation methods side by side">
+      <Scroll min={900}>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead><tr>
+            <Th>Method</Th><Th>Size</Th><Th>Parallel</Th><Th>Circuits/trench</Th><Th>Base A</Th>
+            <Th>f_temp</Th><Th>f_grp</Th><Th>f_soil</Th><Th>f_depth</Th><Th>DF</Th>
+            <Th>Derated A</Th><Th>I/cable</Th><Th>Utilisation</Th><Th>Verdict</Th>
+          </tr></thead>
+          <tbody>
+            {METHODS.map((m) => {
+              const r = st.rows[m.value];
+              const e = evaluateRow(r, m.value, st, table, kind, designCurrent);
+              const util = e.chain.derated ? (e.perCable / e.chain.derated) * 100 : NaN;
+              return (
+                <tr key={m.value} style={{ borderTop: `1px solid ${C.line}`,
+                  background: m.value === focus ? "rgba(232,130,12,0.10)" : "transparent" }}>
+                  <Td>{m.label}{m.value === focus ? <span style={{ color: C.accent }}> {"◀"} focus</span> : null}</Td>
+                  <Td>{r.size}{e.chain.extrapolated ? <span style={{ color: HL.extrap.text }}> *</span> : null}</Td>
+                  <Td dim>{r.par}</Td>
+                  <Td dim>{e.plan.perTrench}{e.plan.trenches > 1 ? ` of ${e.plan.total}` : ""}</Td>
+                  <Td dim>{e.chain.base === null ? "—" : fmt(e.chain.base, 0)}</Td>
+                  <Td dim>{fmt(e.chain.fTemp.value, 2)}</Td>
+                  <Td dim>{e.chain.fGroup.value === null ? "—" : fmt(e.chain.fGroup.value, 2)}</Td>
+                  <Td dim>{fmt(e.chain.fSoil.value, 2)}</Td>
+                  <Td dim>{fmt(e.chain.fDepth.value, 2)}</Td>
+                  <Td style={{ color: C.accent }}>{e.chain.df === null ? "—" : fmt(e.chain.df, 3)}</Td>
+                  <Td><b>{e.chain.derated === null ? "—" : fmt(e.chain.derated, 1)}</b></Td>
+                  <Td>{e.perCable === null ? "—" : fmt(e.perCable, 1)}</Td>
+                  <Td><UtilBar pct={util} /></Td>
+                  <Td>{e.short
+                    ? <span className="wk-status bad">{fmt(e.short.overPct, 0)}% OVER</span>
+                    : <Verdict pass={e.chain.derated !== null} failText="NO RATING" />}</Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Scroll>
+      <div className="readout">
+        A circuit with several conductors per pole counts as that many circuits
+        (IEC 60364-5-52 B.52.18/19 NOTE 3), so circuits routed together {"×"} parallel N, plus
+        anything else loaded on the route, is the total. Earth, fibre and spare cores carry no
+        load and do not count. An asterisk marks a base rating that is extrapolated.
+      </div>
+    </Section>
+
+    <Section code="C5" title="The tables these numbers came from">
+      <div style={{ width: "100%" }}>
+        <HighlightKey />
+        <RefCard open
+          title={`Base current-carrying capacity, ${METHODS.find((m) => m.value === focus).label}`}
+          source={kind === "dc"
+            ? "IEC 60364-5-52 Table B.52.12 (air) and B.52.4 D1/D2 (buried)"
+            : "IEC 60364-5-52 Table B.52.13 (air) and B.52.4 D1/D2 (buried)"}
+          note={chain.extrapolated
+            ? "The chosen size is not tabulated for this method, so the value shown is extrapolated from the last two rows that are."
+            : null}>
+          <TableCCC table={table} size={row.size} install={focus} methods={METHODS}
+            extrapolated={chain.extrapolated ? chain.base : null} />
+        </RefCard>
+
+        <RefCard emphasis={!chain.fTemp.exact}
+          title={`Temperature factor, ${focus === "air" ? "in air" : "in ground"}`}
+          source={focus === "air"
+            ? "IEC 60364-5-52 Table B.52.14, XLPE, 30 °C base"
+            : "IEC 60364-5-52 Table B.52.15, XLPE, 20 °C base"}>
+          <Table1D table={chain.tempTable} xLabel="°C" yLabel="factor" bracket={chain.fTemp}
+            fmtX={(v) => `${v}`} />
+        </RefCard>
+
+        {chain.groupRows && (
+          <RefCard title="Grouping factor"
+            source={focus === "air" ? "IEC 60364-5-52 Table B.52.17 item 1, bunched"
+              : focus === "duct" ? "IEC 60364-5-52 Table B.52.19A, buried ducts"
+                : "IEC 60364-5-52 Table B.52.18, direct buried"}
+            note={`Looked up on ${plan.perTrench} circuit${plan.perTrench === 1 ? "" : "s"} per trench`
+              + `${plan.trenches > 1 ? `, from ${plan.total} split across ${plan.trenches} trenches` : ""}.`}>
+            <TableGroup rows={chain.groupRows}
+              cols={focus === "air" ? [{ value: "f", label: "factor" }] : spacingOpts}
+              activeCol={chain.groupCol} circuits={plan.perTrench} bracket={chain.fGroup} />
+          </RefCard>
+        )}
+
+        {buried && (<>
+          <RefCard emphasis={!chain.fSoil.exact} title="Soil thermal resistivity"
+            source="IEC 60364-5-52 Table B.52.16, 2.5 K·m/W base">
+            <Table1D table={chain.soilTable} xLabel="K·m/W" yLabel="factor" bracket={chain.fSoil} />
+          </RefCard>
+          <RefCard emphasis={!chain.fDepth.exact} title="Burial depth"
+            source={`IEC 60287 derived, 0.8 m base, ${row.size <= 185 ? "≤185" : ">185"} mm² column`}>
+            <Table1D table={chain.depthTable} xLabel="m" yLabel="factor" bracket={chain.fDepth} />
+          </RefCard>
+        </>)}
+      </div>
+    </Section>
+  </>);
+}
+
 export function CableDcTab({ mod, elec, st, set }) {
   const isc = st.iscOv ?? mod.isc;
   const imp = st.impOv ?? mod.imp;
@@ -262,19 +584,6 @@ export function CableDcTab({ mod, elec, st, set }) {
   const vString = vmp * nMod;
   const pString = vString * imp;
 
-  const rowsOut = INSTALLS.map((ins) => {
-    const r = st.rows[ins.value];
-    const own = r.circ * r.par;
-    const circuits = own + r.aux;
-    const d = derateLV({
-      table: DC_CCC, install: ins.value, size: r.size,
-      tAir: st.tAir, tGnd: st.tGnd, soil: st.soil, depth: st.depth,
-      circuits, spacing: r.spacing,
-    });
-    const perCable = r.par > 0 ? iDesign / r.par : null;
-    const util = d.derated ? (perCable / d.derated) * 100 : NaN;
-    return { ins, r, own, circuits, ...d, perCable, util };
-  });
 
   const r20 = rowFor(DC_R20, st.vdSize)?.r ?? null;
   const rTab = r20 === null ? null : rAtTemp(r20, st.tCond, "copper");
@@ -329,93 +638,10 @@ export function CableDcTab({ mod, elec, st, set }) {
           why="Every ampacity check below is against this current, divided by however many cables run in parallel." />
       </Section>
 
-      <Section code="C3" title="Installation parameters">
-        <Num label="Air temperature" unit="°C" value={st.tAir} step={1}
-          onChange={(v) => set({ ...st, tAir: v })} />
-        <Num label="Ground temperature" unit="°C" value={st.tGnd} step={1}
-          onChange={(v) => set({ ...st, tGnd: v })} />
-        <Num label="Soil resistivity" unit="K·m/W" value={st.soil} step={0.1}
-          onChange={(v) => set({ ...st, soil: v })} />
-        <Num label="Burial depth" unit="m" value={st.depth} step={0.05}
-          onChange={(v) => set({ ...st, depth: v })} />
-        <div className="readout">
-          Air temperature is the temperature <i>in the cable's own microclimate</i>, not the
-          site design ambient — a cable clipped under a tracker torque tube in the desert sees
-          well above shade air temperature. Soil resistivity of 2.5 K·m/W is the IEC 60364-5-52
-          base; dry sand can reach 3 and takes about 10 % off a buried rating.
-        </div>
-      </Section>
+      <LvSizing kind="dc" table={DC_CCC} designCurrent={iDesign}
+        currentLabel="DC design current" st={st} set={set} />
 
-      <Section code="C4" title="Ampacity check">
-        <Scroll min={1010}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead><tr>
-              <Th>Install</Th><Th>Size mm²</Th><Th>Parallel</Th><Th>Circuits together</Th>
-              <Th>Aux</Th><Th>Spacing</Th><Th>Base A</Th><Th>f_temp</Th><Th>f_grp</Th>
-              <Th>f_soil</Th><Th>f_depth</Th><Th>Total DF</Th><Th>Derated A</Th>
-              <Th>I/cable</Th><Th>Utilisation</Th><Th>Verdict</Th>
-            </tr></thead>
-            <tbody>
-              {rowsOut.map((o) => {
-                const upd = (patch) => set({ ...st, rows: { ...st.rows, [o.ins.value]: { ...o.r, ...patch } } });
-                const spOpts = o.ins.value === "duct" ? LV_DUCT_SPACINGS
-                  : o.ins.value === "ground" ? LV_DIRECT_SPACINGS : [{ value: "touching", label: "n/a" }];
-                return (
-                  <tr key={o.ins.value} style={{ borderTop: `1px solid ${C.line}` }}>
-                    <Td>{o.ins.label}</Td>
-                    <Td><CellSel value={String(o.r.size)} w={80}
-                      onChange={(v) => upd({ size: Number(v) })}
-                      options={DC_CCC.map((x) => ({ value: String(x.size), label: String(x.size) }))} /></Td>
-                    <Td><CellNum value={o.r.par} min={1} onChange={(v) => upd({ par: v })} w={54} /></Td>
-                    <Td><CellNum value={o.r.circ} min={1} onChange={(v) => upd({ circ: v })} w={54} /></Td>
-                    <Td><CellNum value={o.r.aux} min={0} onChange={(v) => upd({ aux: v })} w={48} /></Td>
-                    <Td>{o.ins.value === "air" ? <span style={{ color: C.muted }}>n/a</span>
-                      : <CellSel value={o.r.spacing} w={98} onChange={(v) => upd({ spacing: v })} options={spOpts} />}</Td>
-                    <Td dim>{o.base === null || o.base === undefined ? "—" : fmt(o.base, 0)}</Td>
-                    <Td dim>{fmt(o.fTemp, 2)}</Td>
-                    <Td dim>{o.fGroup === null ? "—" : fmt(o.fGroup, 2)}</Td>
-                    <Td dim>{fmt(o.fSoil, 2)}</Td>
-                    <Td dim>{fmt(o.fDepth, 2)}</Td>
-                    <Td style={{ color: C.accent }}>{o.df === null ? "—" : fmt(o.df, 3)}</Td>
-                    <Td><b>{o.derated === null ? "—" : fmt(o.derated, 1)}</b></Td>
-                    <Td>{o.perCable === null ? "—" : fmt(o.perCable, 1)}</Td>
-                    <Td><UtilBar pct={o.util} /></Td>
-                    <Td><Verdict pass={o.derated !== null && o.perCable <= o.derated} failText="UPSIZE" /></Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Scroll>
-        {rowsOut.flatMap((o) => o.notes.map((n, i) => (
-          <div className="warn" key={`${o.ins.value}${i}`} style={{ width: "100%" }}>⚠ {o.ins.label}: {n}</div>
-        )))}
-        <div className="readout">
-          <b>Grouping counts circuits, not cables.</b> IEC 60364-5-52 Tables B.52.18/19 NOTE 3:
-          a circuit with m conductors per pole in parallel counts as m circuits. Own circuits =
-          circuits routed together × parallel N; anything else loaded in the same trench or on
-          the same tray goes in <b>Aux</b>. Earth, fibre and spare cores carry no load and do
-          not count. This factor is almost always what decides the size — a 6 mm² string cable
-          in free air loses 62 % of its rating at twenty circuits bunched.
-        </div>
-      </Section>
-
-      <Section code="C5" title="Trench / tray arrangement">
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", width: "100%" }}>
-          {rowsOut.map((o) => (
-            <div key={o.ins.value} style={{ flex: "1 1 300px", minWidth: 280, background: C.paper,
-              border: `1px solid ${C.line}`, borderRadius: 6, padding: 8 }}>
-              <TrenchDiagram install={o.ins.value} circuits={o.circuits} depth={st.depth}
-                parallel={o.r.par} own={o.own} aux={o.r.aux}
-                spacingLabel={o.ins.value === "air" ? "touching"
-                  : (o.ins.value === "duct" ? LV_DUCT_SPACINGS : LV_DIRECT_SPACINGS)
-                      .find((s) => s.value === o.r.spacing)?.label ?? o.r.spacing} />
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section code="C6" title="Voltage drop and power loss">
+      <Section code="C7" title="Voltage drop and power loss">
         <Sel label="Resistance source" value={st.rMode}
           onChange={(v) => set({ ...st, rMode: v })}
           options={[
@@ -478,19 +704,6 @@ export function CableAcTab({ inv, setInv, st, set }) {
   const linkedI = inv.acKva && inv.vAc ? (inv.acKva * 1000) / (Math.sqrt(3) * inv.vAc) : null;
   const iDesign = st.iOv ?? (Number.isFinite(linkedI) ? linkedI : 0);
 
-  const rowsOut = INSTALLS.map((ins) => {
-    const r = st.rows[ins.value];
-    const own = r.circ * r.par;
-    const circuits = own + r.aux;
-    const d = derateLV({
-      table: AC_CCC, install: ins.value, size: r.size,
-      tAir: st.tAir, tGnd: st.tGnd, soil: st.soil, depth: st.depth,
-      circuits, spacing: r.spacing,
-    });
-    const perCable = r.par > 0 ? iDesign / r.par : null;
-    const util = d.derated ? (perCable / d.derated) * 100 : NaN;
-    return { ins, r, own, circuits, ...d, perCable, util };
-  });
 
   const r20 = rowFor(AL_R20, st.vdSize)?.r ?? null;
   const rUse = st.rMode === "manual" ? st.rManual
@@ -538,86 +751,10 @@ export function CableAcTab({ inv, setInv, st, set }) {
         </div>
       </Section>
 
-      <Section code="C2" title="Installation parameters">
-        <Num label="Air temperature" unit="°C" value={st.tAir} step={1}
-          onChange={(v) => set({ ...st, tAir: v })} />
-        <Num label="Ground temperature" unit="°C" value={st.tGnd} step={1}
-          onChange={(v) => set({ ...st, tGnd: v })} />
-        <Num label="Soil resistivity" unit="K·m/W" value={st.soil} step={0.1}
-          onChange={(v) => set({ ...st, soil: v })} />
-        <Num label="Burial depth" unit="m" value={st.depth} step={0.05}
-          onChange={(v) => set({ ...st, depth: v })} />
-      </Section>
+      <LvSizing kind="ac" table={AC_CCC} designCurrent={iDesign}
+        currentLabel="AC design current" st={st} set={set} />
 
-      <Section code="C3" title="Ampacity check">
-        <Scroll min={1010}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead><tr>
-              <Th>Install</Th><Th>Size mm²</Th><Th>Parallel</Th><Th>Circuits together</Th>
-              <Th>Aux</Th><Th>Spacing</Th><Th>Base A</Th><Th>f_temp</Th><Th>f_grp</Th>
-              <Th>f_soil</Th><Th>f_depth</Th><Th>Total DF</Th><Th>Derated A</Th>
-              <Th>I/cable</Th><Th>Utilisation</Th><Th>Verdict</Th>
-            </tr></thead>
-            <tbody>
-              {rowsOut.map((o) => {
-                const upd = (patch) => set({ ...st, rows: { ...st.rows, [o.ins.value]: { ...o.r, ...patch } } });
-                const spOpts = o.ins.value === "duct" ? LV_DUCT_SPACINGS
-                  : o.ins.value === "ground" ? LV_DIRECT_SPACINGS : [{ value: "touching", label: "n/a" }];
-                return (
-                  <tr key={o.ins.value} style={{ borderTop: `1px solid ${C.line}` }}>
-                    <Td>{o.ins.label}</Td>
-                    <Td><CellSel value={String(o.r.size)} w={80}
-                      onChange={(v) => upd({ size: Number(v) })}
-                      options={AC_CCC.map((x) => ({ value: String(x.size), label: String(x.size) }))} /></Td>
-                    <Td><CellNum value={o.r.par} min={1} onChange={(v) => upd({ par: v })} w={54} /></Td>
-                    <Td><CellNum value={o.r.circ} min={1} onChange={(v) => upd({ circ: v })} w={54} /></Td>
-                    <Td><CellNum value={o.r.aux} min={0} onChange={(v) => upd({ aux: v })} w={48} /></Td>
-                    <Td>{o.ins.value === "air" ? <span style={{ color: C.muted }}>n/a</span>
-                      : <CellSel value={o.r.spacing} w={98} onChange={(v) => upd({ spacing: v })} options={spOpts} />}</Td>
-                    <Td dim>{o.base === null || o.base === undefined ? "—" : fmt(o.base, 0)}</Td>
-                    <Td dim>{fmt(o.fTemp, 2)}</Td>
-                    <Td dim>{o.fGroup === null ? "—" : fmt(o.fGroup, 2)}</Td>
-                    <Td dim>{fmt(o.fSoil, 2)}</Td>
-                    <Td dim>{fmt(o.fDepth, 2)}</Td>
-                    <Td style={{ color: C.accent }}>{o.df === null ? "—" : fmt(o.df, 3)}</Td>
-                    <Td><b>{o.derated === null ? "—" : fmt(o.derated, 1)}</b></Td>
-                    <Td>{o.perCable === null ? "—" : fmt(o.perCable, 1)}</Td>
-                    <Td><UtilBar pct={o.util} /></Td>
-                    <Td><Verdict pass={o.derated !== null && o.perCable <= o.derated} failText="UPSIZE" /></Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Scroll>
-        {rowsOut.flatMap((o) => o.notes.map((nt, i) => (
-          <div className="warn" key={`${o.ins.value}${i}`} style={{ width: "100%" }}>⚠ {o.ins.label}: {nt}</div>
-        )))}
-        <div className="readout">
-          Aluminium carries about 78 % of the current of copper for the same area, but at
-          roughly a third of the cost and half the weight, which is why LV collection on a
-          utility site is almost always aluminium. Three single-cores in trefoil beat a
-          four-core of the same area in free air and lose to it in a duct, because the trefoil
-          bundle has more surface but the duct is what limits the heat path.
-        </div>
-      </Section>
-
-      <Section code="C4" title="Trench / tray arrangement">
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", width: "100%" }}>
-          {rowsOut.map((o) => (
-            <div key={o.ins.value} style={{ flex: "1 1 300px", minWidth: 280, background: C.paper,
-              border: `1px solid ${C.line}`, borderRadius: 6, padding: 8 }}>
-              <TrenchDiagram install={o.ins.value} circuits={o.circuits} depth={st.depth}
-                parallel={o.r.par} own={o.own} aux={o.r.aux}
-                spacingLabel={o.ins.value === "air" ? "touching"
-                  : (o.ins.value === "duct" ? LV_DUCT_SPACINGS : LV_DIRECT_SPACINGS)
-                      .find((s) => s.value === o.r.spacing)?.label ?? o.r.spacing} />
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section code="C5" title="Voltage drop and power loss">
+      <Section code="C7" title="Voltage drop and power loss">
         <Sel label="Impedance source" value={st.rMode}
           onChange={(v) => set({ ...st, rMode: v })}
           options={[
@@ -685,25 +822,29 @@ export function CableMvTab({ st, set }) {
 
   /* Derated capacity for every size, both installation methods. */
   const caps = useMemo(() => table.map((r) => {
+    /* Each factor is kept as a bracket object, not a bare number, so the
+       reference tables in C6 can pick out the row it was read from and
+       say when a value was interpolated rather than tabulated. */
     const build = (kind) => {
       const base = r[kind === "duct" ? "duct" : "buried"];
-      const fT = interp(MV_TEMP_GROUND, st.tGnd);
-      const fD = interp(
-        kind === "duct"
-          ? (r.size <= 185 ? DEPTH_DUCT_LE185 : DEPTH_DUCT_GT185)
-          : (r.size <= 185 ? DEPTH_DIRECT_LE185 : DEPTH_DIRECT_GT185),
-        st.depth,
-      );
+      const depthTable = kind === "duct"
+        ? (r.size <= 185 ? DEPTH_DUCT_LE185 : DEPTH_DUCT_GT185)
+        : (r.size <= 185 ? DEPTH_DIRECT_LE185 : DEPTH_DIRECT_GT185);
       const soilRow = (kind === "duct" ? MV_SOIL_DUCT : MV_SOIL_DIRECT).find((x) => x.size === r.size);
-      const fS = soilRow ? interp(soilRow.f, st.soil) : 1;
-      const fG = groupFactor(
+      const bT = interpBracket(MV_TEMP_GROUND, st.tGnd);
+      const bD = interpBracket(depthTable, st.depth);
+      const bS = soilRow ? interpBracket(soilRow.f, st.soil)
+        : { value: 1, lo: null, hi: null, exact: true, clamped: false };
+      const bG = groupFactorBracket(
         kind === "duct" ? MV_GROUP_DUCT : MV_GROUP_DIRECT,
         kind === "duct" ? st.ductCirc : st.dirCirc,
         kind === "duct" ? st.ductSp : st.dirSp,
       );
+      const fT = bT.value, fD = bD.value, fS = bS.value, fG = bG.value;
       const ok = base !== null && base !== undefined && fG !== null;
       const df = ok ? fT * fD * fS * fG : null;
-      return { base, fT, fD, fS, fG, df, derated: ok ? base * df : null };
+      return { base, fT, fD, fS, fG, bT, bD, bS, bG, depthTable, soilTable: soilRow?.f ?? null,
+        df, derated: ok ? base * df : null };
     };
     return { size: r.size, extrap: !!r.extrap, r: r.r, x: r.x, duct: build("duct"), direct: build("direct") };
   }), [table, st.tGnd, st.depth, st.soil, st.ductCirc, st.ductSp, st.dirCirc, st.dirSp]);
@@ -731,8 +872,20 @@ export function CableMvTab({ st, set }) {
       cumV += dv;
       const cumPct = st.kv > 0 ? (cumV / (st.kv * 1000)) * 100 : 0;
       const len = rn.dist * 3 * st.slack;
+      /* If the run is over its rating, say by how much and name the
+         smallest size that carries it, rather than leaving "UPSIZE" as
+         the whole of the advice. */
+      const over = derated !== null && cum > derated;
+      let rec = null;
+      if (over) {
+        for (const cand of caps) {
+          const d = (rn.install === "duct" ? cand.duct : cand.direct).derated;
+          if (d !== null && d >= cum) { rec = { size: cand.size, derated: d, extrap: !!cand.extrap }; break; }
+        }
+      }
       return { ...rn, runI, cum, derated, util: derated ? (cum / derated) * 100 : NaN, dv, cumPct, len,
-        extrap: !!c?.extrap };
+        extrap: !!c?.extrap, over,
+        overA: over ? cum - derated : 0, overPct: over ? ((cum - derated) / derated) * 100 : 0, rec };
     });
   }, [st.runs, iInv, caps, th, st.kv, st.slack, st.tCond]);
 
@@ -892,6 +1045,35 @@ export function CableMvTab({ st, set }) {
           </table>
         </Scroll>
         <button className="btn" onClick={addRun}>+ Add run</button>
+
+        {runs.some((r) => r.over) && (
+          <div className="warn" style={{ width: "100%" }}>
+            <b>&#9888; {runs.filter((r) => r.over).length} run
+            {runs.filter((r) => r.over).length === 1 ? " is" : "s are"} over the derated
+            rating.</b>
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.65 }}>
+              {runs.map((r, i) => r.over && (
+                <li key={i}>
+                  <b>{r.from}&#8594;{r.to}</b> carries {fmt(r.cum, 1)} A against {fmt(r.derated, 1)} A
+                  at {r.size} mm&#178;: <b>over by {fmt(r.overA, 1)} A, which is {fmt(r.overPct, r.overPct < 10 ? 1 : 0)} %
+                  </b> ({fmt(r.util, 0)} % utilised).
+                  {r.rec
+                    ? <> The smallest size that carries it is <b>{r.rec.size} mm&#178;</b> at
+                        {" "}{fmt(r.rec.derated, 1)} A
+                        {r.rec.extrap ? <span style={{ color: HL.extrap.text }}> (extrapolated, not IEC data)</span> : null}.
+                        <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                          onClick={() => upd(i, { size: r.rec.size })}>
+                          Use {r.rec.size} mm&#178;
+                        </button></>
+                    : <> <b>No tabulated size carries it</b>, even extrapolated. Split the load
+                        across a second circuit, widen the spacing, or feed the branch from the
+                        other side of the ring.</>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="readout">
           Current accumulates along a branch and resets when the branch number changes, so a
           radial feeder is one branch numbered in order from its far end to the substation.
@@ -912,7 +1094,82 @@ export function CableMvTab({ st, set }) {
           why={`Against a ${fmt(st.vdLimit, 1)} % limit. MV drop is usually comfortable — that is the point of MV — so a figure near the limit is a sign the ring is too long, too heavily loaded, or that a branch should be split and fed from the other side.`} />
       </Section>
 
-      <Section code="C5" title="Cable schedule">
+      <Section code="C6" title="The tables these numbers came from">
+        <Sel label="Show the lookups for" value={st.refInstall}
+          onChange={(v) => set({ ...st, refInstall: v })}
+          options={[{ value: "duct", label: "Buried duct" }, { value: "direct", label: "Direct buried" }]} />
+        <Sel label="Size to trace" value={String(st.refSize)}
+          onChange={(v) => set({ ...st, refSize: Number(v) })}
+          options={caps.map((c) => ({ value: String(c.size), label: `${c.size} mm²${c.extrap ? " *" : ""}` }))} />
+        <div style={{ width: "100%" }}>
+          <HighlightKey />
+          {(() => {
+            const c = caps.find((x) => x.size === st.refSize) || caps[0];
+            const b = st.refInstall === "duct" ? c.duct : c.direct;
+            const circuits = st.refInstall === "duct" ? st.ductCirc : st.dirCirc;
+            const spacing = st.refInstall === "duct" ? st.ductSp : st.dirSp;
+            const chain = { base: b.base, extrapolated: c.extrap, fTemp: b.bT, fGroup: b.bG,
+              fSoil: b.bS, fDepth: b.bD, derated: b.derated };
+            const design = runs.filter((r) => r.size === c.size && r.install === st.refInstall)
+              .reduce((a, r) => Math.max(a, r.cum), 0);
+            return (
+              <>
+                <div style={{ marginBottom: 10 }}>
+                  <FactorChain chain={chain} perCable={design} />
+                  {design === 0 && (
+                    <div style={{ font: "10.5px system-ui", color: C.muted, marginTop: 5 }}>
+                      No run in the schedule uses {c.size} mm&#178; in
+                      {" "}{st.refInstall === "duct" ? "duct" : "direct burial"}, so the design
+                      current shows zero. The derating chain above is still the one that size
+                      would get.
+                    </div>
+                  )}
+                </div>
+
+                <RefCard title={`Base rating, 3 × 1c aluminium XLPE 19/33 kV, trefoil`}
+                  source="IEC 60502-2 Table B.3"
+                  note={`Read at 20 °C ground, 1.5 K·m/W soil, 0.8 m deep, one circuit. Every factor below corrects away from those conditions. The 500 and 630 mm² rows are extrapolated, not IEC data.`}>
+                  <TableCCC table={caps.map((x) => ({ size: x.size,
+                    duct: x.extrap ? null : x.duct.base, direct: x.extrap ? null : x.direct.base }))}
+                    size={c.size} install={st.refInstall}
+                    methods={[{ value: "duct", label: "Buried duct" }, { value: "direct", label: "Direct buried" }]}
+                    extrapolated={c.extrap ? b.base : null} />
+                </RefCard>
+
+                <RefCard emphasis={!b.bT.exact} title="Ground temperature factor"
+                  source="IEC 60502-2 Table B.11" note="Base 20 °C.">
+                  <Table1D table={MV_TEMP_GROUND} xLabel="Ground °C" yLabel="f_temp"
+                    bracket={b.bT} dp={2} />
+                </RefCard>
+
+                <RefCard title="Grouping factor by circuit count and centre spacing"
+                  source={st.refInstall === "duct" ? "IEC 60502-2 Table B.21" : "IEC 60502-2 Table B.19"}
+                  note={`Looked up on ${circuits} circuit${circuits === 1 ? "" : "s"} at ${MV_SPACINGS.find((x) => x.value === spacing)?.label.toLowerCase()} centres. This is almost always the factor that costs the most capacity.`}>
+                  <TableGroup rows={st.refInstall === "duct" ? MV_GROUP_DUCT : MV_GROUP_DIRECT}
+                    cols={MV_SPACINGS} activeCol={spacing} circuits={circuits} bracket={b.bG} />
+                </RefCard>
+
+                {b.soilTable && (
+                  <RefCard emphasis={!b.bS.exact} title={`Soil thermal resistivity, ${c.size} mm²`}
+                    source={st.refInstall === "duct" ? "IEC 60502-2 Table B.15" : "IEC 60502-2 Table B.14"}
+                    note="Base 1.5 K·m/W — not the 2.5 K·m/W base of the LV standard. The two are tabulated separately and a factor must never be carried across from the DC or AC tab.">
+                    <Table1D table={b.soilTable} xLabel="K·m/W" yLabel="f_soil"
+                      bracket={b.bS} dp={2} />
+                  </RefCard>
+                )}
+
+                <RefCard emphasis={!b.bD.exact} title={`Burial depth, ${c.size <= 185 ? "≤185" : ">185"} mm²`}
+                  source="IEC 60502-2 Tables B.12 / B.13" note="Base 0.8 m. Deeper is hotter, so the factor falls.">
+                  <Table1D table={b.depthTable} xLabel="Depth m" yLabel="f_depth"
+                    bracket={b.bD} dp={3} />
+                </RefCard>
+              </>
+            );
+          })()}
+        </div>
+      </Section>
+
+      <Section code="C6" title="Cable schedule">
         <Num label="Spares allowance" unit="%" value={st.spares} step={5}
           onChange={(v) => set({ ...st, spares: v })} />
         <Scroll min={620}>
