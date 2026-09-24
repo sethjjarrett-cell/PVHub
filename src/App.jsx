@@ -10,6 +10,7 @@ import {
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { YieldReportTab } from "./YieldReport.jsx";
 import { parsePvsystFile } from "./pvsystFiles.js";
+import { BatchAnalyserTab, BATCH_DEFAULTS } from "./BatchAnalyser.jsx";
 
 /* =====================================================================
    LAYOUT GENERATOR — Phase 2
@@ -6480,6 +6481,7 @@ export default function App() {
   const [summary, setSummary] = useState(null);
   const [cables, setCables] = useState(CABLE_DEFAULTS);
   const [report, setReport] = useState(REPORT_DEFAULTS);
+  const [batch, setBatch] = useState(BATCH_DEFAULTS);
   const setCable = (k) => (v) => setCables((c0) => ({ ...c0, [k]: v }));
   const [rates, setRates] = useState({
     cur: "£", lv: 38, mv: 62, modWp: 0.13, mountWp: 0.09, invKw: 32,
@@ -6488,7 +6490,7 @@ export default function App() {
   const saveProject = () => {
     const data = {
       app: "PVhub", version: 1, saved: new Date().toISOString(),
-      pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables, report,
+      pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables, report, batch,
       layout: reg.current.layout?.get(), shade: reg.current.shade?.get(),
     };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -6514,6 +6516,7 @@ export default function App() {
         // Merge rather than replace, so a project saved before a cable
         // input existed still opens with a sensible value for it.
         if (d.report) setReport({ ...REPORT_DEFAULTS, ...d.report });
+        if (d.batch) setBatch({ ...BATCH_DEFAULTS, ...d.batch });
         if (d.cables) setCables({
           dc: { ...CABLE_DEFAULTS.dc, ...d.cables.dc },
           ac: { ...CABLE_DEFAULTS.ac, ...d.cables.ac },
@@ -6532,14 +6535,14 @@ export default function App() {
     ["string", "String Sizing"], ["clip", "Paralleling"],
     ["shade", "Pitch & Yield"], ["layout", "Layout"], ["summary", "Summary"],
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
-    ["report", "Yield report"],
+    ["report", "Yield report"], ["batch", "Batch analyser"],
   ];
   const GROUPS = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Layout", ["layout"]],
     ["Cables", ["cdc", "cac", "cmv", "csc"]],
-    ["Yield & Summary", ["shade", "report", "summary"]],
+    ["Yield & Summary", ["shade", "report", "batch", "summary"]],
   ];
   const visGroups = uiMode === "stupid"
     ? GROUPS.filter(([g]) => g === "Layout" || g === "Yield & Summary")
@@ -6782,6 +6785,9 @@ export default function App() {
       <div style={{ flex: 1, minHeight: 0, display: tool === "report" ? "flex" : "none" }}>
         <YieldReportTab loc={siteLoc} setLoc={setSiteLoc} mod={pvMod} inv={pvInv} elec={elec}
           frame={frame} summary={summary} rates={rates} st={report} set={setReport} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
+        <BatchAnalyserTab st={batch} set={setBatch} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "summary" ? "flex" : "none" }}>
         <SummaryTab s={summary} rates={rates} setRates={setRates}

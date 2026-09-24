@@ -36,6 +36,7 @@ Everything below is only needed if you want to change the code or host it online
 | 10 | MV cable | Collector ring runs, cumulative current, cable schedule and BOM |
 | 11 | Short circuit | Fault levels and the adiabatic withstand check, with curves |
 | 12 | Yield report | Pulls ERA5 / PVGIS, states expected generation, trades pitch against cable |
+| 13 | Batch analyser | Reads a PVsyst batch results CSV and recommends a tilt and pitch |
 
 Three interface modes, top right:
 
@@ -65,6 +66,25 @@ sizes strings on the full-power lower bound from the P-V curve, which is a diffe
 higher number. The tracking bound is filled in at low confidence with a note to overwrite it.
 
 Datasheet PDFs still work, for components with no PVsyst file.
+
+## PVsyst batch results
+
+Yield & Summary tab → **Batch analyser** → drop in a batch results CSV.
+
+PVsyst holds capacity fixed, so a wider pitch always gains energy and the curve never turns
+over on yield alone. The useful question is the other way round: a shallow tilt is usually
+the cheapest structure, so how tight a pitch still keeps that tilt within an acceptable
+penalty of the best case? That is what the tool answers, on the penalty chart.
+
+It reads the file as PVsyst writes it: Windows-1252, semicolon delimited, a three-row
+header, and a decimal comma on some locales. The header is found by content rather than by
+row number, and the swept parameters and output variables are read from the file rather
+than assumed, so it works on any project's batch export.
+
+Results carry numerical noise, so anything within a tolerance of the best case is reported
+as a tie rather than a winner. If the best case sits on the edge of the sweep it says the
+optimum is not bracketed and suggests the next three steps, rather than presenting the edge
+as an answer.
 
 ## Importing a site
 

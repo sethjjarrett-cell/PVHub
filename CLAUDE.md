@@ -18,6 +18,8 @@ src/CableTools.jsx     the four Cables tabs (DC, AC, MV, short circuit)
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
+src/batchAnalyser.js   PVsyst batch CSV parsing and tilt/pitch analysis, no React
+src/BatchAnalyser.jsx  Batch analyser tab: six hand-rolled charts, recommendation, exports
 src/main.jsx           mount + boot-overlay teardown
 src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
 index.html             Vite entry shell
@@ -76,7 +78,7 @@ calls.
 
 **Healthy baseline:** boot overlay clears, `pageerror` count is 0, and five tab groups
 render — `Technologies` (module, inverter, frame), `Calculations` (string, clip), `Layout`,
-`Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, report, summary). `GROUPS` in
+`Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, report, batch, summary). `GROUPS` in
 `src/App.jsx` maps the tools onto those groups, and Stupid mode filters to Layout +
 Yield & Summary.
 
@@ -94,6 +96,12 @@ a generic pop closes the *enclosing* block early and silently dumps the whole el
 section onto the root, where the module lookup cannot see it — the file appears to parse and
 yields two fields instead of fourteen. `parsePvsystTree` pops only when the closing line
 names the block that opened. Files also carry a UTF-8 BOM.
+
+Tests that run without a browser, both dependency-free:
+
+```bash
+node tests/batchAnalyser.test.mjs    # 58 assertions against the Solango fixture
+```
 
 **Known pre-existing noise:** ~270 console errors of the form
 `<line> attribute y1: Expected length, "-Infinity"` fire on load, plus a favicon 404. That
@@ -146,6 +154,15 @@ Deliberate engineering decisions, each stated in the UI's own text:
   `trackLo`. It is also offered as `fpLo` at low confidence with a note to read the real
   knee off the P-V curve — never silently as the full-power bound, which would widen the
   string minimum and break the `N_min` convention above.
+- **PVsyst batch noise is treated as a tie, not a ranking.** Batch results are not smooth; in the
+  Solango fixture 22° beats 21° at 10 m, which is not physical. Anything within the tolerance of
+  the best case is a tie and the interface says so. Do not present the raw argmax as a winner.
+- **"Warning: parameter X did not change" rows are valid and kept.** It means the swept value
+  already equalled the base variant's. Dropping them silently would delete a whole pitch from
+  the sweep; seven of the Solango file's 35 rows are in that state.
+- **An edge-of-range optimum is reported as not bracketed.** If the best case sits on the
+  boundary of the sweep, the honest answer is to extend the sweep, not to call the edge an
+  optimum. The tool suggests the next three steps.
 - **Absolute yield is PVGIS's, differences between pitches are ours.** No public API takes a
   pitch, so the report scales a PVGIS PVcalc baseline by a row-geometry ratio. The ratios
   survive a change of irradiance dataset; the absolute does not. Never present the two as
