@@ -104,6 +104,7 @@ Tests that run without a browser, both dependency-free:
 
 ```bash
 node tests/batchAnalyser.test.mjs    # 58 assertions against the Solango fixture
+node tests/cableTables.test.mjs     # 783 derating values against the source workbook
 ```
 
 **Known pre-existing noise:** ~270 console errors of the form
@@ -147,10 +148,16 @@ Deliberate engineering decisions, each stated in the UI's own text:
   everywhere it appears. A value entered by hand is blue, and the table row it
   replaced is still shown, struck through, rather than hidden. Do not collapse the
   four states into one.
+- **All three installation methods render at once, and trenching is opt-in.** `LvSizing`
+  draws a `MethodCard` per method rather than one focused method with a comparison strip.
+  `st.multiTrench` gates every trench control and forces `trenches: 1` in `evaluateRow`
+  when off, which is the conservative reading. Do not make trenching default — it answers
+  a question most runs never ask.
 - **Every calculated figure is overridable, and an override never hides what it
   replaced.** `applyOverride` keeps the table value on the bracket as `auto`, so the
   chip carries the old number struck through beneath the new one and the table row
-  stays visible struck through. Clearing the box returns to the table. Do not
+  stays visible struck through. The control is a dropdown (Auto / Enter a value), never a
+  bare box whose emptiness silently means automatic. Selecting Auto returns to the table. Do not
   "simplify" this by dropping the auto value — the whole point is that the reader can
   see what was moved away from and how far.
 - **Factor overrides belong to an installation method, base-rating overrides to a

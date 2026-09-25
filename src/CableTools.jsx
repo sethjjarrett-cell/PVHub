@@ -258,42 +258,45 @@ const ImportedHead = () => (
    ===================================================================== */
 
 /**
- * One factor, calculated automatically but open to being typed over.
+ * One factor: automatic by default, with a dropdown to take it over.
  *
- * The auto value is always shown, whether or not it is the one in use,
- * because the point of an override is that you can see what you moved
- * away from. Clearing the box, or pressing Auto, returns to the table.
+ * The dropdown is the whole control. "Auto" means the IEC table decides
+ * and there is nothing else on screen; "Enter a value" reveals a box. An
+ * empty box that silently means automatic is the kind of thing that gets
+ * misread at four in the afternoon, so the state is always spelled out.
  */
 function AutoField({ label, auto, value, onChange, dp = 3, unit = "", hint, disabled }) {
   const manual = value !== null && value !== undefined && value !== "";
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 128,
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 130,
       opacity: disabled ? 0.45 : 1 }}>
       <span style={{ font: "10px system-ui", color: C.muted, letterSpacing: "0.03em" }}>
         {label}{unit ? ` ${unit}` : ""}
       </span>
-      <div style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
-        <input type="number" disabled={disabled}
-          value={value ?? ""} placeholder={Number.isFinite(auto) ? fmt(auto, dp) : "—"}
-          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-          style={{ width: 74, background: C.panel2,
-            border: `1px solid ${manual ? HL.manual.line : C.line}`, borderRadius: 4,
-            color: manual ? HL.manual.text : C.text, font: "12px var(--mono)",
+      <select disabled={disabled} value={manual ? "manual" : "auto"}
+        onChange={(e) => onChange(e.target.value === "auto"
+          ? null
+          : (Number.isFinite(auto) ? Number(fmt(auto, dp).replace(/,/g, "")) : 1))}
+        style={{ background: C.panel2,
+          border: `1px solid ${manual ? HL.manual.line : C.line}`, borderRadius: 4,
+          color: manual ? HL.manual.text : C.text, font: "11px system-ui",
+          padding: "4px 5px", outline: "none" }}>
+        <option value="auto">Auto{Number.isFinite(auto) ? ` — ${fmt(auto, dp)}` : ""}</option>
+        <option value="manual">Enter a value</option>
+      </select>
+      {manual && (
+        <input type="number" autoFocus value={value}
+          onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+          style={{ width: "100%", background: C.panel2, border: `1px solid ${HL.manual.line}`,
+            borderRadius: 4, color: HL.manual.text, font: "12px var(--mono)",
             padding: "4px 6px", outline: "none" }} />
-        <button className="btn" disabled={disabled || !manual}
-          onClick={() => onChange(null)}
-          title="Go back to the value the IEC table gives"
-          style={{ padding: "3px 8px", font: "10px system-ui",
-            opacity: manual ? 1 : 0.35, cursor: manual ? "pointer" : "default" }}>
-          Auto
-        </button>
-      </div>
+      )}
       <span style={{ font: "9.5px system-ui", color: manual ? HL.manual.text : C.muted }}>
         {manual
-          ? `overriding ${Number.isFinite(auto) ? fmt(auto, dp) : "no table value"}`
+          ? `instead of ${Number.isFinite(auto) ? fmt(auto, dp) : "no table value"}`
           : hint || (Number.isFinite(auto) ? "from the table" : "not tabulated")}
       </span>
-    </label>
+    </div>
   );
 }
 
@@ -316,7 +319,10 @@ function evaluateRow(row, install, st, table, kind, designCurrent) {
     : install === "ground" ? LV_DIRECT_SPACING_M : { touching: 0 };
   const widthM = (st.odOverride > 0 ? st.odOverride : circuitWidthMm(kind, row.size)) / 1000;
   const plan = trenchPlan({
-    ownCircuits: own, auxCircuits: row.aux, trenches: install === "air" ? 1 : st.trenches,
+    ownCircuits: own, auxCircuits: row.aux,
+    /* Trenching is opt-in. With it off the whole run is one group, which
+       is the conservative reading and the one most runs actually get. */
+    trenches: install === "air" || !st.multiTrench ? 1 : st.trenches,
     clearSpacingM: spacings[row.spacing] ?? 0,
     circuitWidthM: widthM, maxWidthM: st.maxTrenchW,
   });
@@ -333,22 +339,31 @@ function evaluateRow(row, install, st, table, kind, designCurrent) {
   return { own, plan, chain, perCable, short, rec, widthM, params };
 }
 
-function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) {
-  const focus = st.focus || "duct";
+/* =====================================================================
+   One installation method, shown in full.
+
+   All three are on screen at once, because the question an engineer
+   actually asks is "which of these works", and answering it by flipping
+   a selector three times and remembering the numbers is worse than
+   printing them. Each card carries its own size, its own arithmetic and
+   its own verdict, so the three can be compared by eye.
+   ===================================================================== */
+function MethodCard({ method, kind, table, st, set, designCurrent, open, onToggle }) {
+  const focus = method.value;
   const row = st.rows[focus];
+  const buried = focus !== "air";
   const upd = (patch) => set({ ...st, rows: { ...st.rows, [focus]: { ...row, ...patch } } });
-  /* Overrides are per installation method, because a factor that applies
-     to a buried run means nothing to the same cable on a tray. */
   const ovOf = (k) => (row.ov || {})[k] ?? null;
   const setOv = (k, v) => upd({ ov: { ...(row.ov || {}), [k]: v } });
+
   const ev = evaluateRow(row, focus, st, table, kind, designCurrent);
   const { plan, chain, perCable, short, rec } = ev;
+  const spacingOpts = spacingOptionsFor(focus);
 
   /* Splitting the run lifts the grouping factor, because each trench is
-     its own thermal group. Find the fewest trenches that makes the
-     current size pass, so the advice is a button rather than a hint. */
+     its own thermal group. Only worth offering once trenching is on. */
   let trenchFix = null;
-  if (short && focus !== "air") {
+  if (short && buried && st.multiTrench) {
     for (let t = st.trenches + 1; t <= st.trenches + 12; t++) {
       const e = evaluateRow(row, focus, { ...st, trenches: t }, table, kind, designCurrent);
       if (e.chain.derated !== null && e.perCable <= e.chain.derated) {
@@ -358,277 +373,330 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
       }
     }
   }
-  const spacingOpts = spacingOptionsFor(focus);
+
+  const pass = chain.derated !== null && !short;
+  const util = chain.derated ? (perCable / chain.derated) * 100 : NaN;
+  const edge = chain.derated === null ? "#d67070" : pass ? HL.used.line : "#d67070";
+
+  return (
+    <div style={{ width: "100%", border: `1px solid ${edge}`, borderRadius: 7,
+      background: C.panel, marginBottom: 10, overflow: "hidden" }}>
+
+      {/* Header: the answer, before any of the working. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        padding: "9px 12px", background: pass ? HL.used.bg : "rgba(214,112,112,0.10)" }}>
+        <b style={{ font: "600 13px system-ui", color: C.text, minWidth: 108 }}>{method.label}</b>
+        <select value={String(row.size)} onChange={(e) => upd({ size: Number(e.target.value) })}
+          style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 4,
+            color: C.text, font: "12px var(--mono)", padding: "3px 6px", outline: "none" }}>
+          {table.map((x) => <option key={x.size} value={String(x.size)}>{x.size} mm²</option>)}
+        </select>
+        <span style={{ font: "13px var(--mono)", color: C.text }}>
+          {chain.derated === null ? "no rating" : `${fmt(chain.derated, 1)} A`}
+          <span style={{ color: C.muted, font: "10.5px system-ui" }}> derated</span>
+        </span>
+        <span style={{ font: "13px var(--mono)", color: C.muted }}>
+          vs {perCable === null ? "—" : fmt(perCable, 1)} A
+          <span style={{ font: "10.5px system-ui" }}> needed</span>
+        </span>
+        <div style={{ flex: 1, minWidth: 90, maxWidth: 190 }}><UtilBar pct={util} /></div>
+        {chain.derated === null
+          ? <span className="wk-status bad">NO RATING</span>
+          : short
+            ? <span className="wk-status bad">{fmt(short.overPct, 0)}% OVER</span>
+            : <span className="wk-status ok">PASS</span>}
+        {chain.extrapolated && (
+          <span style={{ font: "10px system-ui", color: HL.extrap.text }}>extrapolated rating</span>
+        )}
+        {chain.anyManual && (
+          <span style={{ font: "10px system-ui", color: HL.manual.text }}>has entered values</span>
+        )}
+        <button className="btn" onClick={onToggle} style={{ padding: "3px 9px", font: "10px system-ui" }}>
+          {open ? "▴ hide working" : "▾ show working"}
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ padding: "10px 12px" }}>
+          {/* The inputs that belong to this method alone. */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <Num label="Cables in parallel per pole" value={row.par} step={1} min={1}
+              onChange={(v) => upd({ par: v })} />
+            <Num label="Circuits routed together" value={row.circ} step={1} min={1}
+              onChange={(v) => upd({ circ: v })} />
+            <Num label="Other loaded circuits on the route" value={row.aux} step={1} min={0}
+              onChange={(v) => upd({ aux: v })} />
+            {buried && (
+              <Sel label="Spacing between circuits" value={row.spacing}
+                onChange={(v) => upd({ spacing: v })} options={spacingOpts} />
+            )}
+          </div>
+
+          <FactorChain chain={chain} perCable={perCable ?? 0} />
+
+          <div style={{ font: "10.5px system-ui", color: C.muted, margin: "7px 0 2px" }}>
+            {plan.total} circuit{plan.total === 1 ? "" : "s"} in total ({row.circ} routed together
+            {" × "}{row.par} in parallel{row.aux ? `, plus ${row.aux} other` : ""}), and the
+            grouping factor is looked up on{" "}
+            <b style={{ color: C.text }}>{plan.perTrench}</b>
+            {plan.trenches > 1
+              ? ` — ${plan.trenches} trenches, so each is its own thermal group.`
+              : buried ? " — one trench, so they all share it." : " — bunched together."}
+          </div>
+
+          {/* Overrides, as dropdowns. Auto unless told otherwise. */}
+          <div style={{ marginTop: 9, padding: "9px 11px", borderRadius: 6,
+            background: C.panel2, border: `1px solid ${C.line}` }}>
+            <div style={{ font: "600 10.5px system-ui", color: C.text, marginBottom: 7 }}>
+              Override a factor — leave on Auto unless you have a reason
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <AutoField label="Base rating" unit="A" dp={0}
+                auto={chain.baseAuto} value={ovOf("base")} onChange={(v) => setOv("base", v)}
+                hint={chain.extrapolated ? "extrapolated, not IEC" : "from the table"} />
+              <AutoField label="f_temp" auto={chain.fTemp.auto ?? chain.fTemp.value}
+                value={ovOf("fTemp")} onChange={(v) => setOv("fTemp", v)} />
+              <AutoField label="f_grp" auto={chain.fGroup.auto ?? chain.fGroup.value}
+                value={ovOf("fGroup")} onChange={(v) => setOv("fGroup", v)} />
+              <AutoField label="f_soil" disabled={!buried}
+                auto={chain.fSoil.auto ?? chain.fSoil.value}
+                value={ovOf("fSoil")} onChange={(v) => setOv("fSoil", v)}
+                hint={buried ? undefined : "no soil in air"} />
+              <AutoField label="f_depth" disabled={!buried}
+                auto={chain.fDepth.auto ?? chain.fDepth.value}
+                value={ovOf("fDepth")} onChange={(v) => setOv("fDepth", v)}
+                hint={buried ? undefined : "not buried"} />
+            </div>
+            {chain.anyManual && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 9,
+                font: "10.5px system-ui", color: HL.manual.text }}>
+                <span>
+                  This rating is no longer purely the standard&#8217;s. An entered number is yours
+                  to defend, so record where it came from.
+                </span>
+                <button className="btn" style={{ padding: "3px 10px" }}
+                  onClick={() => upd({ ov: {} })}>Reset to auto</button>
+              </div>
+            )}
+          </div>
+
+          {/* Verdict and the ways out of a failing one. */}
+          <div style={{ marginTop: 9 }}>
+            {chain.derated === null ? (
+              <div className="warn" style={{ width: "100%" }}>
+                &#9888; {chain.notes.join(" ") || "This combination cannot be rated."}
+              </div>
+            ) : short ? (
+              <div className="warn" style={{ width: "100%" }}>
+                &#9888; <b>Too small by {fmt(short.overA, 1)} A, which is {fmt(short.overPct, 0)}% over
+                the derated rating</b> ({fmt(perCable, 1)} A against {fmt(chain.derated, 1)} A,
+                {" "}{fmt(short.utilPct, 0)}% utilised). Ways out, and which is cheapest is a
+                site question:
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
+                  <li>
+                    {rec?.found
+                      ? <>Go up to <b>{rec.size} mm&#178;</b>, which derates to {fmt(rec.derated, 1)} A
+                          and leaves {fmt(rec.headroomA, 1)} A spare at {fmt(rec.utilPct, 0)}% utilised
+                          {rec.extrapolated ? <span style={{ color: HL.extrap.text }}> (extrapolated rating)</span> : null}.
+                          <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                            onClick={() => upd({ size: rec.size })}>Use {rec.size} mm&#178;</button></>
+                      : <>No size in this table carries it at this grouping, even extrapolated.</>}
+                  </li>
+                  <li>
+                    Run <b>{short.parallelNeeded}</b> cable{short.parallelNeeded === 1 ? "" : "s"} per
+                    pole instead of {row.par}. That raises the circuit count for grouping, so it is
+                    not a free halving.
+                    <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                      onClick={() => upd({ par: short.parallelNeeded })}>
+                      Use {short.parallelNeeded} in parallel
+                    </button>
+                  </li>
+                  {buried && (
+                    <li>
+                      {!st.multiTrench
+                        ? <>Split the run across more than one trench. Each trench is its own
+                            thermal group, so the grouping factor rises.
+                            <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                              onClick={() => set({ ...st, multiTrench: true })}>
+                              Turn trenching on
+                            </button></>
+                        : trenchFix
+                          ? <>Split across <b>{trenchFix.trenches} trenches</b>, which puts
+                              {" "}{trenchFix.perTrench} circuits in each, lifts the grouping factor
+                              from {fmt(chain.fGroup.value ?? 0, 3)} to {fmt(trenchFix.fGroup, 3)} and
+                              the rating to {fmt(trenchFix.derated, 1)} A, at about
+                              {" "}{fmt(trenchFix.widthM, 2)} m of width each.
+                              <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
+                                onClick={() => set({ ...st, trenches: trenchFix.trenches })}>
+                                Split into {trenchFix.trenches}
+                              </button></>
+                          : <>More trenches lift the grouping factor, but not far enough to carry
+                              this current at this size; it is currently
+                              {" "}{fmt(chain.fGroup.value ?? 0, 3)}.</>}
+                    </li>
+                  )}
+                </ul>
+              </div>
+            ) : (
+              <div className="readout" style={{ border: `1px solid ${HL.used.line}`, background: HL.used.bg }}>
+                <b>Passes.</b> {fmt(perCable, 1)} A per cable against {fmt(chain.derated, 1)} A derated,
+                {" "}{fmt(util, 0)}% utilised with {fmt(chain.derated - perCable, 1)} A of headroom.
+                {chain.derated / Math.max(1e-9, perCable) > 2
+                  ? " That is a lot of headroom; a smaller size may be cheaper."
+                  : ""}
+              </div>
+            )}
+          </div>
+
+          {chain.extrapolated && (
+            <div className="warn" style={{ width: "100%", marginTop: 8 }}>
+              &#9888; <b>The base rating is extrapolated, not IEC data.</b> {chain.extrapReason}
+              {" "}Real ratings flatten off as size grows, because skin and proximity effects rise,
+              so a straight line over-predicts and the {fmt(st.safetyPct, 0)}% reduction only partly
+              offsets it. Replace it with the manufacturer&#39;s figure before anything is ordered.
+            </div>
+          )}
+
+          {buried && st.multiTrench && !plan.fits && (
+            <div className="warn" style={{ width: "100%", marginTop: 8 }}>
+              &#9888; {plan.perTrench} circuits at {fmt(plan.centreSpacingM * 1000, 0)} mm centres
+              needs {fmt(plan.widthM, 2)} m of trench, against a {fmt(st.maxTrenchW, 1)} m maximum.
+              {" "}<b>Use at least {plan.minTrenches} trench{plan.minTrenches === 1 ? "" : "es"}</b>
+              {" "}({Math.ceil(plan.total / plan.minTrenches)} circuits each), or bring the spacing in.
+              <button className="btn" style={{ marginLeft: 10, padding: "3px 10px" }}
+                onClick={() => set({ ...st, trenches: plan.minTrenches })}>
+                Split into {plan.minTrenches}
+              </button>
+            </div>
+          )}
+
+          {buried && st.multiTrench && (
+            <div style={{ width: "100%", background: C.paper, border: `1px solid ${C.line}`,
+              borderRadius: 6, padding: 8, marginTop: 8 }}>
+              <TrenchDiagram install={focus} circuits={plan.perTrench} depth={st.depth}
+                parallel={row.par} own={ev.own} aux={row.aux} total={plan.total}
+                trenches={plan.trenches}
+                spacingLabel={spacingOpts.find((x) => x.value === row.spacing)?.label ?? row.spacing} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LvSizing({ kind, table, designCurrent, st, set, firstCode = 3 }) {
+  const code = (n) => `C${firstCode + n}`;
+  /* Which cards are expanded. All three are on screen either way; this
+     only controls whether the arithmetic under each is unfolded. The
+     first view is the three answers, which is what a first glance wants. */
+  const [openCards, setOpenCards] = useState({ air: false, duct: true, ground: false });
+  const toggle = (k) => setOpenCards((o) => ({ ...o, [k]: !o[k] }));
+  const [refMethod, setRefMethod] = useState("duct");
+
+  const evs = Object.fromEntries(METHODS.map((m) =>
+    [m.value, evaluateRow(st.rows[m.value], m.value, st, table, kind, designCurrent)]));
+  const focus = refMethod;
+  const row = st.rows[focus];
+  const { chain, plan } = evs[focus];
   const buried = focus !== "air";
+  const spacingOpts = spacingOptionsFor(focus);
 
   return (<>
-    <Section code="C3" title="Installation, and how the circuits are trenched">
-      <Sel label="Installation method in focus" value={focus}
-        onChange={(v) => set({ ...st, focus: v })} options={METHODS} />
-      <Sel label="Cable size" value={String(row.size)}
-        onChange={(v) => upd({ size: Number(v) })}
-        options={table.map((x) => ({ value: String(x.size), label: `${x.size} mm²` }))} />
-      <Num label="Cables in parallel per pole" value={row.par} step={1} min={1}
-        onChange={(v) => upd({ par: v })} />
-      <Num label="Circuits routed together" value={row.circ} step={1} min={1}
-        onChange={(v) => upd({ circ: v })} />
-      <Num label="Other loaded circuits sharing the route" value={row.aux} step={1} min={0}
-        onChange={(v) => upd({ aux: v })} />
-      {buried && (
-        <Sel label="Spacing between circuits" value={row.spacing}
-          onChange={(v) => upd({ spacing: v })} options={spacingOpts} />
-      )}
+    <Section code={code(0)} title="Site conditions">
       <Num label="Air temperature" unit="°C" value={st.tAir} step={1}
         onChange={(v) => set({ ...st, tAir: v })} />
-      {buried && (<>
-        <Num label="Ground temperature" unit="°C" value={st.tGnd} step={1}
-          onChange={(v) => set({ ...st, tGnd: v })} />
-        <Num label="Soil resistivity" unit="K·m/W" value={st.soil} step={0.1}
-          onChange={(v) => set({ ...st, soil: v })} />
-        <Num label="Burial depth" unit="m" value={st.depth} step={0.05}
-          onChange={(v) => set({ ...st, depth: v })} />
-        <Num label="Trenches to split across" value={st.trenches} step={1} min={1}
+      <Num label="Ground temperature" unit="°C" value={st.tGnd} step={1}
+        onChange={(v) => set({ ...st, tGnd: v })} />
+      <Num label="Soil resistivity" unit="K·m/W" value={st.soil} step={0.1}
+        onChange={(v) => set({ ...st, soil: v })} />
+      <Num label="Burial depth" unit="m" value={st.depth} step={0.05}
+        onChange={(v) => set({ ...st, depth: v })} />
+      <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+        Four numbers set every buried rating below. Air temperature drives the tray case only;
+        the other three drive both buried cases. Everything else is per method and sits on its
+        own card.
+      </div>
+
+      {/* Trenching is off until asked for. Most runs are one trench, and
+          a tool that opens with trench-width arithmetic on screen is
+          answering a question nobody asked yet. */}
+      <label style={{ display: "flex", alignItems: "center", gap: 8, width: "100%",
+        padding: "8px 11px", borderRadius: 6, cursor: "pointer",
+        background: st.multiTrench ? "rgba(232,130,12,0.10)" : C.panel2,
+        border: `1px solid ${st.multiTrench ? C.accent : C.line}` }}>
+        <input type="checkbox" checked={!!st.multiTrench}
+          onChange={(e) => set({ ...st, multiTrench: e.target.checked,
+            trenches: e.target.checked ? Math.max(2, st.trenches || 2) : 1 })}
+          style={{ width: 15, height: 15, accentColor: C.accent }} />
+        <span style={{ font: "600 11.5px system-ui", color: C.text }}>
+          Split the run across more than one trench
+        </span>
+        <span style={{ font: "10.5px system-ui", color: C.muted }}>
+          Off by default. Turn it on when the circuits will not fit one trench — a trench is
+          about 2 m wide at most — or to lift the grouping factor.
+        </span>
+      </label>
+
+      {st.multiTrench && (<>
+        <Num label="Number of trenches" value={st.trenches} step={1} min={1}
           onChange={(v) => set({ ...st, trenches: v })} />
         <Num label="Maximum trench width" unit="m" value={st.maxTrenchW} step={0.1} min={0.3}
           onChange={(v) => set({ ...st, maxTrenchW: v })} />
+        <Num label="Circuit width override" unit="mm" value={st.odOverride} step={1} min={0}
+          onChange={(v) => set({ ...st, odOverride: v })} />
+        <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+          <b>The grouping factor is then looked up per trench, not on the total</b>, because each
+          trench is its own thermal group. That only holds if they are far enough apart to be
+          thermally independent — two trenches a metre apart are still one group and the lookup
+          belongs on the total. The tool does not check the separation; you do.
+        </div>
       </>)}
-      <Num label="Circuit width override" unit="mm" value={st.odOverride} step={1} min={0}
-        onChange={(v) => set({ ...st, odOverride: v })} />
+    </Section>
 
-      <div className="readout">
-        <b>Trenching.</b> {plan.total} circuit{plan.total === 1 ? "" : "s"} in total
-        {" "}({row.circ} routed together {"×"} {row.par} in parallel
-        {row.aux ? `, plus ${row.aux} other loaded circuit${row.aux === 1 ? "" : "s"}` : ""}).
-        {buried ? <>
-          {" "}Split across <b>{plan.trenches} trench{plan.trenches === 1 ? "" : "es"}</b>
-          {plan.trenches === 1
-            ? <>, so all <b>{plan.perTrench}</b> share one</>
-            : <>, <b>{plan.perTrench}</b> in each</>}, needing about <b>{fmt(plan.widthM, 2)} m</b> of width at
-          {" "}{fmt(plan.centreSpacingM * 1000, 0)} mm centres with a
-          {" "}{fmt((st.odOverride > 0 ? st.odOverride : circuitWidthMm(kind, row.size)), 0)} mm circuit.
-          {plan.fits
-            ? " That fits the stated maximum."
-            : ` That exceeds the ${fmt(st.maxTrenchW, 1)} m maximum.`}
-        </> : <> Grouping in air is on the bunch as a whole, so trenching does not apply.</>}
-        <br />
-        {plan.trenches > 1 ? <>
-          <b>The grouping factor is looked up on {plan.perTrench}</b>, not on the full
-          {" "}{plan.total}, because each trench is its own thermal group. That only holds if the
-          trenches are far enough apart to be independent; two trenches a metre apart are still
-          one group and the lookup belongs on the total.
-        </> : <>
-          <b>The grouping factor is looked up on all {plan.total}</b>, since they share one route.
-          Splitting them across trenches would raise it, because each trench is then its own
-          thermal group, provided they are far enough apart to be independent.
-        </>}
-      </div>
-
-      {buried && !plan.fits && (
-        <div className="warn" style={{ width: "100%" }}>
-          &#9888; {plan.perTrench} circuits at {fmt(plan.centreSpacingM * 1000, 0)} mm centres needs
-          {" "}{fmt(plan.widthM, 2)} m of trench, against a {fmt(st.maxTrenchW, 1)} m maximum.
-          {" "}<b>Use at least {plan.minTrenches} trench{plan.minTrenches === 1 ? "" : "es"}</b>
-          {" "}({Math.ceil(plan.total / plan.minTrenches)} circuits each), or bring the spacing in.
-          <button className="btn" style={{ marginLeft: 10, padding: "3px 10px" }}
-            onClick={() => set({ ...st, trenches: plan.minTrenches })}>
-            Split into {plan.minTrenches} trenches
+    <Section code={code(1)} title="All three installation methods">
+      <div style={{ width: "100%" }}>
+        {METHODS.map((m) => (
+          <MethodCard key={m.value} method={m} kind={kind} table={table} st={st} set={set}
+            designCurrent={designCurrent} open={!!openCards[m.value]}
+            onToggle={() => toggle(m.value)} />
+        ))}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button className="btn" onClick={() => setOpenCards({ air: true, duct: true, ground: true })}>
+            Show all working
           </button>
+          <button className="btn" onClick={() => setOpenCards({ air: false, duct: false, ground: false })}>
+            Hide all
+          </button>
+          <Num label="Extrapolation safety reduction" unit="%" value={st.safetyPct} step={1} min={0}
+            onChange={(v) => set({ ...st, safetyPct: v })} />
         </div>
-      )}
-
-      <div style={{ width: "100%", background: C.paper, border: `1px solid ${C.line}`,
-        borderRadius: 6, padding: 8 }}>
-        <TrenchDiagram install={focus} circuits={plan.perTrench} depth={st.depth}
-          parallel={row.par} own={ev.own} aux={row.aux} total={plan.total} trenches={plan.trenches}
-          spacingLabel={focus === "air" ? "touching"
-            : (spacingOpts.find((x) => x.value === row.spacing)?.label ?? row.spacing)} />
+        <div className="readout" style={{ marginTop: 8 }}>
+          A circuit with several conductors per pole counts as that many circuits
+          (IEC 60364-5-52 B.52.18/19 NOTE 3), so circuits routed together {"×"} parallel N, plus
+          anything else loaded on the route, is the total. Earth, fibre and spare cores carry no
+          load and do not count.
+        </div>
       </div>
     </Section>
 
-    <Section code="C4" title="Rating check, factor by factor">
-      <HighlightKey />
-      <FactorChain chain={chain} perCable={perCable ?? 0} />
-
-      {/* Everything above is calculated. Everything here can be typed
-          over when the job needs a different number — a manufacturer
-          rating, a client's standard, a factor from another edition —
-          without losing sight of what the table gave. */}
-      <div style={{ width: "100%", marginTop: 8, padding: "9px 11px", borderRadius: 6,
-        background: C.panel2, border: `1px solid ${C.line}` }}>
-        <div style={{ font: "600 11px system-ui", color: C.text, marginBottom: 2 }}>
-          Override any of these
-        </div>
-        <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, marginBottom: 8 }}>
-          Leave a box empty and it is calculated from the IEC tables, which is the normal case.
-          Type a value and that value is used instead: the chip above turns blue and carries the
-          table figure struck through beneath it, and the table below is struck through too, so
-          what was replaced stays visible. <b>Auto</b> puts it back.
-        </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <AutoField label="Base rating" unit="A" dp={0}
-            auto={chain.baseAuto} value={ovOf("base")} onChange={(v) => setOv("base", v)}
-            hint={chain.extrapolated ? "extrapolated, not IEC" : "from the table"} />
-          <AutoField label="f_temp" auto={chain.fTemp.auto ?? chain.fTemp.value}
-            value={ovOf("fTemp")} onChange={(v) => setOv("fTemp", v)} />
-          <AutoField label="f_grp" auto={chain.fGroup.auto ?? chain.fGroup.value}
-            value={ovOf("fGroup")} onChange={(v) => setOv("fGroup", v)} />
-          <AutoField label="f_soil" disabled={focus === "air"}
-            auto={chain.fSoil.auto ?? chain.fSoil.value}
-            value={ovOf("fSoil")} onChange={(v) => setOv("fSoil", v)}
-            hint={focus === "air" ? "no soil in air" : undefined} />
-          <AutoField label="f_depth" disabled={focus === "air"}
-            auto={chain.fDepth.auto ?? chain.fDepth.value}
-            value={ovOf("fDepth")} onChange={(v) => setOv("fDepth", v)}
-            hint={focus === "air" ? "not buried" : undefined} />
-        </div>
-        {chain.anyManual && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 9,
-            font: "10.5px system-ui", color: HL.manual.text }}>
-            <span>
-              This rating is no longer purely the standard&#8217;s. Anything entered by hand is
-              yours to defend, so record where it came from.
-            </span>
-            <button className="btn" style={{ padding: "3px 10px" }}
-              onClick={() => upd({ ov: {} })}>Reset all to auto</button>
-          </div>
-        )}
-      </div>
-
-      <div style={{ width: "100%", marginTop: 4 }}>
-        {chain.derated === null ? (
-          <div className="warn" style={{ width: "100%" }}>
-            &#9888; {chain.notes.join(" ") || "This combination cannot be rated."}
-          </div>
-        ) : short ? (
-          <div className="warn" style={{ width: "100%" }}>
-            &#9888; <b>Too small by {fmt(short.overA, 1)} A, which is {fmt(short.overPct, 0)}% over
-            the derated rating</b> ({fmt(perCable, 1)} A against {fmt(chain.derated, 1)} A,
-            {" "}{fmt(short.utilPct, 0)}% utilised). Three ways out, and which is cheapest is a
-            site question:
-            <ul style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
-              <li>
-                {rec?.found
-                  ? <>Go up to <b>{rec.size} mm&#178;</b>, which derates to {fmt(rec.derated, 1)} A
-                      and leaves {fmt(rec.headroomA, 1)} A spare at {fmt(rec.utilPct, 0)}% utilised
-                      {rec.extrapolated ? <span style={{ color: HL.extrap.text }}> (extrapolated rating)</span> : null}.
-                      <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
-                        onClick={() => upd({ size: rec.size })}>Use {rec.size} mm&#178;</button></>
-                  : <>No size in this table carries it at this grouping, even extrapolated.</>}
-              </li>
-              <li>
-                Run <b>{short.parallelNeeded}</b> cable{short.parallelNeeded === 1 ? "" : "s"} per pole
-                instead of {row.par}. Remember that raises the circuit count for grouping, so it is
-                not a free halving.
-                <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
-                  onClick={() => upd({ par: short.parallelNeeded })}>
-                  Use {short.parallelNeeded} in parallel
-                </button>
-              </li>
-              {buried && (
-                <li>
-                  {trenchFix
-                    ? <>Split across <b>{trenchFix.trenches} trenches</b>, which puts
-                        {" "}{trenchFix.perTrench} circuits in each, lifts the grouping factor from
-                        {" "}{fmt(chain.fGroup.value ?? 0, 3)} to {fmt(trenchFix.fGroup, 3)} and the
-                        rating to {fmt(trenchFix.derated, 1)} A, at about {fmt(trenchFix.widthM, 2)} m
-                        of width each.
-                        <button className="btn" style={{ marginLeft: 8, padding: "2px 9px" }}
-                          onClick={() => set({ ...st, trenches: trenchFix.trenches })}>
-                          Split into {trenchFix.trenches}
-                        </button></>
-                    : <>Splitting across more trenches lifts the grouping factor, but not far
-                        enough to carry this current at this size; the factor is currently
-                        {" "}{fmt(chain.fGroup.value ?? 0, 3)}.</>}
-                </li>
-              )}
-            </ul>
-          </div>
-        ) : (
-          <div className="readout" style={{ border: `1px solid ${HL.used.line}`, background: HL.used.bg }}>
-            <b>Passes.</b> {fmt(perCable, 1)} A per cable against {fmt(chain.derated, 1)} A derated,
-            {" "}{fmt((perCable / chain.derated) * 100, 0)}% utilised with
-            {" "}{fmt(chain.derated - perCable, 1)} A of headroom.
-            {chain.derated / Math.max(1e-9, perCable) > 2
-              ? " That is a lot of headroom; a smaller size may be cheaper."
-              : ""}
-          </div>
-        )}
-      </div>
-
-      {chain.extrapolated && (
-        <div className="warn" style={{ width: "100%" }}>
-          &#9888; <b>The base rating is extrapolated, not IEC data.</b> {chain.extrapReason}
-          {" "}Real ratings flatten off as size grows, because skin and proximity effects rise, so a
-          straight line over-predicts and the {fmt(st.safetyPct, 0)}% reduction only partly offsets
-          it. Replace it with the manufacturer&#39;s figure before anything is ordered.
-        </div>
-      )}
-      <Num label="Extrapolation safety reduction" unit="%" value={st.safetyPct} step={1} min={0}
-        onChange={(v) => set({ ...st, safetyPct: v })} />
-    </Section>
-
-    <Section code="C5" title="All three installation methods side by side">
-      <Scroll min={900}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead><tr>
-            <Th>Method</Th><Th>Size</Th><Th>Parallel</Th><Th>Circuits/trench</Th><Th>Base A</Th>
-            <Th>f_temp</Th><Th>f_grp</Th><Th>f_soil</Th><Th>f_depth</Th><Th>DF</Th>
-            <Th>Derated A</Th><Th>I/cable</Th><Th>Utilisation</Th><Th>Verdict</Th>
-          </tr></thead>
-          <tbody>
-            {METHODS.map((m) => {
-              const r = st.rows[m.value];
-              const e = evaluateRow(r, m.value, st, table, kind, designCurrent);
-              const util = e.chain.derated ? (e.perCable / e.chain.derated) * 100 : NaN;
-              return (
-                <tr key={m.value} style={{ borderTop: `1px solid ${C.line}`,
-                  background: m.value === focus ? "rgba(232,130,12,0.10)" : "transparent" }}>
-                  <Td>{m.label}{m.value === focus ? <span style={{ color: C.accent }}> {"◀"} focus</span> : null}</Td>
-                  <Td>{r.size}{e.chain.extrapolated ? <span style={{ color: HL.extrap.text }}> *</span> : null}</Td>
-                  <Td dim>{r.par}</Td>
-                  <Td dim>{e.plan.perTrench}{e.plan.trenches > 1 ? ` of ${e.plan.total}` : ""}</Td>
-                  <Td dim style={e.chain.baseManual ? { color: HL.manual.text, fontWeight: 700 } : undefined}>
-                    {e.chain.base === null ? "—" : fmt(e.chain.base, 0)}</Td>
-                  {[e.chain.fTemp, e.chain.fGroup, e.chain.fSoil, e.chain.fDepth].map((b, bi) => (
-                    <Td key={bi} dim style={b.manual ? { color: HL.manual.text, fontWeight: 700 } : undefined}>
-                      {b.value === null ? "—" : fmt(b.value, 2)}</Td>
-                  ))}
-                  <Td style={{ color: C.accent }}>{e.chain.df === null ? "—" : fmt(e.chain.df, 3)}</Td>
-                  <Td><b>{e.chain.derated === null ? "—" : fmt(e.chain.derated, 1)}</b></Td>
-                  <Td>{e.perCable === null ? "—" : fmt(e.perCable, 1)}</Td>
-                  <Td><UtilBar pct={util} /></Td>
-                  <Td>{e.short
-                    ? <span className="wk-status bad">{fmt(e.short.overPct, 0)}% OVER</span>
-                    : <Verdict pass={e.chain.derated !== null} failText="NO RATING" />}</Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Scroll>
-      <div className="readout">
-        A circuit with several conductors per pole counts as that many circuits
-        (IEC 60364-5-52 B.52.18/19 NOTE 3), so circuits routed together {"×"} parallel N, plus
-        anything else loaded on the route, is the total. Earth, fibre and spare cores carry no
-        load and do not count. An asterisk marks a base rating that is extrapolated; a value in
-        blue was entered by hand rather than read from a table.
-      </div>
-    </Section>
-
-    <Section code="C5" title="The tables these numbers came from">
+    <Section code={code(2)} title="The tables these numbers came from">
+      <Sel label="Show the lookups for" value={refMethod}
+        onChange={setRefMethod} options={METHODS} />
       <div style={{ width: "100%" }}>
         <HighlightKey />
-        <RefCard open
-          title={`Base current-carrying capacity, ${METHODS.find((m) => m.value === focus).label}`}
+
+        <RefCard
+          title="Base current-carrying capacity"
           source={kind === "dc"
             ? "IEC 60364-5-52 Table B.52.12 (air) and B.52.4 D1/D2 (buried)"
             : "IEC 60364-5-52 Table B.52.13 (air) and B.52.4 D1/D2 (buried)"}
-          note={chain.extrapolated
-            ? "The chosen size is not tabulated for this method, so the value shown is extrapolated from the last two rows that are."
-            : null}>
+          note="All three methods are highlighted at once, each in its own column, so the sizes can be compared without changing anything.">
           <TableCCC table={table} size={row.size} install={focus} methods={METHODS}
             extrapolated={chain.extrapolated ? chain.base : null}
-            manual={chain.baseManual} manualValue={chain.base} autoValue={chain.baseAuto} />
+            manual={chain.baseManual} manualValue={chain.base} autoValue={chain.baseAuto}
+            alsoPicks={METHODS.filter((m) => m.value !== focus).map((m) => ({
+              install: m.value, size: st.rows[m.value].size }))} />
         </RefCard>
 
         <RefCard emphasis={!chain.fTemp.exact || chain.fTemp.manual}
@@ -645,8 +713,8 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
             source={focus === "air" ? "IEC 60364-5-52 Table B.52.17 item 1, bunched"
               : focus === "duct" ? "IEC 60364-5-52 Table B.52.19A, buried ducts"
                 : "IEC 60364-5-52 Table B.52.18, direct buried"}
-            note={`Looked up on ${plan.perTrench} circuit${plan.perTrench === 1 ? "" : "s"} per trench`
-              + `${plan.trenches > 1 ? `, from ${plan.total} split across ${plan.trenches} trenches` : ""}.`}>
+            note={`Looked up on ${plan.perTrench} circuit${plan.perTrench === 1 ? "" : "s"}`
+              + `${plan.trenches > 1 ? ` per trench, from ${plan.total} split across ${plan.trenches}` : ""}.`}>
             <TableGroup rows={chain.groupRows}
               cols={focus === "air" ? [{ value: "f", label: "factor" }] : spacingOpts}
               activeCol={chain.groupCol} circuits={plan.perTrench} bracket={chain.fGroup} />
@@ -654,7 +722,8 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
         )}
 
         {buried && (<>
-          <RefCard emphasis={!chain.fSoil.exact || chain.fSoil.manual} title="Soil thermal resistivity"
+          <RefCard emphasis={!chain.fSoil.exact || chain.fSoil.manual}
+            title="Soil thermal resistivity"
             source="IEC 60364-5-52 Table B.52.16, 2.5 K·m/W base">
             <Table1D table={chain.soilTable} xLabel="K·m/W" yLabel="factor" bracket={chain.fSoil} />
           </RefCard>
@@ -746,10 +815,9 @@ export function CableDcTab({ mod, elec, st, set }) {
         </div>
       </Section>
 
-      <LvSizing kind="dc" table={DC_CCC} designCurrent={iDesign}
-        currentLabel="DC design current" st={st} set={set} />
+      <LvSizing kind="dc" table={DC_CCC} designCurrent={iDesign} st={st} set={set} firstCode={3} />
 
-      <Section code="C7" title="Voltage drop and power loss">
+      <Section code="C6" title="Voltage drop and power loss">
         <Sel label="Resistance source" value={st.rMode}
           onChange={(v) => set({ ...st, rMode: v })}
           options={[
@@ -834,7 +902,7 @@ export function CableAcTab({ inv, setInv, st, set }) {
         CABLE SIZING — AC INVERTER TO TRANSFORMER (ALUMINIUM XLPE, THREE SINGLE-CORES IN TREFOIL)
       </div>
 
-      <Section code="C1" title="Imported values">
+      <Section code="C1" title="Imported values and design current">
         <Scroll min={640}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <ImportedHead />
@@ -859,10 +927,9 @@ export function CableAcTab({ inv, setInv, st, set }) {
         </div>
       </Section>
 
-      <LvSizing kind="ac" table={AC_CCC} designCurrent={iDesign}
-        currentLabel="AC design current" st={st} set={set} />
+      <LvSizing kind="ac" table={AC_CCC} designCurrent={iDesign} st={st} set={set} firstCode={2} />
 
-      <Section code="C7" title="Voltage drop and power loss">
+      <Section code="C5" title="Voltage drop and power loss">
         <Sel label="Impedance source" value={st.rMode}
           onChange={(v) => set({ ...st, rMode: v })}
           options={[
@@ -1203,7 +1270,7 @@ export function CableMvTab({ st, set }) {
           why={`Against a ${fmt(st.vdLimit, 1)} % limit. MV drop is usually comfortable — that is the point of MV — so a figure near the limit is a sign the ring is too long, too heavily loaded, or that a branch should be split and fed from the other side.`} />
       </Section>
 
-      <Section code="C6" title="The tables these numbers came from">
+      <Section code="C5" title="The tables these numbers came from">
         <Sel label="Show the lookups for" value={st.refInstall}
           onChange={(v) => set({ ...st, refInstall: v })}
           options={[{ value: "duct", label: "Buried duct" }, { value: "direct", label: "Direct buried" }]} />

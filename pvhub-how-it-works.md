@@ -179,13 +179,30 @@ arithmetic runs as a line of chips — `base × f_temp × f_grp × f_soil × f_d
 derated`, against the design current — so the factor that cost the capacity is
 obvious at a glance. It is nearly always grouping.
 
+**All three installation methods are on screen at once.** The question an engineer
+actually asks is "which of these works", and answering it by flipping a selector three
+times and holding the numbers in your head is worse than printing them. In air, buried
+duct and direct buried each get a card carrying its own size, its own arithmetic and its
+own verdict, so the first glance is three answers. Each card unfolds to the full working;
+**Show all working** opens the lot.
+
+**Trenching is off until you ask for it.** Most runs are one trench, and a tool that
+opens with trench-width arithmetic on screen is answering a question nobody asked yet.
+One checkbox turns it on, and only then does the trench count, the maximum width and the
+cross-section appear. With it off the whole run is treated as one thermal group, which is
+the conservative reading. When a run fails, the offer to split it comes with a button
+that turns trenching on and sets the count.
+
 **Everything is calculated, and everything can be typed over.** The derating chain
 runs automatically from the inputs, which is the normal case and the one to use unless
 something says otherwise. But real jobs carry numbers the tables do not: a manufacturer
 rating for a size IEC does not list, a client standard that fixes the design current, a
 factor from a different edition, a figure a reviewer has already signed off. Each part
 of the chain — the base rating, all four factors, and the design current itself — has a
-box beside it. Empty means calculated. Type a value and that value is used instead.
+dropdown beside it reading **Auto**, with the table's value shown on it. Switch it to
+**Enter a value** and a box appears. An empty box that silently means automatic is the
+kind of thing that gets misread at four in the afternoon, so the state is always spelled
+out rather than implied.
 
 An override never hides what it replaced. The chip in the arithmetic turns blue and
 carries the table figure struck through beneath it, the row in the reference table below

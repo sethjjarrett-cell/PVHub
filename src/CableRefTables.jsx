@@ -194,7 +194,12 @@ export function TableGroup({ rows, cols, activeCol, circuits, bracket }) {
 }
 
 /** Base current-carrying capacity, with the chosen size and method picked out. */
-export function TableCCC({ table, size, install, methods, extrapolated, manual = false, manualValue = null, autoValue = null }) {
+export function TableCCC({ table, size, install, methods, extrapolated, manual = false,
+  manualValue = null, autoValue = null, alsoPicks = [] }) {
+  /* The other two methods' choices are outlined rather than filled, so
+     all three are visible at once without three things competing to be
+     read as "the answer". */
+  const isAlso = (sz, mv) => alsoPicks.some((a) => a.install === mv && a.size === sz);
   return (
     <>
     {manual && (
@@ -222,16 +227,21 @@ export function TableCCC({ table, size, install, methods, extrapolated, manual =
         {table.map((r) => (
           <tr key={r.size}>
             <td style={{ padding: "4px 9px", font: "12px var(--mono)",
-              color: r.size === size ? C.text : C.muted, fontWeight: r.size === size ? 700 : 400 }}>
+              color: r.size === size || alsoPicks.some((a) => a.size === r.size) ? C.text : C.muted,
+              fontWeight: r.size === size ? 700 : 400 }}>
               {r.size}
             </td>
             {methods.map((m) => {
               const v = r[m.value];
               const isPick = r.size === size && m.value === install;
+              const also = !isPick && isAlso(r.size, m.value);
               const missing = v === null || v === undefined;
               return (
-                <td key={m.value} style={cellStyle(isPick
-                  ? (manual ? "bypassed" : missing ? "extrap" : "used") : null)}>
+                <td key={m.value} style={{
+                  ...cellStyle(isPick ? (manual ? "bypassed" : missing ? "extrap" : "used") : null),
+                  ...(also ? { boxShadow: `inset 0 0 0 1.5px ${HL.used.line}`,
+                    color: HL.used.text, fontWeight: 600 } : {}),
+                }}>
                   {missing
                     ? <span style={{ color: isPick ? HL.extrap.text : C.muted }}>
                         {isPick && extrapolated ? fmt(extrapolated, 0) : "not tabulated"}

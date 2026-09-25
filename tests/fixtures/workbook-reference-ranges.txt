@@ -1,0 +1,425 @@
+============================== Cable Sizing DC
+A1=CABLE SIZING  -  DC string / array cable   (H1Z2Z2-K copper XLPE, 2 loaded conductors)
+A2=Colour key:  NAVY bar = sheet title or table header  ·  PALE BLUE bar = section  ·  YELLOW = input you edit (blue text) or value imported from another sheet (green text)  ·  GOLD = grouping input  ·  no fill = calculated  ·  light blue cell in the reference tables = the value in use.  Every formula on this sheet reads only cells on THIS sheet: imported figures come in once, at section 1.
+A4=1.  IMPORTED VALUES   (the only link to other sheets)
+A5=Imported value | B5=Source | C5=Linked | D5=Override | E5=In use | F5=Unit
+A6=Module Isc | B6=Site Parameters!B9 | C6=16.48 | E6=16.48 | F6=A
+A7=Module Vmp | B7=Site Parameters!B8 | C7=41.23 | E7=41.23 | F7=V
+A8=Module Imp | B8=Site Parameters!B10 | C8=15.77 | E8=15.77 | F8=A
+A9=Modules in series | B9=Site Parameters!B38 | C9=27 | E9=27 | F9=-
+A11=2.  DESIGN CURRENT
+A12=Safety factor | B12=1.25 | C12=- | D12=IEC 62548
+A13=DC design current, Isc x SF (A) | B13=20.6 | C13=A
+A15=3.  INSTALLATION PARAMETERS
+A16=Air temperature (degC) | B16=40 | C16=degC
+A17=Ground temperature (degC) | B17=25 | C17=degC
+A18=Soil resistivity (K.m/W) | B18=2.5 | C18=K.m/W
+A19=Burial depth (m) | B19=0.8 | C19=m
+A21=4.  AMPACITY / SIZING CHECK
+A22=Install | B22=Size mm2 | C22=Parallel N | D22=Circuits routed together | E22=Clearance | F22=Base CCC A | G22=f_temp | H22=f_grp | I22=f_soil | J22=f_depth | K22=Total DF | L22=Derated A | M22=Design I/cable A | N22=Util % | O22=Verdict | P22=Own circuits (circuits x N) | Q22=Aux circuits in trench | R22=TOTAL circuits for f_grp
+A23=Air | B23=6 | C23=1 | D23=20 | E23=n/a | F23=63 | G23=0.91 | H23=0.38 | I23=1 | J23=1 | K23=0.3458 | L23=21.7854 | M23=20.6 | N23=0.945587411752825 | O23=PASS | P23=20 | Q23=0 | R23=20
+A24=Duct | B24=6 | C24=1 | D24=20 | E24=1.0m | F24=53 | G24=0.96 | H24=0.82 | I24=1 | J24=1 | K24=0.7872 | L24=41.7216 | M24=20.6 | N24=0.493749041263998 | O24=PASS | P24=20 | Q24=0 | R24=20
+A25=Ground | B25=6 | C25=1 | D25=6 | E25=1 dia | F25=58 | G25=0.96 | H25=0.55 | I25=1 | J25=1 | K25=0.528 | L25=30.624 | M25=20.6 | N25=0.672675026123302 | O25=PASS | P25=6 | Q25=0 | R25=6
+A26=Design I/cable = design current / Parallel N.  Util colour: green <=80%, amber <=100%, red >100%.  GROUPING per IEC 60364-5-52 B.52.18/19 NOTE 3 (and the same principle for MV): a circuit with m parallel conductors per phase counts as m circuits, so Own circuits = circuits routed together x Parallel N. Put any OTHER loaded cables sharing the trench or tray in "Aux circuits". The factor is looked up on the TOTAL. Unloaded cables (earth, fibre, spares) do not count.
+A28=5.  VOLTAGE DROP
+A29=R is per metre of conductor. A DC circuit is a loop, so total conductor length = route x loop factor (2 = out and return; set 1 if your R already covers both legs).
+A30=R' at 35 degC (ohm/m) | B30=0.0039611 | C30=ohm/m | D30=H1Z2Z2-K 1x6mm2 solar DC cable
+A31=R0 at 20 degC (ohm/m) | B31=0.00339 | C31=ohm/m
+A32=Resistivity in use | B32=R' at 35 degC
+A33=R used (ohm/m) | B33=0.0039611 | C33=ohm/m
+A34=String voltage, Vmp x N (V) | B34=1113.21 | C34=V
+A35=String power, Vstring x Imp (W) | B35=17555.3217 | C35=W
+A36=Route length, one way (m) | B36=150 | C36=m
+A37=Loop factor | B37=2 | C37=- | D37=2 = out and return
+A38=Total conductor length (m) | B38=300 | C38=m
+A39=Cable resistance, R = R x L (ohm) | B39=1.18833 | C39=ohm
+A40=Voltage drop, dV = Imp x R (V) | B40=18.7399641 | C40=V
+A41=Voltage drop (%) | B41=1.68341679467486 | C41=FAIL
+A42=Power loss, dP = Imp^2 x R (W) | B42=295.529233857 | C42=W
+A43=Power loss (%) | B43=1.68341679467486 | C43=%
+A44=Voltage drop limit (%) | B44=1 | C44=%
+A45=MAX route length at this limit (m) | B45=89.1044930016701 | C45=m
+A46=Length headroom (m) | B46=-60.8955069983299 | C46=m | D46=negative = run too long
+A48=6.  IEC REFERENCE DATA   (edit these ranges directly; blue cells are the values in use)
+A49=Base current-carrying capacity (A)
+A50=Size mm2 | B50=Air (Cu XLPE 2-core, B.52.12) | C50=Duct (D1) | D50=Ground (D2)
+A51=1.5 | B51=26 | C51=25 | D51=27
+A52=2.5 | B52=36 | C52=33 | D52=35
+A53=4 | B53=49 | C53=43 | D53=46
+A54=6 | B54=63 | C54=53 | D54=58
+A55=10 | B55=86 | C55=71 | D55=77
+A56=16 | B56=115 | C56=91 | D56=100
+A57=25 | B57=149 | C57=116 | D57=129
+A58=35 | B58=185 | C58=139 | D58=155
+A59=50 | B59=225 | C59=164 | D59=183
+A60=70 | B60=289 | C60=203 | D60=225
+A61=95 | B61=352 | C61=239 | D61=270
+A62=120 | B62=410 | C62=271 | D62=306
+A63=150 | B63=473 | C63=306 | D63=343
+A64=185 | B64=542 | C64=343 | D64=387
+A65=240 | B65=641 | C65=395 | D65=448
+A66=300 | B66=741 | C66=446 | D66=502
+A67=400 | B67=- | C67=- | D67=-
+A68=500 | B68=- | C68=- | D68=-
+A69=630 | B69=- | C69=- | D69=-
+A71=Temperature factor (XLPE; air base 30C, ground base 20C)
+A72=Temp degC | B72=Air (B.52.14) | C72=Ground (B.52.15)
+A73=10 | B73=1.15 | C73=1.07
+A74=15 | B74=1.12 | C74=1.04
+A75=20 | B75=1.08 | C75=1
+A76=25 | B76=1.04 | C76=0.96
+A77=30 | B77=1 | C77=0.93
+A78=35 | B78=0.96 | C78=0.89
+A79=40 | B79=0.91 | C79=0.85
+A80=45 | B80=0.87 | C80=0.8
+A81=50 | B81=0.82 | C81=0.76
+A82=55 | B82=0.76 | C82=0.71
+A83=60 | B83=0.71 | C83=0.65
+A84=65 | B84=0.65 | C84=0.6
+A85=70 | B85=0.58 | C85=0.53
+A86=75 | B86=0.5 | C86=0.46
+A87=80 | B87=0.41 | C87=0.38
+A89=Grouping - in air / bunched (B.52.17 item 1)
+A90=Circuits | B90=1 | C90=2 | D90=3 | E90=4 | F90=5 | G90=6 | H90=7 | I90=8 | J90=9 | K90=12 | L90=16 | M90=20
+A91=Factor | B91=1 | C91=0.8 | D91=0.7 | E91=0.65 | F91=0.6 | G91=0.57 | H91=0.54 | I91=0.52 | J91=0.5 | K91=0.45 | L91=0.41 | M91=0.38
+A93=Grouping - buried ducts (B.52.19A, 2-20 circuits)
+A94=Circuits | B94=touching | C94=0.25m | D94=0.5m | E94=1.0m
+A95=2 | B95=0.85 | C95=0.9 | D95=0.95 | E95=0.95
+A96=3 | B96=0.75 | C96=0.85 | D96=0.9 | E96=0.95
+A97=4 | B97=0.7 | C97=0.8 | D97=0.85 | E97=0.9
+A98=5 | B98=0.65 | C98=0.8 | D98=0.85 | E98=0.9
+A99=6 | B99=0.6 | C99=0.8 | D99=0.8 | E99=0.9
+A100=7 | B100=0.57 | C100=0.76 | D100=0.8 | E100=0.88
+A101=8 | B101=0.54 | C101=0.74 | D101=0.78 | E101=0.88
+A102=9 | B102=0.52 | C102=0.73 | D102=0.77 | E102=0.87
+A103=10 | B103=0.49 | C103=0.72 | D103=0.76 | E103=0.86
+A104=11 | B104=0.47 | C104=0.7 | D104=0.75 | E104=0.86
+A105=12 | B105=0.45 | C105=0.69 | D105=0.74 | E105=0.85
+A106=13 | B106=0.44 | C106=0.68 | D106=0.73 | E106=0.85
+A107=14 | B107=0.42 | C107=0.68 | D107=0.72 | E107=0.84
+A108=15 | B108=0.41 | C108=0.67 | D108=0.72 | E108=0.84
+A109=16 | B109=0.39 | C109=0.66 | D109=0.71 | E109=0.83
+A110=17 | B110=0.38 | C110=0.65 | D110=0.7 | E110=0.83
+A111=18 | B111=0.37 | C111=0.65 | D111=0.7 | E111=0.83
+A112=19 | B112=0.35 | C112=0.64 | D112=0.69 | E112=0.82
+A113=20 | B113=0.34 | C113=0.63 | D113=0.68 | E113=0.82
+A115=Grouping - direct buried (B.52.18)
+A116=Circuits | B116=touching | C116=1 dia | D116=0.125m | E116=0.25m | F116=0.5m
+A117=2 | B117=0.75 | C117=0.8 | D117=0.85 | E117=0.9 | F117=0.9
+A118=3 | B118=0.65 | C118=0.7 | D118=0.75 | E118=0.8 | F118=0.85
+A119=4 | B119=0.6 | C119=0.6 | D119=0.7 | E119=0.75 | F119=0.8
+A120=5 | B120=0.55 | C120=0.55 | D120=0.65 | E120=0.7 | F120=0.8
+A121=6 | B121=0.5 | C121=0.55 | D121=0.6 | E121=0.7 | F121=0.8
+A122=7 | B122=0.45 | C122=0.51 | D122=0.59 | E122=0.67 | F122=0.76
+A123=8 | B123=0.43 | C123=0.48 | D123=0.57 | E123=0.65 | F123=0.75
+A124=9 | B124=0.41 | C124=0.46 | D124=0.55 | E124=0.63 | F124=0.74
+A125=12 | B125=0.36 | C125=0.42 | D125=0.51 | E125=0.59 | F125=0.71
+A126=16 | B126=0.32 | C126=0.38 | D126=0.47 | E126=0.56 | F126=0.68
+A127=20 | B127=0.29 | C127=0.35 | D127=0.44 | E127=0.53 | F127=0.66
+A129=Soil resistivity factor (B.52.16, base 2.5 K.m/W)
+A130=Install | B130=0.5 | C130=0.7 | D130=1 | E130=1.5 | F130=2 | G130=2.5 | H130=3
+A131=Buried ducts | B131=1.28 | C131=1.2 | D131=1.18 | E131=1.1 | F131=1.05 | G131=1 | H131=0.96
+A132=Direct buried | B132=1.88 | C132=1.62 | D132=1.5 | E132=1.28 | F132=1.12 | G132=1 | H132=0.9
+A134=Burial depth factor (IEC 60287)
+A135=Depth m | B135=Dir <=185 | C135=Dir >185 | D135=Duct <=185 | E135=Duct >185
+A136=0.5 | B136=1.04 | C136=1.06 | D136=1.04 | E136=1.05
+A137=0.6 | B137=1.02 | C137=1.04 | D137=1.02 | E137=1.03
+A138=0.8 | B138=1 | C138=1 | D138=1 | E138=1
+A139=1 | B139=0.98 | C139=0.97 | D139=0.98 | E139=0.97
+A140=1.25 | B140=0.96 | C140=0.95 | D140=0.96 | E140=0.95
+A141=1.5 | B141=0.95 | C141=0.93 | D141=0.95 | E141=0.93
+A142=1.75 | B142=0.94 | C142=0.91 | D142=0.94 | E142=0.92
+A143=2 | B143=0.93 | C143=0.9 | D143=0.93 | E143=0.91
+A144=2.5 | B144=0.91 | C144=0.88 | D144=0.91 | E144=0.89
+A145=3 | B145=0.9 | C145=0.86 | D145=0.9 | E145=0.88
+============================== Cable Sizing AC
+A1=CABLE SIZING  -  AC inverter-to-transformer feeder   (aluminium XLPE, 1c trefoil)
+A2=Colour key:  NAVY bar = sheet title or table header  ·  PALE BLUE bar = section  ·  YELLOW = input you edit (blue text) or value imported from another sheet (green text)  ·  GOLD = grouping input  ·  no fill = calculated  ·  light blue cell in the reference tables = the value in use.  Every formula on this sheet reads only cells on THIS sheet: imported figures come in once, at section 1.
+A4=1.  IMPORTED VALUES   (the only link to other sheets)
+A5=Imported value | B5=Source | C5=Linked | D5=Override | E5=In use | F5=Unit
+A6=Inverter max AC output current | B6=Site Parameters!B57 | C6=254 | E6=254 | F6=A
+A8=2.  DESIGN CURRENT
+A9=AC design current (A) | B9=254 | C9=A | D9=inverter max output current
+A11=3.  INSTALLATION PARAMETERS
+A12=Air temperature (degC) | B12=40 | C12=degC
+A13=Ground temperature (degC) | B13=25 | C13=degC
+A14=Soil resistivity (K.m/W) | B14=2.5 | C14=K.m/W
+A15=Burial depth (m) | B15=0.8 | C15=m
+A17=4.  AMPACITY / SIZING CHECK
+A18=Install | B18=Size mm2 | C18=Parallel N | D18=Circuits routed together | E18=Clearance | F18=Base CCC A | G18=f_temp | H18=f_grp | I18=f_soil | J18=f_depth | K18=Total DF | L18=Derated A | M18=Design I/cable A | N18=Util % | O18=Verdict | P18=Own circuits (circuits x N) | Q18=Aux circuits in trench | R18=TOTAL circuits for f_grp
+A19=Air | B19=630 | C19=1 | D19=2 | E19=n/a | F19=899 | G19=0.91 | H19=0.8 | I19=1 | J19=1 | K19=0.728 | L19=654.472 | M19=254 | N19=0.388099108899999 | O19=PASS | P19=2 | Q19=0 | R19=2
+A20=Duct | B20=300 | C20=2 | D20=2 | E20=touching | F20=286 | G20=0.96 | H20=0.7 | I20=1 | J20=1 | K20=0.672 | L20=192.192 | M20=127 | N20=0.660797535797536 | O20=PASS | P20=4 | Q20=0 | R20=4
+A21=Ground | B21=300 | C21=2 | D21=2 | E21=touching | F21=326 | G21=0.96 | H21=0.6 | I21=1 | J21=1 | K21=0.576 | L21=187.776 | M21=127 | N21=0.676337764144513 | O21=PASS | P21=4 | Q21=0 | R21=4
+A22=Design I/cable = design current / Parallel N.  Util colour: green <=80%, amber <=100%, red >100%.  GROUPING per IEC 60364-5-52 B.52.18/19 NOTE 3 (and the same principle for MV): a circuit with m parallel conductors per phase counts as m circuits, so Own circuits = circuits routed together x Parallel N. Put any OTHER loaded cables sharing the trench or tray in "Aux circuits". The factor is looked up on the TOTAL. Unloaded cables (earth, fibre, spares) do not count.
+A24=5.  VOLTAGE DROP
+A25=dV = root3 x I x (R cos(theta) + X sin(theta)) x L.  Power loss = 3 x I^2 x R x L.  Pick a cable from the library or edit R and X directly.
+A26=Cable | B26=R (ohm/m) @60C | C26=X (ohm/m)
+A27=1x400mm2 | B27=9E-005 | C27=8.5E-005
+A28=4x185mm2 | B28=0.0001904 | C28=7.2E-005
+A29=4x120mm2 | B29=0.0002938 | C29=7.2E-005
+A31=Cable selected | B31=1x400mm2
+A32=R in use (ohm/m) | B32=9E-005 | C32=ohm/m
+A33=X in use (ohm/m) | B33=8.5E-005 | C33=ohm/m
+A34=Theta (deg) | B34=0 | C34=deg | D34=cos(theta) = power factor
+A35=Reference line voltage (V) | B35=415 | C35=V
+A36=Run length (m) | B36=50 | C36=m
+A37=Parallel cables per phase | B37=2 | C37=-
+A38=Voltage drop, dV (V) | B38=0.989867036525614 | C38=V
+A39=Voltage drop (%) | B39=0.238522177476051 | C39=PASS
+A40=Power loss, dP = 3 x I^2 x R (W) | B40=435.483 | C40=W
+A41=Voltage drop limit (%) | B41=1 | C41=%
+A42=MAX length at this limit (m) | B42=209.624113485297 | C42=m
+A43=Length headroom (m) | B43=159.624113485297 | C43=m
+A45=6.  IEC REFERENCE DATA   (edit these ranges directly; blue cells are the values in use)
+A46=Base current-carrying capacity (A)
+A47=Size mm2 | B47=Air (Al XLPE 1c trefoil, B.52.13) | C47=Duct (D1) | D47=Ground (D2)
+A48=25 | B48=103 | C48=75 | D48=82
+A49=35 | B49=129 | C49=90 | D49=98
+A50=50 | B50=159 | C50=106 | D50=117
+A51=70 | B51=206 | C51=130 | D51=144
+A52=95 | B52=253 | C52=154 | D52=172
+A53=120 | B53=296 | C53=174 | D53=197
+A54=150 | B54=343 | C54=197 | D54=220
+A55=185 | B55=395 | C55=220 | D55=250
+A56=240 | B56=471 | C56=253 | D56=290
+A57=300 | B57=547 | C57=286 | D57=326
+A58=400 | B58=663 | C58=- | D58=-
+A59=500 | B59=770 | C59=- | D59=-
+A60=630 | B60=899 | C60=- | D60=-
+A62=Temperature factor (XLPE; air base 30C, ground base 20C)
+A63=Temp degC | B63=Air (B.52.14) | C63=Ground (B.52.15)
+A64=10 | B64=1.15 | C64=1.07
+A65=15 | B65=1.12 | C65=1.04
+A66=20 | B66=1.08 | C66=1
+A67=25 | B67=1.04 | C67=0.96
+A68=30 | B68=1 | C68=0.93
+A69=35 | B69=0.96 | C69=0.89
+A70=40 | B70=0.91 | C70=0.85
+A71=45 | B71=0.87 | C71=0.8
+A72=50 | B72=0.82 | C72=0.76
+A73=55 | B73=0.76 | C73=0.71
+A74=60 | B74=0.71 | C74=0.65
+A75=65 | B75=0.65 | C75=0.6
+A76=70 | B76=0.58 | C76=0.53
+A77=75 | B77=0.5 | C77=0.46
+A78=80 | B78=0.41 | C78=0.38
+A80=Grouping - in air / bunched (B.52.17 item 1)
+A81=Circuits | B81=1 | C81=2 | D81=3 | E81=4 | F81=5 | G81=6 | H81=7 | I81=8 | J81=9 | K81=12 | L81=16 | M81=20
+A82=Factor | B82=1 | C82=0.8 | D82=0.7 | E82=0.65 | F82=0.6 | G82=0.57 | H82=0.54 | I82=0.52 | J82=0.5 | K82=0.45 | L82=0.41 | M82=0.38
+A84=Grouping - buried ducts (B.52.19A, 2-20 circuits)
+A85=Circuits | B85=touching | C85=0.25m | D85=0.5m | E85=1.0m
+A86=2 | B86=0.85 | C86=0.9 | D86=0.95 | E86=0.95
+A87=3 | B87=0.75 | C87=0.85 | D87=0.9 | E87=0.95
+A88=4 | B88=0.7 | C88=0.8 | D88=0.85 | E88=0.9
+A89=5 | B89=0.65 | C89=0.8 | D89=0.85 | E89=0.9
+A90=6 | B90=0.6 | C90=0.8 | D90=0.8 | E90=0.9
+A91=7 | B91=0.57 | C91=0.76 | D91=0.8 | E91=0.88
+A92=8 | B92=0.54 | C92=0.74 | D92=0.78 | E92=0.88
+A93=9 | B93=0.52 | C93=0.73 | D93=0.77 | E93=0.87
+A94=10 | B94=0.49 | C94=0.72 | D94=0.76 | E94=0.86
+A95=11 | B95=0.47 | C95=0.7 | D95=0.75 | E95=0.86
+A96=12 | B96=0.45 | C96=0.69 | D96=0.74 | E96=0.85
+A97=13 | B97=0.44 | C97=0.68 | D97=0.73 | E97=0.85
+A98=14 | B98=0.42 | C98=0.68 | D98=0.72 | E98=0.84
+A99=15 | B99=0.41 | C99=0.67 | D99=0.72 | E99=0.84
+A100=16 | B100=0.39 | C100=0.66 | D100=0.71 | E100=0.83
+A101=17 | B101=0.38 | C101=0.65 | D101=0.7 | E101=0.83
+A102=18 | B102=0.37 | C102=0.65 | D102=0.7 | E102=0.83
+A103=19 | B103=0.35 | C103=0.64 | D103=0.69 | E103=0.82
+A104=20 | B104=0.34 | C104=0.63 | D104=0.68 | E104=0.82
+A106=Grouping - direct buried (B.52.18)
+A107=Circuits | B107=touching | C107=1 dia | D107=0.125m | E107=0.25m | F107=0.5m
+A108=2 | B108=0.75 | C108=0.8 | D108=0.85 | E108=0.9 | F108=0.9
+A109=3 | B109=0.65 | C109=0.7 | D109=0.75 | E109=0.8 | F109=0.85
+A110=4 | B110=0.6 | C110=0.6 | D110=0.7 | E110=0.75 | F110=0.8
+A111=5 | B111=0.55 | C111=0.55 | D111=0.65 | E111=0.7 | F111=0.8
+A112=6 | B112=0.5 | C112=0.55 | D112=0.6 | E112=0.7 | F112=0.8
+A113=7 | B113=0.45 | C113=0.51 | D113=0.59 | E113=0.67 | F113=0.76
+A114=8 | B114=0.43 | C114=0.48 | D114=0.57 | E114=0.65 | F114=0.75
+A115=9 | B115=0.41 | C115=0.46 | D115=0.55 | E115=0.63 | F115=0.74
+A116=12 | B116=0.36 | C116=0.42 | D116=0.51 | E116=0.59 | F116=0.71
+A117=16 | B117=0.32 | C117=0.38 | D117=0.47 | E117=0.56 | F117=0.68
+A118=20 | B118=0.29 | C118=0.35 | D118=0.44 | E118=0.53 | F118=0.66
+A120=Soil resistivity factor (B.52.16, base 2.5 K.m/W)
+A121=Install | B121=0.5 | C121=0.7 | D121=1 | E121=1.5 | F121=2 | G121=2.5 | H121=3
+A122=Buried ducts | B122=1.28 | C122=1.2 | D122=1.18 | E122=1.1 | F122=1.05 | G122=1 | H122=0.96
+A123=Direct buried | B123=1.88 | C123=1.62 | D123=1.5 | E123=1.28 | F123=1.12 | G123=1 | H123=0.9
+A125=Burial depth factor (IEC 60287)
+A126=Depth m | B126=Dir <=185 | C126=Dir >185 | D126=Duct <=185 | E126=Duct >185
+A127=0.5 | B127=1.04 | C127=1.06 | D127=1.04 | E127=1.05
+A128=0.6 | B128=1.02 | C128=1.04 | D128=1.02 | E128=1.03
+A129=0.8 | B129=1 | C129=1 | D129=1 | E129=1
+A130=1 | B130=0.98 | C130=0.97 | D130=0.98 | E130=0.97
+A131=1.25 | B131=0.96 | C131=0.95 | D131=0.96 | E131=0.95
+A132=1.5 | B132=0.95 | C132=0.93 | D132=0.95 | E132=0.93
+A133=1.75 | B133=0.94 | C133=0.91 | D133=0.94 | E133=0.92
+A134=2 | B134=0.93 | C134=0.9 | D134=0.93 | E134=0.91
+A135=2.5 | B135=0.91 | C135=0.88 | D135=0.91 | E135=0.89
+A136=3 | B136=0.9 | C136=0.86 | D136=0.9 | E136=0.88
+============================== Cable Sizing MV
+A1=CABLE SIZING  -  MV collector ring   (3x1c AL XLPE 19/33 kV, IEC 60502-2, trefoil)
+A2=Colour key:  NAVY = title or table header  ·  PALE BLUE = section  ·  YELLOW = input you edit (blue text) or imported (green text)  ·  GOLD = grouping / spacing input  ·  no fill = calculated.  Change the parameters in section 3 and the two capacity tables in section 4 recalculate, then every run in section 5 repices its capacity automatically.
+A4=1.  IMPORTED VALUES   (the only link to other sheets)
+A5=Imported value | B5=Source | C5=Linked | D5=Override | E5=In use | F5=Unit
+A6=MV voltage level | B6=Site Parameters!B37 | C6=33 | E6=33 | F6=kV
+A8=2.  DESIGN CURRENT
+A9=Inverter apparent power (kVA) | B9=352 | C9=kVA | D9=AC output power at 30 degC from the inverter datasheet
+A10=Current per inverter (A) | B10=6.15840287135601 | C10=A | D10=kVA / (root3 x kV)
+A11=Binding design current - worst run (A) | B11=351.028963667293
+A13=3.  INSTALLATION PARAMETERS   -  change these and both capacity tables update
+A14=Ground temperature (degC) | B14=20 | D14=Burial depth (m) | E14=1 | G14=Soil resistivity (K.m/W) | H14=2.5
+A15=DUCTS: circuits adjacent | B15=3 | D15=DUCTS: spacing | E15=400 | G15=(1 circuit = no grouping derate)
+A16=DIRECT: circuits adjacent | B16=3 | D16=DIRECT: spacing | E16=400 | G16=spacing options: Touching, 200, 400, 600, 800 mm
+A17=Theta (deg) | B17=0 | D17=Voltage drop limit (%) | E17=2 | G17=cos(theta) = power factor; 0 deg = unity
+A19=4.  DERATED CAPACITY BY SIZE   -  one table per installation method, driven by the parameters above
+A20=TREFOIL IN DUCTS | J20=DIRECT BURIED (straight in ground)
+A21=Size mm2 | B21=Base rating A | C21=f_temp | D21=f_depth | E21=f_soil | F21=f_group | G21=DF | H21=Derated A | J21=Size mm2 | K21=Base rating A | L21=f_temp | M21=f_depth | N21=f_soil | O21=f_group | P21=DF | Q21=Derated A
+A22=16 | B22=80 | C22=1 | D22=0.98 | E22=0.85 | F22=0.81 | G22=0.67473 | H22=53.9784 | J22=16 | K22=84 | L22=1 | M22=0.98 | N22=0.82 | O22=0.79 | P22=0.634844 | Q22=53.326896
+A23=25 | B23=102 | C23=1 | D23=0.98 | E23=0.85 | F23=0.81 | G23=0.67473 | H23=68.82246 | J23=25 | K23=108 | L23=1 | M23=0.98 | N23=0.81 | O23=0.79 | P23=0.627102 | Q23=67.727016
+A24=35 | B24=122 | C24=1 | D24=0.98 | E24=0.84 | F24=0.81 | G24=0.666792 | H24=81.348624 | J24=35 | K24=129 | L24=1 | M24=0.98 | N24=0.81 | O24=0.79 | P24=0.627102 | Q24=80.896158
+A25=50 | B25=144 | C25=1 | D25=0.98 | E25=0.84 | F25=0.81 | G25=0.666792 | H25=96.018048 | J25=50 | K25=152 | L25=1 | M25=0.98 | N25=0.81 | O25=0.79 | P25=0.627102 | Q25=95.319504
+A26=70 | B26=176 | C26=1 | D26=0.98 | E26=0.84 | F26=0.81 | G26=0.666792 | H26=117.355392 | J26=70 | K26=186 | L26=1 | M26=0.98 | N26=0.81 | O26=0.79 | P26=0.627102 | Q26=116.640972
+A27=95 | B27=210 | C27=1 | D27=0.98 | E27=0.84 | F27=0.81 | G27=0.666792 | H27=140.02632 | J27=95 | K27=221 | L27=1 | M27=0.98 | N27=0.8 | O27=0.79 | P27=0.61936 | Q27=136.87856
+A28=120 | B28=240 | C28=1 | D28=0.98 | E28=0.84 | F28=0.81 | G28=0.666792 | H28=160.03008 | J28=120 | K28=252 | L28=1 | M28=0.98 | N28=0.8 | O28=0.79 | P28=0.61936 | Q28=156.07872
+A29=150 | B29=267 | C29=1 | D29=0.98 | E29=0.83 | F29=0.81 | G29=0.658854 | H29=175.914018 | J29=150 | K29=281 | L29=1 | M29=0.98 | N29=0.8 | O29=0.79 | P29=0.61936 | Q29=174.04016
+A30=185 | B30=303 | C30=1 | D30=0.98 | E30=0.83 | F30=0.81 | G30=0.658854 | H30=199.632762 | J30=185 | K30=317 | L30=1 | M30=0.98 | N30=0.8 | O30=0.79 | P30=0.61936 | Q30=196.33712
+A31=240 | B31=351 | C31=1 | D31=0.97 | E31=0.83 | F31=0.81 | G31=0.652131 | H31=228.897981 | J31=240 | K31=367 | L31=1 | M31=0.97 | N31=0.8 | O31=0.79 | P31=0.61304 | Q31=224.98568
+A32=300 | B32=397 | C32=1 | D32=0.97 | E32=0.83 | F32=0.81 | G32=0.652131 | H32=258.896007 | J32=300 | K32=414 | L32=1 | M32=0.97 | N32=0.8 | O32=0.79 | P32=0.61304 | Q32=253.79856
+A33=400 | B33=451 | C33=1 | D33=0.97 | E33=0.83 | F33=0.81 | G33=0.652131 | H33=294.111081 | J33=400 | K33=470 | L33=1 | M33=0.97 | N33=0.79 | O33=0.79 | P33=0.605377 | Q33=284.52719
+A34=500 | B34=479.75 | C34=1 | D34=0.97 | E34=0.83 | F34=0.81 | G34=0.652131 | H34=312.85984725 | J34=500 | K34=499.7 | L34=1 | M34=0.97 | N34=0.79 | O34=0.79 | P34=0.605377 | Q34=302.5068869
+A35=630 | B35=546.44 | C35=1 | D35=0.97 | E35=0.83 | F35=0.81 | G35=0.652131 | H35=356.35046364 | J35=630 | K35=568.86 | L35=1 | M35=0.97 | N35=0.79 | O35=0.79 | P35=0.605377 | Q35=344.37476022
+A36=Both tables read the same size list and the same reference data; only the install-specific columns and the grouping/spacing inputs differ. Blank means the IEC tables do not cover that combination (for example spacing 600/800 mm above 9 circuits, or buried ratings above 400 mm2).
+A38=5.  MV RING RUNS   -  assign an install method and a cable size to each run
+A39=Current accumulates along a branch and resets at each new branch. Capacity, R and X follow the size and install method you pick. Cable length = route distance x 3 cores x 1.2 slack.
+A40=Branch | B40=From | C40=To | D40=Inverters | E40=Run current A | F40=Cumulative A | G40=Install | H40=Size mm2 | I40=Derated A | J40=Util % | K40=Ampacity | L40=Route dist m | M40=Cable length m | N40=dV run (V) | O40=Cum dV % | P40=Vdrop
+A41=1 | B41=1 | C41=2 | D41=20 | E41=123.16805742712 | F41=123.16805742712 | G41=Duct | H41=150 | I41=175.914018 | J41=0.700160560411509 | K41=PASS | L41=343.59 | M41=1236.924 | N41=15.0996352 | O41=0.0457564703030303 | P41=PASS
+A42=1 | B42=2 | C42=3 | D42=19 | E42=117.009654555764 | F42=240.177711982884 | G42=Duct | H42=300 | I42=258.896007 | J42=0.927699560784977 | K42=PASS | L42=288.14 | M42=1037.304 | N42=11.986624 | O42=0.0820795733333333 | P42=PASS
+A43=1 | B43=3 | C43=POC | D43=18 | E43=110.851251684408 | F43=351.028963667293 | G43=Duct | H43=630 | I43=356.35046364 | J43=0.985066667464523 | K43=PASS | L43=886 | M43=3189.6 | N43=25.2644672 | O43=0.158638564848485 | P43=PASS
+A44=2 | B44=4 | C44=5 | D44=14 | E44=86.2176401989841 | F44=86.2176401989841 | G44=Duct | H44=150 | I44=175.914018 | J44=0.490112392288056 | K44=PASS | L44=172.56 | M44=621.216 | N44=5.30840576 | O44=0.0160860780606061 | P44=PASS
+A45=2 | B45=5 | C45=6 | D45=10 | E45=61.5840287135601 | F45=147.801668912544 | G45=Duct | H45=150 | I45=175.914018 | J45=0.84019267249381 | K45=PASS | L45=242.11 | M45=871.596 | N45=12.76791296 | O45=0.0547767233939394 | P45=PASS
+A46=2 | B46=6 | C46=10 | D46=13 | E46=80.0592373276281 | F46=227.860906240172 | G46=Duct | H46=300 | I46=258.896007 | J46=0.880125224334465 | K46=PASS | L46=526.64 | M46=1895.904 | N46=20.7847253333333 | O46=0.117760739555556 | P46=PASS
+A47=2 | B47=10 | C47=POC | D47=20 | E47=123.16805742712 | F47=351.028963667293 | G47=Duct | H47=630 | I47=356.35046364 | J47=0.985066667464523 | K47=PASS | L47=193.1 | M47=695.16 | N47=5.50628512 | O47=0.134446452040404 | P47=PASS
+A48=3 | B48=8 | C48=9 | D48=20 | E48=123.16805742712 | F48=123.16805742712 | G48=Duct | H48=150 | I48=175.914018 | J48=0.700160560411509 | K48=PASS | L48=278.15 | M48=1001.34 | N48=12.2237653333333 | O48=0.0370417131313131 | P48=PASS
+A49=3 | B49=9 | C49=7 | D49=20 | E49=123.16805742712 | F49=246.33611485424 | G49=Duct | H49=300 | I49=258.896007 | J49=0.951486729010233 | K49=PASS | L49=383.25 | M49=1379.7 | N49=16.352 | O49=0.0865932282828283 | P49=PASS
+A50=3 | B50=7 | C50=POC | D50=10 | E50=61.5840287135601 | F50=307.9201435678 | G50=Duct | H50=630 | I50=356.35046364 | J50=0.864093567951336 | K50=PASS | L50=407.5 | M50=1467 | N50=10.1929333333333 | O50=0.117480905050505 | P50=PASS
+A51=TOTAL | F51=351.028963667293 | L51=3721.04 | M51=13395.744 | N51=135.48675424 | O51=0.158638564848485
+A53=5b.  CABLE SCHEDULE  -  total length by size for the bill of materials
+A54=Spares allowance (%) | B54=20
+A55=Size mm2 | B55=Runs | C55=Total length m | D55=With spares m | E55=BOM description
+A56=16 | B56=0 | C56=0 | D56=0 | E56=
+A57=25 | B57=0 | C57=0 | D57=0 | E57=
+A58=35 | B58=0 | C58=0 | D58=0 | E58=
+A59=50 | B59=0 | C59=0 | D59=0 | E59=
+A60=70 | B60=0 | C60=0 | D60=0 | E60=
+A61=95 | B61=0 | C61=0 | D61=0 | E61=
+A62=120 | B62=0 | C62=0 | D62=0 | E62=
+A63=150 | B63=4 | C63=3731.076 | D63=4477.2912 | E63=3 x 1c 150 mm2 BS6622 AL XLPE 19/33kV + (20% spares)
+A64=185 | B64=0 | C64=0 | D64=0 | E64=
+A65=240 | B65=0 | C65=0 | D65=0 | E65=
+A66=300 | B66=3 | C66=4312.908 | D66=5175.4896 | E66=3 x 1c 300 mm2 BS6622 AL XLPE 19/33kV + (20% spares)
+A67=400 | B67=0 | C67=0 | D67=0 | E67=
+A68=500 | B68=0 | C68=0 | D68=0 | E68=
+A69=630 | B69=3 | C69=5351.76 | D69=6422.112 | E69=3 x 1c 630 mm2 BS6622 AL XLPE 19/33kV + (20% spares)
+A70=TOTAL | B70=10 | C70=13395.744 | D70=16074.8928
+A200=Extrapolation above 400 mm2   -   IEC 60502-2 Table B.3 stops at 400 mm2
+A201=Safety reduction (%) | B201=5 | C201=Linear extrapolation of the last two tabulated sizes (300 and 400 mm2), less the safety reduction:   rating = [ I400 + (I400 - I300)/100 x (S - 400) ] x (1 - margin)
+A202=Size mm2 | B202=Buried trefoil | C202=Duct trefoil | D202=Air trefoil | E202=R (ohm/m) | F202=X (ohm/m)
+A203=16 | B203=84 | C203=80 | D203=97 | E203=0.00191 | F203=0.000141
+A204=25 | B204=108 | C204=102 | D204=127 | E204=0.00122 | F204=0.000135
+A205=35 | B205=129 | C205=122 | D205=154 | E205=0.000868 | F205=0.000131
+A206=50 | B206=152 | C206=144 | D206=184 | E206=0.000641 | F206=0.000127
+A207=70 | B207=186 | C207=176 | D207=230 | E207=0.000443 | F207=0.000123
+A208=95 | B208=221 | C208=210 | D208=280 | E208=0.00032 | F208=0.000121
+A209=120 | B209=252 | C209=240 | D209=324 | E209=0.000253 | F209=0.00012
+A210=150 | B210=281 | C210=267 | D210=368 | E210=0.000206 | F210=0.000116
+A211=185 | B211=317 | C211=303 | D211=424 | E211=0.000164 | F211=0.000113
+A212=240 | B212=367 | C212=351 | D212=502 | E212=0.000125 | F212=0.00011
+A213=300 | B213=414 | C213=397 | D213=577 | E213=0.0001 | F213=0.000108
+A214=400 | B214=470 | C214=451 | D214=673 | E214=7.78E-005 | F214=0.000106
+A215=500 | B215=499.7 | C215=479.75 | D215=730.55 | E215=6.05E-005 | F215=0.000104
+A216=630 | B216=568.86 | C216=546.44 | D216=849.11 | E216=4.69E-005 | F216=0.000102
+A217=EXTRAPOLATED - NOT IEC DATA.  The purple 500 and 630 mm2 rows are linearly extrapolated from the 300 and 400 mm2 tabulated ratings, with a safety reduction applied. IEC 60502-2 Table B.3 is tabulated only to 400 mm2. Real ratings flatten off above 400 mm2 as skin and proximity effects grow, so straight-line extrapolation over-predicts and the reduction is there to offset that - it is a placeholder, not a calculated value. Obtain manufacturer ratings (Nexans, Prysmian, NKT publish BS6622 33 kV aluminium data computed to IEC 60287) and type them over these cells before issuing any design.
+A219=Ground temperature factor (base 20 degC, Table B.11)
+A220=Temp degC | B220=Factor
+A221=10 | B221=1.07
+A222=15 | B222=1.04
+A223=20 | B223=1
+A224=25 | B224=0.96
+A225=30 | B225=0.93
+A226=35 | B226=0.89
+A227=40 | B227=0.85
+A228=45 | B228=0.8
+A229=50 | B229=0.76
+A231=Burial depth factor (base 0.8 m, Tables B.12 / B.13)
+A232=Depth m | B232=Dir <=185 | C232=Dir >185 | D232=Duct <=185 | E232=Duct >185
+A233=0.5 | B233=1.04 | C233=1.06 | D233=1.04 | E233=1.05
+A234=0.6 | B234=1.02 | C234=1.04 | D234=1.02 | E234=1.03
+A235=0.8 | B235=1 | C235=1 | D235=1 | E235=1
+A236=1 | B236=0.98 | C236=0.97 | D236=0.98 | E236=0.97
+A237=1.25 | B237=0.96 | C237=0.95 | D237=0.96 | E237=0.95
+A238=1.5 | B238=0.95 | C238=0.93 | D238=0.95 | E238=0.93
+A239=1.75 | B239=0.94 | C239=0.91 | D239=0.94 | E239=0.92
+A240=2 | B240=0.93 | C240=0.9 | D240=0.93 | E240=0.91
+A241=2.5 | B241=0.91 | C241=0.88 | D241=0.91 | E241=0.89
+A242=3 | B242=0.9 | C242=0.86 | D242=0.9 | E242=0.88
+A244=Soil resistivity - DIRECT buried (Table B.14, base 1.5 K.m/W)
+A245=Size mm2 | B245=0.7 | C245=0.8 | D245=0.9 | E245=1 | F245=1.5 | G245=2 | H245=2.5 | I245=3
+A246=16 | B246=1.29 | C246=1.24 | D246=1.19 | E246=1.15 | F246=1 | G246=0.89 | H246=0.82 | I246=0.75
+A247=25 | B247=1.3 | C247=1.25 | D247=1.2 | E247=1.16 | F247=1 | G247=0.89 | H247=0.81 | I247=0.75
+A248=35 | B248=1.3 | C248=1.25 | D248=1.21 | E248=1.16 | F248=1 | G248=0.89 | H248=0.81 | I248=0.75
+A249=50 | B249=1.32 | C249=1.26 | D249=1.21 | E249=1.16 | F249=1 | G249=0.89 | H249=0.81 | I249=0.74
+A250=70 | B250=1.33 | C250=1.27 | D250=1.22 | E250=1.17 | F250=1 | G250=0.89 | H250=0.81 | I250=0.74
+A251=95 | B251=1.34 | C251=1.28 | D251=1.22 | E251=1.18 | F251=1 | G251=0.89 | H251=0.8 | I251=0.74
+A252=120 | B252=1.34 | C252=1.28 | D252=1.22 | E252=1.18 | F252=1 | G252=0.88 | H252=0.8 | I252=0.74
+A253=150 | B253=1.35 | C253=1.28 | D253=1.23 | E253=1.18 | F253=1 | G253=0.88 | H253=0.8 | I253=0.74
+A254=185 | B254=1.35 | C254=1.29 | D254=1.23 | E254=1.18 | F254=1 | G254=0.88 | H254=0.8 | I254=0.74
+A255=240 | B255=1.36 | C255=1.29 | D255=1.23 | E255=1.18 | F255=1 | G255=0.88 | H255=0.8 | I255=0.73
+A256=300 | B256=1.36 | C256=1.3 | D256=1.24 | E256=1.19 | F256=1 | G256=0.88 | H256=0.8 | I256=0.73
+A257=400 | B257=1.37 | C257=1.3 | D257=1.24 | E257=1.19 | F257=1 | G257=0.88 | H257=0.79 | I257=0.73
+A258=500 | B258=1.37 | C258=1.3 | D258=1.24 | E258=1.19 | F258=1 | G258=0.88 | H258=0.79 | I258=0.73
+A259=630 | B259=1.37 | C259=1.3 | D259=1.24 | E259=1.19 | F259=1 | G259=0.88 | H259=0.79 | I259=0.73
+A261=Soil resistivity - DUCTS (Table B.15, base 1.5 K.m/W)
+A262=Size mm2 | B262=0.7 | C262=0.8 | D262=0.9 | E262=1 | F262=1.5 | G262=2 | H262=2.5 | I262=3
+A263=16 | B263=1.2 | C263=1.17 | D263=1.14 | E263=1.11 | F263=1 | G263=0.92 | H263=0.85 | I263=0.79
+A264=25 | B264=1.21 | C264=1.17 | D264=1.14 | E264=1.12 | F264=1 | G264=0.91 | H264=0.85 | I264=0.79
+A265=35 | B265=1.21 | C265=1.18 | D265=1.15 | E265=1.12 | F265=1 | G265=0.91 | H265=0.84 | I265=0.79
+A266=50 | B266=1.21 | C266=1.18 | D266=1.15 | E266=1.12 | F266=1 | G266=0.91 | H266=0.84 | I266=0.78
+A267=70 | B267=1.22 | C267=1.19 | D267=1.15 | E267=1.12 | F267=1 | G267=0.91 | H267=0.84 | I267=0.78
+A268=95 | B268=1.23 | C268=1.19 | D268=1.16 | E268=1.13 | F268=1 | G268=0.91 | H268=0.84 | I268=0.78
+A269=120 | B269=1.23 | C269=1.2 | D269=1.16 | E269=1.13 | F269=1 | G269=0.91 | H269=0.84 | I269=0.78
+A270=150 | B270=1.24 | C270=1.2 | D270=1.16 | E270=1.13 | F270=1 | G270=0.91 | H270=0.83 | I270=0.78
+A271=185 | B271=1.24 | C271=1.2 | D271=1.17 | E271=1.13 | F271=1 | G271=0.91 | H271=0.83 | I271=0.78
+A272=240 | B272=1.25 | C272=1.21 | D272=1.17 | E272=1.14 | F272=1 | G272=0.9 | H272=0.83 | I272=0.77
+A273=300 | B273=1.25 | C273=1.21 | D273=1.17 | E273=1.14 | F273=1 | G273=0.9 | H273=0.83 | I273=0.77
+A274=400 | B274=1.25 | C274=1.21 | D274=1.17 | E274=1.14 | F274=1 | G274=0.9 | H274=0.83 | I274=0.77
+A275=500 | B275=1.25 | C275=1.21 | D275=1.17 | E275=1.14 | F275=1 | G275=0.9 | H275=0.83 | I275=0.77
+A276=630 | B276=1.25 | C276=1.21 | D276=1.17 | E276=1.14 | F276=1 | G276=0.9 | H276=0.83 | I276=0.77
+A278=Grouping - DIRECT buried, 3ph circuits of single-core (Table B.19)   (spacing in mm between circuit centres)
+A279=Circuits | B279=Touching | C279=200 | D279=400 | E279=600 | F279=800
+A280=1 | B280=1 | C280=1 | D280=1 | E280=1 | F280=1
+A281=2 | B281=0.73 | C281=0.83 | D281=0.88 | E281=0.9 | F281=0.92
+A282=3 | B282=0.6 | C282=0.73 | D282=0.79 | E282=0.83 | F282=0.86
+A283=4 | B283=0.54 | C283=0.68 | D283=0.75 | E283=0.8 | F283=0.84
+A284=5 | B284=0.49 | C284=0.63 | D284=0.72 | E284=0.78 | F284=0.82
+A285=6 | B285=0.46 | C285=0.61 | D285=0.7 | E285=0.76 | F285=0.81
+A286=7 | B286=0.43 | C286=0.58 | D286=0.68 | E286=0.75 | F286=0.8
+A287=8 | B287=0.41 | C287=0.57 | D287=0.67 | E287=0.74
+A288=9 | B288=0.39 | C288=0.55 | D288=0.66 | E288=0.73
+A289=10 | B289=0.37 | C289=0.54 | D289=0.65
+A290=11 | B290=0.36 | C290=0.53 | D290=0.64
+A291=12 | B291=0.35 | C291=0.52 | D291=0.64
+A293=Grouping - DUCTS, 3ph circuits of single-core (Table B.21)   (spacing in mm between circuit centres)
+A294=Circuits | B294=Touching | C294=200 | D294=400 | E294=600 | F294=800
+A295=1 | B295=1 | C295=1 | D295=1 | E295=1 | F295=1
+A296=2 | B296=0.78 | C296=0.85 | D296=0.89 | E296=0.91 | F296=0.93
+A297=3 | B297=0.66 | C297=0.75 | D297=0.81 | E297=0.85 | F297=0.88
+A298=4 | B298=0.59 | C298=0.7 | D298=0.77 | E298=0.82 | F298=0.86
+A299=5 | B299=0.55 | C299=0.66 | D299=0.74 | E299=0.8 | F299=0.84
+A300=6 | B300=0.51 | C300=0.64 | D300=0.72 | E300=0.78 | F300=0.83
+A301=7 | B301=0.48 | C301=0.61 | D301=0.71 | E301=0.77 | F301=0.82
+A302=8 | B302=0.46 | C302=0.6 | D302=0.7 | E302=0.76
+A303=9 | B303=0.44 | C303=0.58 | D303=0.69 | E303=0.76
+A304=10 | B304=0.43 | C304=0.57 | D304=0.68
+A305=11 | B305=0.42 | C305=0.56 | D305=0.67
+A306=12 | B306=0.4 | C306=0.55 | D306=0.67
+A308=Source: IEC 60502-2 Ed 3.0 Annex B. Soil factors referenced to 1.5 K.m/W (the LV standard IEC 60364-5-52 uses 2.5 - do not mix the two bases). Blank = not tabulated by IEC for that combination.
