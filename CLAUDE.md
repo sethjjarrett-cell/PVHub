@@ -144,7 +144,20 @@ Deliberate engineering decisions, each stated in the UI's own text:
   amber on *both* bracketing rows with the result stated separately, because no such
   row exists in the standard and colouring one of them green would be a lie. A value
   extrapolated past where the table stops is purple and labelled as not IEC data
-  everywhere it appears. Do not collapse the three states into one.
+  everywhere it appears. A value entered by hand is blue, and the table row it
+  replaced is still shown, struck through, rather than hidden. Do not collapse the
+  four states into one.
+- **Every calculated figure is overridable, and an override never hides what it
+  replaced.** `applyOverride` keeps the table value on the bracket as `auto`, so the
+  chip carries the old number struck through beneath the new one and the table row
+  stays visible struck through. Clearing the box returns to the table. Do not
+  "simplify" this by dropping the auto value — the whole point is that the reader can
+  see what was moved away from and how far.
+- **Factor overrides belong to an installation method, base-rating overrides to a
+  size.** A factor typed for a buried run means nothing to the same cable on a tray,
+  so overrides are stored per method. `recommendSize` deliberately strips the base
+  override before scanning sizes; leaving it in would rate every candidate the same
+  and make the recommendation nonsense.
 - **Extrapolated ratings are never presented as standard values.** Where IEC stops
   tabulating, `ratingFor` extends the last two rows in a straight line and then
   subtracts a safety reduction, because real ratings flatten off as skin and

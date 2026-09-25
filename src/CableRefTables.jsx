@@ -14,6 +14,11 @@
              in the standard, and pretending otherwise would be a lie
      purple  extrapolated past where the standard stops, which is not
              IEC data and is labelled as such everywhere it appears
+     blue    overridden by hand. The table lookup is still shown, outlined
+             rather than filled, so the reader can see both what the
+             standard would have given and what was used instead. An
+             override is a deliberate act, not an error, so it gets its
+             own state rather than being folded in with the others.
    ===================================================================== */
 
 import React, { useState } from "react";
@@ -23,6 +28,10 @@ export const HL = {
   used: { bg: "rgba(79,176,106,0.22)", line: "#4fb06a", text: "#8fd6a3" },
   bracket: { bg: "rgba(224,166,58,0.16)", line: "#e0a63a", text: "#e8c07a" },
   extrap: { bg: "rgba(140,111,208,0.20)", line: "#8c6fd0", text: "#bfa8ee" },
+  manual: { bg: "rgba(58,150,224,0.20)", line: "#3a96e0", text: "#8fc7f0" },
+  /* What the table said, when something else was used instead: outlined,
+     not filled, so it reads as "this is what was overridden". */
+  bypassed: { bg: "transparent", line: "#5a6472", text: "#7b8695" },
 };
 
 const cellStyle = (state) => ({
@@ -34,7 +43,8 @@ const cellStyle = (state) => ({
     background: HL[state].bg,
     boxShadow: `inset 0 0 0 1.5px ${HL[state].line}`,
     color: HL[state].text,
-    fontWeight: 700,
+    fontWeight: state === "bypassed" ? 400 : 700,
+    ...(state === "bypassed" ? { textDecoration: "line-through", opacity: 0.75 } : {}),
   } : { color: C.text }),
 });
 
@@ -76,18 +86,37 @@ export function RefCard({ title, source, note, open: openInit = true, emphasis =
   );
 }
 
+/** Says plainly that the table below was looked up but not used. */
+export function OverrideNote({ bracket, dp = 3, unit = "" }) {
+  if (!bracket?.manual) return null;
+  return (
+    <div style={{ marginBottom: 7, padding: "5px 9px", borderRadius: 5,
+      background: HL.manual.bg, border: `1px solid ${HL.manual.line}`,
+      font: "11px/1.5 var(--mono)", color: HL.manual.text }}>
+      Overridden by hand: using <b>{fmt(bracket.value, dp)}{unit}</b>.
+      {bracket.auto !== null && bracket.auto !== undefined && (
+        <> The table below gives <b>{fmt(bracket.auto, dp)}{unit}</b>, struck through, and it is
+          not being used.</>
+      )}
+    </div>
+  );
+}
+
 /** Two-column tables: temperature, soil resistivity, burial depth. */
 export function Table1D({ table, xLabel, yLabel, bracket, fmtX = (v) => v, dp = 2 }) {
   const loX = bracket?.lo?.[0], hiX = bracket?.hi?.[0];
   const exact = bracket?.exact;
+  const manual = !!bracket?.manual;
   const stateFor = (x) => {
     if (bracket?.lo === null) return null;
-    if (exact && x === loX) return "used";
-    if (!exact && (x === loX || x === hiX)) return "bracket";
-    return null;
+    const hit = exact ? x === loX : (x === loX || x === hiX);
+    if (!hit) return null;
+    if (manual) return "bypassed";
+    return exact ? "used" : "bracket";
   };
   return (
     <>
+      <OverrideNote bracket={bracket} dp={dp + 1} />
       <table style={{ borderCollapse: "collapse" }}>
         <thead><tr>
           <th style={{ ...headStyle, textAlign: "left" }}>{xLabel}</th>
@@ -98,10 +127,10 @@ export function Table1D({ table, xLabel, yLabel, bracket, fmtX = (v) => v, dp = 
           {table.map(([x, y]) => <td key={x} style={cellStyle(stateFor(x))}>{fmt(y, dp)}</td>)}
         </tr></tbody>
       </table>
-      {bracket && !exact && bracket.lo && (
+      {bracket && !exact && bracket.lo && !manual && (
         <div style={{ marginTop: 6, font: "11px var(--mono)", color: HL.used.text }}>
           interpolated between {fmtX(loX)} and {fmtX(hiX)}
-          {" → "}<b>{fmt(bracket.value, 3)}</b>
+          {" → "}<b>{fmt(bracket.auto ?? bracket.value, 3)}</b>
           {bracket.clamped && <span style={{ color: HL.bracket.text }}>
             {"  "}(input is outside the table, so the end value is held)
           </span>}
@@ -115,14 +144,17 @@ export function Table1D({ table, xLabel, yLabel, bracket, fmtX = (v) => v, dp = 
 export function TableGroup({ rows, cols, activeCol, circuits, bracket }) {
   const loC = bracket?.lo?.[0], hiC = bracket?.hi?.[0];
   const exact = bracket?.exact;
+  const manual = !!bracket?.manual;
   const stateFor = (r, colKey) => {
     if (colKey !== activeCol || bracket?.lo === null) return null;
-    if (exact && r.circuits === loC) return "used";
-    if (!exact && (r.circuits === loC || r.circuits === hiC)) return "bracket";
-    return null;
+    const hit = exact ? r.circuits === loC : (r.circuits === loC || r.circuits === hiC);
+    if (!hit) return null;
+    if (manual) return "bypassed";
+    return exact ? "used" : "bracket";
   };
   return (
     <>
+      <OverrideNote bracket={bracket} />
       <table style={{ borderCollapse: "collapse" }}>
         <thead><tr>
           <th style={{ ...headStyle, textAlign: "left" }}>Circuits</th>
@@ -147,12 +179,12 @@ export function TableGroup({ rows, cols, activeCol, circuits, bracket }) {
           ))}
         </tbody>
       </table>
-      {bracket?.beyond && (
+      {bracket?.beyond && !manual && (
         <div style={{ marginTop: 6, font: "11px var(--mono)", color: "#d67070" }}>
           {circuits} circuits is past the last tabulated row, so no factor can be read.
         </div>
       )}
-      {bracket && !exact && !bracket.beyond && bracket.lo && (
+      {bracket && !exact && !bracket.beyond && bracket.lo && !manual && (
         <div style={{ marginTop: 6, font: "11px var(--mono)", color: HL.used.text }}>
           interpolated between {loC} and {hiC} circuits {"→ "}<b>{fmt(bracket.value, 3)}</b>
         </div>
@@ -162,8 +194,20 @@ export function TableGroup({ rows, cols, activeCol, circuits, bracket }) {
 }
 
 /** Base current-carrying capacity, with the chosen size and method picked out. */
-export function TableCCC({ table, size, install, methods, extrapolated }) {
+export function TableCCC({ table, size, install, methods, extrapolated, manual = false, manualValue = null, autoValue = null }) {
   return (
+    <>
+    {manual && (
+      <div style={{ marginBottom: 7, padding: "5px 9px", borderRadius: 5,
+        background: HL.manual.bg, border: `1px solid ${HL.manual.line}`,
+        font: "11px/1.5 var(--mono)", color: HL.manual.text }}>
+        Overridden by hand: using <b>{fmt(manualValue, 0)} A</b>.
+        {autoValue !== null && autoValue !== undefined
+          ? <> The table below gives <b>{fmt(autoValue, 0)} A</b>, struck through, and it is not
+              being used.</>
+          : <> IEC does not tabulate this size for this method, so there was nothing to use.</>}
+      </div>
+    )}
     <table style={{ borderCollapse: "collapse" }}>
       <thead><tr>
         <th style={{ ...headStyle, textAlign: "left" }}>Size mm&#178;</th>
@@ -186,7 +230,8 @@ export function TableCCC({ table, size, install, methods, extrapolated }) {
               const isPick = r.size === size && m.value === install;
               const missing = v === null || v === undefined;
               return (
-                <td key={m.value} style={cellStyle(isPick ? (missing ? "extrap" : "used") : null)}>
+                <td key={m.value} style={cellStyle(isPick
+                  ? (manual ? "bypassed" : missing ? "extrap" : "used") : null)}>
                   {missing
                     ? <span style={{ color: isPick ? HL.extrap.text : C.muted }}>
                         {isPick && extrapolated ? fmt(extrapolated, 0) : "not tabulated"}
@@ -199,6 +244,7 @@ export function TableCCC({ table, size, install, methods, extrapolated }) {
         ))}
       </tbody>
     </table>
+    </>
   );
 }
 
@@ -206,7 +252,7 @@ export function TableCCC({ table, size, install, methods, extrapolated }) {
    The derating chain, as one readable line of arithmetic
    --------------------------------------------------------------- */
 
-function Chip({ label, value, state, sub }) {
+function Chip({ label, value, state, sub, was }) {
   const col = state ? HL[state] : null;
   return (
     <div style={{
@@ -215,6 +261,10 @@ function Chip({ label, value, state, sub }) {
     }}>
       <div style={{ font: "10px system-ui", color: C.muted, letterSpacing: "0.03em" }}>{label}</div>
       <div style={{ font: "650 15px var(--mono)", color: col ? col.text : C.text }}>{value}</div>
+      {was !== null && was !== undefined && (
+        <div style={{ font: "9.5px var(--mono)", color: HL.bypassed.text,
+          textDecoration: "line-through", marginTop: 1 }}>{was}</div>
+      )}
       {sub && <div style={{ font: "9.5px system-ui", color: C.muted, marginTop: 1 }}>{sub}</div>}
     </div>
   );
@@ -231,21 +281,32 @@ const Times = () => (
  */
 export function FactorChain({ chain, perCable }) {
   const f = (b) => (b?.value === null || b?.value === undefined ? "—" : fmt(b.value, 3));
-  const st = (b) => (b?.value === null ? null : b?.exact ? "used" : b?.lo ? "bracket" : null);
+  const st = (b) => (b?.manual ? "manual"
+    : b?.value === null ? null : b?.exact ? "used" : b?.lo ? "bracket" : null);
+  /* When a factor was overridden, the chip carries what the table would
+     have given, struck through underneath, so the substitution is visible
+     in the arithmetic itself rather than only in the table below. */
+  const was = (b) => (b?.manual && b.auto !== null && b.auto !== undefined ? fmt(b.auto, 3) : null);
+  const sub = (b, d) => (b?.manual ? "entered" : d);
   const pass = chain.derated !== null && perCable <= chain.derated;
   return (
     <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "stretch", width: "100%" }}>
       <Chip label="Base rating" value={chain.base === null ? "—" : fmt(chain.base, 0)}
-        state={chain.extrapolated ? "extrap" : "used"}
-        sub={chain.extrapolated ? "extrapolated" : "A, from IEC"} />
+        state={chain.baseManual ? "manual" : chain.extrapolated ? "extrap" : "used"}
+        was={chain.baseManual && chain.baseAuto !== null ? fmt(chain.baseAuto, 0) : null}
+        sub={chain.baseManual ? "A, entered" : chain.extrapolated ? "extrapolated" : "A, from IEC"} />
       <Times />
-      <Chip label="f_temp" value={f(chain.fTemp)} state={st(chain.fTemp)} />
+      <Chip label="f_temp" value={f(chain.fTemp)} state={st(chain.fTemp)}
+        was={was(chain.fTemp)} sub={sub(chain.fTemp, null)} />
       <Times />
-      <Chip label="f_grp" value={f(chain.fGroup)} state={st(chain.fGroup)} sub="grouping" />
+      <Chip label="f_grp" value={f(chain.fGroup)} state={st(chain.fGroup)}
+        was={was(chain.fGroup)} sub={sub(chain.fGroup, "grouping")} />
       <Times />
-      <Chip label="f_soil" value={f(chain.fSoil)} state={st(chain.fSoil)} />
+      <Chip label="f_soil" value={f(chain.fSoil)} state={st(chain.fSoil)}
+        was={was(chain.fSoil)} sub={sub(chain.fSoil, null)} />
       <Times />
-      <Chip label="f_depth" value={f(chain.fDepth)} state={st(chain.fDepth)} />
+      <Chip label="f_depth" value={f(chain.fDepth)} state={st(chain.fDepth)}
+        was={was(chain.fDepth)} sub={sub(chain.fDepth, null)} />
       <div style={{ font: "600 15px var(--mono)", color: C.muted, alignSelf: "center" }}>=</div>
       <Chip label="Derated" value={chain.derated === null ? "—" : fmt(chain.derated, 1)}
         state={pass ? "used" : null} sub="A per cable" />
@@ -261,7 +322,8 @@ export function HighlightKey() {
     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", font: "10.5px system-ui",
       color: C.muted, marginBottom: 8 }}>
       {[["used", "read from the table"], ["bracket", "interpolated between these rows"],
-        ["extrap", "extrapolated, not IEC data"]].map(([k, label]) => (
+        ["extrap", "extrapolated, not IEC data"],
+        ["manual", "entered by hand, overriding the table"]].map(([k, label]) => (
         <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ width: 12, height: 12, borderRadius: 3, background: HL[k].bg,
             boxShadow: `inset 0 0 0 1.5px ${HL[k].line}`, display: "inline-block" }} />

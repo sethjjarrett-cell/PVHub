@@ -27,6 +27,7 @@ import {
 } from "./CableRefTables.jsx";
 import {
   interp, interpBracket, groupFactorBracket, groupFactor, rowFor, ratingFor, derateLV,
+  applyOverride,
   recommendSize, shortfall, trenchPlan, circuitWidthMm,
   LV_DUCT_SPACING_M, LV_DIRECT_SPACING_M, MV_SPACING_CENTRE_M,
   DC_CCC, DC_R20, AC_CCC, AL_R20, AL_X_TREFOIL,
@@ -256,6 +257,46 @@ const ImportedHead = () => (
    underneath highlight whatever the focused method just read.
    ===================================================================== */
 
+/**
+ * One factor, calculated automatically but open to being typed over.
+ *
+ * The auto value is always shown, whether or not it is the one in use,
+ * because the point of an override is that you can see what you moved
+ * away from. Clearing the box, or pressing Auto, returns to the table.
+ */
+function AutoField({ label, auto, value, onChange, dp = 3, unit = "", hint, disabled }) {
+  const manual = value !== null && value !== undefined && value !== "";
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 128,
+      opacity: disabled ? 0.45 : 1 }}>
+      <span style={{ font: "10px system-ui", color: C.muted, letterSpacing: "0.03em" }}>
+        {label}{unit ? ` ${unit}` : ""}
+      </span>
+      <div style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
+        <input type="number" disabled={disabled}
+          value={value ?? ""} placeholder={Number.isFinite(auto) ? fmt(auto, dp) : "—"}
+          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+          style={{ width: 74, background: C.panel2,
+            border: `1px solid ${manual ? HL.manual.line : C.line}`, borderRadius: 4,
+            color: manual ? HL.manual.text : C.text, font: "12px var(--mono)",
+            padding: "4px 6px", outline: "none" }} />
+        <button className="btn" disabled={disabled || !manual}
+          onClick={() => onChange(null)}
+          title="Go back to the value the IEC table gives"
+          style={{ padding: "3px 8px", font: "10px system-ui",
+            opacity: manual ? 1 : 0.35, cursor: manual ? "pointer" : "default" }}>
+          Auto
+        </button>
+      </div>
+      <span style={{ font: "9.5px system-ui", color: manual ? HL.manual.text : C.muted }}>
+        {manual
+          ? `overriding ${Number.isFinite(auto) ? fmt(auto, dp) : "no table value"}`
+          : hint || (Number.isFinite(auto) ? "from the table" : "not tabulated")}
+      </span>
+    </label>
+  );
+}
+
 const METHODS = [
   { value: "air", label: "In air / tray" },
   { value: "duct", label: "Buried duct" },
@@ -282,6 +323,7 @@ function evaluateRow(row, install, st, table, kind, designCurrent) {
   const params = {
     table, install, tAir: st.tAir, tGnd: st.tGnd, soil: st.soil, depth: st.depth,
     circuits: plan.perTrench, spacing: row.spacing, safetyPct: st.safetyPct,
+    ov: row.ov || {},
   };
   const chain = derateLV({ ...params, size: row.size });
   const perCable = row.par > 0 ? designCurrent / row.par : null;
@@ -295,6 +337,10 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
   const focus = st.focus || "duct";
   const row = st.rows[focus];
   const upd = (patch) => set({ ...st, rows: { ...st.rows, [focus]: { ...row, ...patch } } });
+  /* Overrides are per installation method, because a factor that applies
+     to a buried run means nothing to the same cable on a tray. */
+  const ovOf = (k) => (row.ov || {})[k] ?? null;
+  const setOv = (k, v) => upd({ ov: { ...(row.ov || {}), [k]: v } });
   const ev = evaluateRow(row, focus, st, table, kind, designCurrent);
   const { plan, chain, perCable, short, rec } = ev;
 
@@ -403,6 +449,51 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
       <HighlightKey />
       <FactorChain chain={chain} perCable={perCable ?? 0} />
 
+      {/* Everything above is calculated. Everything here can be typed
+          over when the job needs a different number — a manufacturer
+          rating, a client's standard, a factor from another edition —
+          without losing sight of what the table gave. */}
+      <div style={{ width: "100%", marginTop: 8, padding: "9px 11px", borderRadius: 6,
+        background: C.panel2, border: `1px solid ${C.line}` }}>
+        <div style={{ font: "600 11px system-ui", color: C.text, marginBottom: 2 }}>
+          Override any of these
+        </div>
+        <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, marginBottom: 8 }}>
+          Leave a box empty and it is calculated from the IEC tables, which is the normal case.
+          Type a value and that value is used instead: the chip above turns blue and carries the
+          table figure struck through beneath it, and the table below is struck through too, so
+          what was replaced stays visible. <b>Auto</b> puts it back.
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <AutoField label="Base rating" unit="A" dp={0}
+            auto={chain.baseAuto} value={ovOf("base")} onChange={(v) => setOv("base", v)}
+            hint={chain.extrapolated ? "extrapolated, not IEC" : "from the table"} />
+          <AutoField label="f_temp" auto={chain.fTemp.auto ?? chain.fTemp.value}
+            value={ovOf("fTemp")} onChange={(v) => setOv("fTemp", v)} />
+          <AutoField label="f_grp" auto={chain.fGroup.auto ?? chain.fGroup.value}
+            value={ovOf("fGroup")} onChange={(v) => setOv("fGroup", v)} />
+          <AutoField label="f_soil" disabled={focus === "air"}
+            auto={chain.fSoil.auto ?? chain.fSoil.value}
+            value={ovOf("fSoil")} onChange={(v) => setOv("fSoil", v)}
+            hint={focus === "air" ? "no soil in air" : undefined} />
+          <AutoField label="f_depth" disabled={focus === "air"}
+            auto={chain.fDepth.auto ?? chain.fDepth.value}
+            value={ovOf("fDepth")} onChange={(v) => setOv("fDepth", v)}
+            hint={focus === "air" ? "not buried" : undefined} />
+        </div>
+        {chain.anyManual && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 9,
+            font: "10.5px system-ui", color: HL.manual.text }}>
+            <span>
+              This rating is no longer purely the standard&#8217;s. Anything entered by hand is
+              yours to defend, so record where it came from.
+            </span>
+            <button className="btn" style={{ padding: "3px 10px" }}
+              onClick={() => upd({ ov: {} })}>Reset all to auto</button>
+          </div>
+        )}
+      </div>
+
       <div style={{ width: "100%", marginTop: 4 }}>
         {chain.derated === null ? (
           <div className="warn" style={{ width: "100%" }}>
@@ -496,11 +587,12 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
                   <Td>{r.size}{e.chain.extrapolated ? <span style={{ color: HL.extrap.text }}> *</span> : null}</Td>
                   <Td dim>{r.par}</Td>
                   <Td dim>{e.plan.perTrench}{e.plan.trenches > 1 ? ` of ${e.plan.total}` : ""}</Td>
-                  <Td dim>{e.chain.base === null ? "—" : fmt(e.chain.base, 0)}</Td>
-                  <Td dim>{fmt(e.chain.fTemp.value, 2)}</Td>
-                  <Td dim>{e.chain.fGroup.value === null ? "—" : fmt(e.chain.fGroup.value, 2)}</Td>
-                  <Td dim>{fmt(e.chain.fSoil.value, 2)}</Td>
-                  <Td dim>{fmt(e.chain.fDepth.value, 2)}</Td>
+                  <Td dim style={e.chain.baseManual ? { color: HL.manual.text, fontWeight: 700 } : undefined}>
+                    {e.chain.base === null ? "—" : fmt(e.chain.base, 0)}</Td>
+                  {[e.chain.fTemp, e.chain.fGroup, e.chain.fSoil, e.chain.fDepth].map((b, bi) => (
+                    <Td key={bi} dim style={b.manual ? { color: HL.manual.text, fontWeight: 700 } : undefined}>
+                      {b.value === null ? "—" : fmt(b.value, 2)}</Td>
+                  ))}
                   <Td style={{ color: C.accent }}>{e.chain.df === null ? "—" : fmt(e.chain.df, 3)}</Td>
                   <Td><b>{e.chain.derated === null ? "—" : fmt(e.chain.derated, 1)}</b></Td>
                   <Td>{e.perCable === null ? "—" : fmt(e.perCable, 1)}</Td>
@@ -518,7 +610,8 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
         A circuit with several conductors per pole counts as that many circuits
         (IEC 60364-5-52 B.52.18/19 NOTE 3), so circuits routed together {"×"} parallel N, plus
         anything else loaded on the route, is the total. Earth, fibre and spare cores carry no
-        load and do not count. An asterisk marks a base rating that is extrapolated.
+        load and do not count. An asterisk marks a base rating that is extrapolated; a value in
+        blue was entered by hand rather than read from a table.
       </div>
     </Section>
 
@@ -534,10 +627,11 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
             ? "The chosen size is not tabulated for this method, so the value shown is extrapolated from the last two rows that are."
             : null}>
           <TableCCC table={table} size={row.size} install={focus} methods={METHODS}
-            extrapolated={chain.extrapolated ? chain.base : null} />
+            extrapolated={chain.extrapolated ? chain.base : null}
+            manual={chain.baseManual} manualValue={chain.base} autoValue={chain.baseAuto} />
         </RefCard>
 
-        <RefCard emphasis={!chain.fTemp.exact}
+        <RefCard emphasis={!chain.fTemp.exact || chain.fTemp.manual}
           title={`Temperature factor, ${focus === "air" ? "in air" : "in ground"}`}
           source={focus === "air"
             ? "IEC 60364-5-52 Table B.52.14, XLPE, 30 °C base"
@@ -560,11 +654,11 @@ function LvSizing({ kind, table, sizes, designCurrent, currentLabel, st, set }) 
         )}
 
         {buried && (<>
-          <RefCard emphasis={!chain.fSoil.exact} title="Soil thermal resistivity"
+          <RefCard emphasis={!chain.fSoil.exact || chain.fSoil.manual} title="Soil thermal resistivity"
             source="IEC 60364-5-52 Table B.52.16, 2.5 K·m/W base">
             <Table1D table={chain.soilTable} xLabel="K·m/W" yLabel="factor" bracket={chain.fSoil} />
           </RefCard>
-          <RefCard emphasis={!chain.fDepth.exact} title="Burial depth"
+          <RefCard emphasis={!chain.fDepth.exact || chain.fDepth.manual} title="Burial depth"
             source={`IEC 60287 derived, 0.8 m base, ${row.size <= 185 ? "≤185" : ">185"} mm² column`}>
             <Table1D table={chain.depthTable} xLabel="m" yLabel="factor" bracket={chain.fDepth} />
           </RefCard>
@@ -580,7 +674,8 @@ export function CableDcTab({ mod, elec, st, set }) {
   const vmp = st.vmpOv ?? mod.vmp;
   const nMod = st.nModOv ?? elec.modulesPerString;
 
-  const iDesign = isc * st.sf;
+  const iAuto = isc * st.sf;
+  const iDesign = Number.isFinite(st.iOv) && st.iOv !== null ? st.iOv : iAuto;
   const vString = vmp * nMod;
   const pString = vString * imp;
 
@@ -634,8 +729,21 @@ export function CableDcTab({ mod, elec, st, set }) {
         <Working n="C2" title="DC design current"
           formula="I_design = Isc × SF"
           sub={`${fmt(isc, 2)} A × ${fmt(st.sf, 2)}`}
-          result={fmt(iDesign, 2)} unit="A"
+          result={fmt(iAuto, 2)} unit="A"
           why="Every ampacity check below is against this current, divided by however many cables run in parallel." />
+        <AutoField label="Design current" unit="A" dp={2} auto={iAuto}
+          value={st.iOv ?? null} onChange={(v) => set({ ...st, iOv: v })}
+          hint="Isc × SF, as above" />
+        <div className="readout" style={{ font: "10.5px system-ui" }}>
+          The calculated figure is the one to use unless something says otherwise. Type a current
+          here when a client standard, a protective device rating or an existing design fixes it,
+          and every check below moves to your number instead.
+          {Number.isFinite(st.iOv) && st.iOv !== null && (
+            <b style={{ color: HL.manual.text }}>
+              {" "}Currently using {fmt(st.iOv, 2)} A by hand, not the {fmt(iAuto, 2)} A calculated.
+            </b>
+          )}
+        </div>
       </Section>
 
       <LvSizing kind="dc" table={DC_CCC} designCurrent={iDesign}
@@ -831,15 +939,16 @@ export function CableMvTab({ st, set }) {
         ? (r.size <= 185 ? DEPTH_DUCT_LE185 : DEPTH_DUCT_GT185)
         : (r.size <= 185 ? DEPTH_DIRECT_LE185 : DEPTH_DIRECT_GT185);
       const soilRow = (kind === "duct" ? MV_SOIL_DUCT : MV_SOIL_DIRECT).find((x) => x.size === r.size);
-      const bT = interpBracket(MV_TEMP_GROUND, st.tGnd);
-      const bD = interpBracket(depthTable, st.depth);
-      const bS = soilRow ? interpBracket(soilRow.f, st.soil)
-        : { value: 1, lo: null, hi: null, exact: true, clamped: false };
-      const bG = groupFactorBracket(
+      const o = (st.ov || {})[kind] || {};
+      const bT = applyOverride(interpBracket(MV_TEMP_GROUND, st.tGnd), o.fTemp);
+      const bD = applyOverride(interpBracket(depthTable, st.depth), o.fDepth);
+      const bS = applyOverride(soilRow ? interpBracket(soilRow.f, st.soil)
+        : { value: 1, lo: null, hi: null, exact: true, clamped: false }, o.fSoil);
+      const bG = applyOverride(groupFactorBracket(
         kind === "duct" ? MV_GROUP_DUCT : MV_GROUP_DIRECT,
         kind === "duct" ? st.ductCirc : st.dirCirc,
         kind === "duct" ? st.ductSp : st.dirSp,
-      );
+      ), o.fGroup);
       const fT = bT.value, fD = bD.value, fS = bS.value, fG = bG.value;
       const ok = base !== null && base !== undefined && fG !== null;
       const df = ok ? fT * fD * fS * fG : null;
@@ -847,7 +956,7 @@ export function CableMvTab({ st, set }) {
         df, derated: ok ? base * df : null };
     };
     return { size: r.size, extrap: !!r.extrap, r: r.r, x: r.x, duct: build("duct"), direct: build("direct") };
-  }), [table, st.tGnd, st.depth, st.soil, st.ductCirc, st.ductSp, st.dirCirc, st.dirSp]);
+  }), [table, st.tGnd, st.depth, st.soil, st.ductCirc, st.ductSp, st.dirCirc, st.dirSp, st.ov]);
 
   const capFor = (install, size) => {
     const c = caps.find((x) => x.size === size);
@@ -967,10 +1076,10 @@ export function CableMvTab({ st, set }) {
                   background: c.extrap ? "rgba(120,80,180,0.10)" : "transparent" }}>
                   <Td>{c.size}{c.extrap ? " *" : ""}</Td>
                   <Td dim>{c.duct.base === null ? "—" : fmt(c.duct.base, 0)}</Td>
-                  <Td dim>{fmt(c.duct.fT, 2)}</Td>
-                  <Td dim>{fmt(c.duct.fD, 2)}</Td>
-                  <Td dim>{fmt(c.duct.fS, 2)}</Td>
-                  <Td dim>{c.duct.fG === null ? "—" : fmt(c.duct.fG, 2)}</Td>
+                  {[c.duct.bT, c.duct.bD, c.duct.bS, c.duct.bG].map((bb, bi) => (
+                    <Td key={bi} dim style={bb.manual ? { color: HL.manual.text, fontWeight: 700 } : undefined}>
+                      {bb.value === null ? "—" : fmt(bb.value, 2)}</Td>
+                  ))}
                   <Td><b>{c.duct.derated === null ? "—" : fmt(c.duct.derated, 0)}</b></Td>
                   <Td dim>{c.direct.base === null ? "—" : fmt(c.direct.base, 0)}</Td>
                   <Td><b>{c.direct.derated === null ? "—" : fmt(c.direct.derated, 0)}</b></Td>
@@ -1112,10 +1221,53 @@ export function CableMvTab({ st, set }) {
               fSoil: b.bS, fDepth: b.bD, derated: b.derated };
             const design = runs.filter((r) => r.size === c.size && r.install === st.refInstall)
               .reduce((a, r) => Math.max(a, r.cum), 0);
+            const o = (st.ov || {})[st.refInstall] || {};
+            const setMvOv = (k, v) => set({ ...st,
+              ov: { ...(st.ov || {}), [st.refInstall]: { ...o, [k]: v } } });
             return (
               <>
                 <div style={{ marginBottom: 10 }}>
                   <FactorChain chain={chain} perCable={design} />
+
+                  <div style={{ width: "100%", marginTop: 8, padding: "9px 11px", borderRadius: 6,
+                    background: C.panel2, border: `1px solid ${C.line}` }}>
+                    <div style={{ font: "600 11px system-ui", color: C.text, marginBottom: 2 }}>
+                      Override any of these
+                    </div>
+                    <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, marginBottom: 8 }}>
+                      Empty means calculated from the IEC tables. A typed value is used instead and
+                      shows in blue, with the table figure struck through beside it. These apply to
+                      every size on the <b>{st.refInstall === "duct" ? "buried duct" : "direct buried"}</b>
+                      {" "}method, not just the one traced here, so the capacity table above moves
+                      with them. Base ratings are not overridable here because each size has its
+                      own; adjust the extrapolation reduction in C2 instead, or enter the run
+                      directly.
+                    </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <AutoField label="f_temp" auto={b.bT.auto ?? b.bT.value}
+                        value={o.fTemp ?? null} onChange={(v) => setMvOv("fTemp", v)} />
+                      <AutoField label="f_grp" auto={b.bG.auto ?? b.bG.value}
+                        value={o.fGroup ?? null} onChange={(v) => setMvOv("fGroup", v)} />
+                      <AutoField label="f_soil" auto={b.bS.auto ?? b.bS.value}
+                        value={o.fSoil ?? null} onChange={(v) => setMvOv("fSoil", v)}
+                        hint="varies by size in the table" />
+                      <AutoField label="f_depth" auto={b.bD.auto ?? b.bD.value}
+                        value={o.fDepth ?? null} onChange={(v) => setMvOv("fDepth", v)} />
+                    </div>
+                    {(b.bT.manual || b.bG.manual || b.bS.manual || b.bD.manual) && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 9,
+                        font: "10.5px system-ui", color: HL.manual.text }}>
+                        <span>
+                          These ratings are no longer purely the standard&#8217;s. Record where the
+                          entered figures came from.
+                        </span>
+                        <button className="btn" style={{ padding: "3px 10px" }}
+                          onClick={() => set({ ...st, ov: { ...(st.ov || {}), [st.refInstall]: {} } })}>
+                          Reset all to auto
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   {design === 0 && (
                     <div style={{ font: "10.5px system-ui", color: C.muted, marginTop: 5 }}>
                       No run in the schedule uses {c.size} mm&#178; in
@@ -1136,7 +1288,7 @@ export function CableMvTab({ st, set }) {
                     extrapolated={c.extrap ? b.base : null} />
                 </RefCard>
 
-                <RefCard emphasis={!b.bT.exact} title="Ground temperature factor"
+                <RefCard emphasis={!b.bT.exact || b.bT.manual} title="Ground temperature factor"
                   source="IEC 60502-2 Table B.11" note="Base 20 °C.">
                   <Table1D table={MV_TEMP_GROUND} xLabel="Ground °C" yLabel="f_temp"
                     bracket={b.bT} dp={2} />
@@ -1150,7 +1302,7 @@ export function CableMvTab({ st, set }) {
                 </RefCard>
 
                 {b.soilTable && (
-                  <RefCard emphasis={!b.bS.exact} title={`Soil thermal resistivity, ${c.size} mm²`}
+                  <RefCard emphasis={!b.bS.exact || b.bS.manual} title={`Soil thermal resistivity, ${c.size} mm²`}
                     source={st.refInstall === "duct" ? "IEC 60502-2 Table B.15" : "IEC 60502-2 Table B.14"}
                     note="Base 1.5 K·m/W — not the 2.5 K·m/W base of the LV standard. The two are tabulated separately and a factor must never be carried across from the DC or AC tab.">
                     <Table1D table={b.soilTable} xLabel="K·m/W" yLabel="f_soil"
@@ -1158,7 +1310,7 @@ export function CableMvTab({ st, set }) {
                   </RefCard>
                 )}
 
-                <RefCard emphasis={!b.bD.exact} title={`Burial depth, ${c.size <= 185 ? "≤185" : ">185"} mm²`}
+                <RefCard emphasis={!b.bD.exact || b.bD.manual} title={`Burial depth, ${c.size <= 185 ? "≤185" : ">185"} mm²`}
                   source="IEC 60502-2 Tables B.12 / B.13" note="Base 0.8 m. Deeper is hotter, so the factor falls.">
                   <Table1D table={b.depthTable} xLabel="Depth m" yLabel="f_depth"
                     bracket={b.bD} dp={3} />

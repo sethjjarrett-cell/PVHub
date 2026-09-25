@@ -612,15 +612,33 @@ export function trenchPlan({
  * lookup that produced it, so the interface can show the reader the
  * table each factor came from and highlight the row in use.
  */
+/**
+ * Apply a manual override to a bracket object without destroying what
+ * the table said. The auto value stays on the result as `auto`, so the
+ * interface can keep highlighting the row it would have used and show
+ * the two side by side. An override is a deliberate act — a
+ * manufacturer figure, a client's standard, a factor from a different
+ * edition — not an error, so it is reported as its own state rather
+ * than folded in with interpolation or extrapolation.
+ */
+export function applyOverride(bracket, value) {
+  if (value === null || value === undefined || value === "" || !isFinite(value)) {
+    return { ...bracket, manual: false, auto: bracket.value };
+  }
+  return { ...bracket, value: Number(value), manual: true, auto: bracket.value };
+}
+
 export function derateLV({
   table, install, size, tAir, tGnd, soil, depth, circuits, spacing, safetyPct = 5,
+  ov = {},
 }) {
   const notes = [];
   const rating = ratingFor(table, size, install, safetyPct);
   if (rating.reason && !rating.extrapolated) notes.push(rating.reason);
 
   const tempTable = install === "air" ? LV_TEMP_AIR : LV_TEMP_GROUND;
-  const fTemp = interpBracket(tempTable, install === "air" ? tAir : tGnd);
+  const fTemp = applyOverride(
+    interpBracket(tempTable, install === "air" ? tAir : tGnd), ov.fTemp);
 
   let fGroup, groupRows, groupCol;
   if (circuits <= 1) {
@@ -635,32 +653,42 @@ export function derateLV({
     groupCol = spacing;
     fGroup = groupFactorBracket(groupRows, circuits, groupCol);
   }
-  if (fGroup.beyond) {
+  fGroup = applyOverride(fGroup, ov.fGroup);
+  if (fGroup.beyond && !fGroup.manual) {
     notes.push(`${circuits} circuits in one group is past the last row IEC tabulates at this spacing. `
       + "Split the run across more trenches, or widen the spacing.");
   }
 
   const soilTable = install === "duct" ? LV_SOIL_DUCT : LV_SOIL_DIRECT;
-  const fSoil = install === "air"
+  const fSoil = applyOverride(install === "air"
     ? { value: 1, lo: null, hi: null, exact: true, clamped: null }
-    : interpBracket(soilTable, soil);
+    : interpBracket(soilTable, soil), ov.fSoil);
 
   const depthTable = install === "air" ? null
     : install === "duct" ? (size <= 185 ? DEPTH_DUCT_LE185 : DEPTH_DUCT_GT185)
       : (size <= 185 ? DEPTH_DIRECT_LE185 : DEPTH_DIRECT_GT185);
-  const fDepth = install === "air"
+  const fDepth = applyOverride(install === "air"
     ? { value: 1, lo: null, hi: null, exact: true, clamped: null }
-    : interpBracket(depthTable, depth);
+    : interpBracket(depthTable, depth), ov.fDepth);
 
-  const ok = rating.value !== null && fGroup.value !== null;
+  /* A manual base rating replaces the table lookup outright, and with it
+     the extrapolation warning — an entered figure is presumably the
+     manufacturer rating the warning was asking for. */
+  const baseManual = ov.base !== null && ov.base !== undefined && ov.base !== ""
+    && isFinite(ov.base) && Number(ov.base) > 0;
+  const base = baseManual ? Number(ov.base) : rating.value;
+
+  const ok = base !== null && fGroup.value !== null;
   const df = ok ? fTemp.value * fGroup.value * fSoil.value * fDepth.value : null;
   return {
     size, install,
-    base: rating.value, extrapolated: rating.extrapolated, extrapBasis: rating.basis || null,
-    extrapReason: rating.extrapolated ? rating.reason : null,
+    base, baseAuto: rating.value, baseManual,
+    extrapolated: rating.extrapolated && !baseManual, extrapBasis: rating.basis || null,
+    extrapReason: rating.extrapolated && !baseManual ? rating.reason : null,
     fTemp, fGroup, fSoil, fDepth,
+    anyManual: baseManual || fTemp.manual || fGroup.manual || fSoil.manual || fDepth.manual,
     tempTable, groupRows, groupCol, soilTable, depthTable,
-    df, derated: ok ? rating.value * df : null,
+    df, derated: ok ? base * df : null,
     notes,
   };
 }
@@ -678,9 +706,15 @@ export function derateLV({
 export function recommendSize(params, designCurrent, parallel = 1) {
   const { table } = params;
   const perCable = designCurrent / Math.max(1, parallel);
+  /* Factor overrides are properties of the installation, so they carry
+     across every candidate size. A base-rating override is a property of
+     one specific cable and must not, or every size would be scanned with
+     the same rating and the recommendation would be nonsense. */
+  const scanOv = { ...(params.ov || {}) };
+  delete scanOv.base;
   const candidates = [];
   for (const row of table) {
-    const d = derateLV({ ...params, size: row.size });
+    const d = derateLV({ ...params, ov: scanOv, size: row.size });
     candidates.push({ size: row.size, derated: d.derated, extrapolated: d.extrapolated, chain: d });
     if (d.derated !== null && perCable <= d.derated) {
       return {

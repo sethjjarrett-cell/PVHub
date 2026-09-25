@@ -289,6 +289,24 @@ the circuit count below a separation where the trenches genuinely decouple — I
 Table B.19 already tabulates by centre spacing and gives a defensible threshold. Take the
 cable diameter from the `.PAN`-equivalent manufacturer data where one is loaded.
 
+### G23. An overridden factor is not recorded anywhere
+
+Every calculated figure in the cable tools can be typed over, which is necessary — real
+jobs carry manufacturer ratings and client standards the IEC tables do not. The interface
+is honest about it: an override shows blue, the displaced table value stays visible struck
+through, and a line says the rating is no longer purely the standard's.
+
+What it does not do is ask *why*. There is no field for a source, a reference or a date,
+so a design saved with four overridden factors looks identical to one where the numbers
+came from nowhere. The person who set them knows; the reviewer six months later does not.
+The same applies to the exports, which carry the final numbers without any mark that some
+were entered rather than derived.
+
+**Recommendation.** A short free-text source against each override, required before it
+takes effect, and a provenance column in every export marking each figure as calculated,
+interpolated, extrapolated or entered. Cheap to add and it is the difference between a
+defensible design file and a set of numbers.
+
 ---
 
 ## Severity 4 — Polish
@@ -324,5 +342,5 @@ by more than half.
 5. **G7, G8** — reconcile the README with the code, and write the assumptions down while
    the reasoning is still in someone's head.
 6. **G11** — ESLint in CI.
-7. **G21, G22** — cable extrapolation physics and trench independence.
+7. **G21, G22, G23** — cable extrapolation physics, trench independence, override provenance.
 8. **G5, G10, G12–G14**.

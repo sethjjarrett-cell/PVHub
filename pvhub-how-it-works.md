@@ -169,6 +169,7 @@ the IEC tables they actually read, with the cell they used picked out:
 | green | read straight off a tabulated row |
 | amber | the two rows an interpolated value sits between, with the result stated separately |
 | purple | extrapolated past where the standard stops — not IEC data |
+| blue | entered by hand, overriding the table |
 
 Both bracketing rows are amber rather than one of them green, because no such row
 exists in the standard and colouring one would misrepresent it. A card the reader
@@ -177,6 +178,28 @@ which is exactly when the working needs to be visible. Above the tables the same
 arithmetic runs as a line of chips — `base × f_temp × f_grp × f_soil × f_depth =
 derated`, against the design current — so the factor that cost the capacity is
 obvious at a glance. It is nearly always grouping.
+
+**Everything is calculated, and everything can be typed over.** The derating chain
+runs automatically from the inputs, which is the normal case and the one to use unless
+something says otherwise. But real jobs carry numbers the tables do not: a manufacturer
+rating for a size IEC does not list, a client standard that fixes the design current, a
+factor from a different edition, a figure a reviewer has already signed off. Each part
+of the chain — the base rating, all four factors, and the design current itself — has a
+box beside it. Empty means calculated. Type a value and that value is used instead.
+
+An override never hides what it replaced. The chip in the arithmetic turns blue and
+carries the table figure struck through beneath it, the row in the reference table below
+is struck through rather than removed, and a banner over the table says which value is
+in use and which was displaced. A line appears saying the rating is no longer purely the
+standard's, because an entered number is yours to defend rather than the standard's.
+**Auto** on any box, or **Reset all to auto**, puts it back.
+
+Factor overrides belong to an installation method, since a factor for a buried run means
+nothing to the same cable on a tray. A base-rating override belongs to one size, so the
+"next size up" recommendation ignores it when scanning — otherwise every candidate would
+be rated the same and the recommendation would be meaningless. On MV the four factors are
+overridable and apply across every size on that method, which the interface states;
+base ratings are not, because each size has its own.
 
 **Where the standard stops, the tool extends it and says so.** IEC 60364-5-52 does
 not tabulate 400 mm² and above for every method; IEC 60502-2 Table B.3 stops at
