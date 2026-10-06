@@ -319,12 +319,19 @@ than the two a percentage implies, and a shading obstruction whose cost depends 
 falls in the string, not on its area. Nothing here knows any of that, and no drawing comes
 out of it.
 
-**Recommendation.** A proper roof layout tool: draw or import roof planes, set tilt and
-azimuth per plane, place modules against real edge setbacks and placed obstructions, and
-export a DWG. The user has asked for DWG output specifically. The module placement can
-reuse the tiling logic from the ground-mount generator; the plane geometry and the DXF/DWG
-writer are the new work. Until that exists, the area check must keep saying it is an upper
-bound.
+The pitch, azimuth and flush-or-tilted choice are now real inputs, and the row spacing for a
+tilted array is computed rather than assumed, so the area figure is defensible. What is still
+missing is placement.
+
+**Recommendation.** A 2D roof drawing tool, which is the next piece of work and has been
+asked for explicitly: draw or import roof planes against a coordinate reference, place
+modules with real edge setbacks and placed obstructions rather than a percentage, pull the
+yield for those coordinates from the PVGIS call the ground-mount side already uses, and
+export DXF/DWG for AutoCAD so the geometry can be carried into PVsyst. The module placement
+can reuse the tiling logic from the ground-mount generator; the plane geometry, the
+obstruction handling and the DXF writer are the new work. DXF is a documented text format and
+is the sensible target — AutoCAD opens it directly and PVsyst imports from it. Until that
+exists, the area check must keep saying it is an upper bound.
 
 ### G25. The battery dispatch has no cost model and no tariff
 
@@ -383,5 +390,7 @@ by more than half.
    the reasoning is still in someone's head.
 6. **G11** — ESLint in CI.
 7. **G21, G22, G23** — cable extrapolation physics, trench independence, override provenance.
-8. **G24, G25** — a real roof layout with DWG export, and a cost model for the battery.
-9. **G5, G10, G12–G14**.
+8. **G24** — the 2D roof drawing tool with DXF/DWG export. The largest single outstanding
+   piece and the one most explicitly asked for.
+9. **G25** — a cost model for the battery.
+10. **G5, G10, G12–G14**.

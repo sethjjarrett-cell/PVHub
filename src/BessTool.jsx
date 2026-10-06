@@ -22,6 +22,7 @@ import { fmt, C, Num, Sel, Section, Page, Working } from "./ui.jsx";
 import {
   nameplateFromUsable, unitCount, loadProfile, pvProfile,
   dispatch, sweepBattery, suggestSizes, LOAD_SHAPES,
+  parseLoadCsv, loadFromMonthly, profileSummary,
 } from "./bess.js";
 
 /* ---------------------------------------------------------------
@@ -183,6 +184,36 @@ function ChartSweep({ s, u }) {
   );
 }
 
+/** The day as measured against the day as assumed. */
+function ChartDayShape({ a, b, u }) {
+  const w = 820, h = 230, ml = 52, mr = 14, mt = 14, mb = 32;
+  const iw = w - ml - mr, ih = h - mt - mb;
+  const max = Math.max(1e-9, ...a, ...(b || []));
+  const X = (i) => ml + (i / 23) * iw;
+  const Y = (v) => mt + ih - (v / max) * ih;
+  const path = (arr) => arr.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join("");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ display: "block" }}>
+      {[0, 0.5, 1].map((f) => (
+        <g key={f}>
+          <line x1={ml} x2={w - mr} y1={Y(max * f)} y2={Y(max * f)} stroke={C.line} />
+          <text x={ml - 6} y={Y(max * f) + 4} textAnchor="end"
+            style={{ font: "10px var(--mono)", fill: C.muted }}>{fmt(max * f / u.ke, 2)}</text>
+        </g>
+      ))}
+      {b && <path d={path(b)} fill="none" stroke="#6b7480" strokeWidth="2" strokeDasharray="4 3" />}
+      <path d={path(a)} fill="none" stroke="#3a96e0" strokeWidth="2.5" />
+      {a.map((v, i) => <circle key={i} cx={X(i)} cy={Y(v)} r="2.5" fill="#3a96e0" />)}
+      <text x={13} y={mt + ih / 2} textAnchor="middle" transform={`rotate(-90 13 ${mt + ih / 2})`}
+        style={{ font: "10px system-ui", fill: C.muted }}>Average {u.e}</text>
+      {[0, 6, 12, 18, 23].map((i) => (
+        <text key={i} x={X(i)} y={h - 10} textAnchor="middle"
+          style={{ font: "10px var(--mono)", fill: C.muted }}>{String(i).padStart(2, "0")}:00</text>
+      ))}
+    </svg>
+  );
+}
+
 const Stat = ({ label, value, unit, tone }) => (
   <div style={{ background: C.panel2, border: `1px solid ${tone || C.line}`, borderRadius: 6,
     padding: "8px 11px", minWidth: 112 }}>
@@ -211,10 +242,22 @@ export function BessTab({ st, set, scale, tmy, kWpHint, lat }) {
   }), [st, chain.nameplateKWh]);
 
   /* ---- B. the simulation ---- */
-  const load = useMemo(() => loadProfile({
+  /* Three ways to get a load, in ascending order of how much of it is
+     measured rather than assumed. Which one is in use is said wherever
+     it matters, because a battery sized on a stylised shape is a
+     different quality of answer from one sized on a meter file. */
+  const modelled = useMemo(() => loadProfile({
     annualKWh: st.annualLoadKWh, shape: st.shape, weekendFactor: st.weekendFactor,
     seasonalAmp: st.seasonalAmp, seasonalPeak: st.seasonalPeak,
   }), [st.annualLoadKWh, st.shape, st.weekendFactor, st.seasonalAmp, st.seasonalPeak]);
+
+  const monthlyLoad = useMemo(() => (st.loadSource === "monthly" && st.monthlyKWh
+    ? loadFromMonthly(st.monthlyKWh, st.shape, st.weekendFactor) : null),
+    [st.loadSource, st.monthlyKWh, st.shape, st.weekendFactor]);
+
+  const load = st.loadSource === "file" && st.imported
+    ? Float64Array.from(st.imported.load)
+    : st.loadSource === "monthly" && monthlyLoad ? monthlyLoad : modelled;
 
   const { pv, synthetic } = useMemo(() => pvProfile({
     tmy, kWp: st.kWp || kWpHint || 0, specificYield: st.specificYield, lat: lat || 0,
@@ -232,6 +275,31 @@ export function BessTab({ st, set, scale, tmy, kWpHint, lat }) {
       hasGrid: st.hasGrid, exportLimitKW: st.exportLimit > 0 ? st.exportLimit : Infinity },
       sizes, st.kneeFraction / 100);
   }, [pv, load, st.battKW, st.rte, st.dod, st.hasGrid, st.exportLimit, st.annualLoadKWh, st.kneeFraction]);
+
+  /* The average day as it is actually being used, against the stylised
+     shape, so an imported file can be eyeballed against the assumption
+     it replaced rather than taken on trust. */
+  const shapes = useMemo(() => ({
+    used: profileSummary(load).byHour,
+    modelled: profileSummary(modelled).byHour,
+  }), [load, modelled]);
+
+  const [impErr, setImpErr] = useState(null);
+  const readFile = (file) => {
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const r = parseLoadCsv(String(rd.result), { shape: st.shape });
+        setImpErr(null);
+        set({ ...st, loadSource: "file", annualLoadKWh: r.annualKWh,
+          imported: { load: Array.from(r.load), annualKWh: r.annualKWh, peakKW: r.peakKW,
+            rows: r.rows, resolution: r.resolution, unit: r.unit, column: r.column,
+            columnName: r.columnName, warnings: r.warnings, name: file.name } });
+      } catch (e) { setImpErr(e.message || String(e)); }
+    };
+    rd.onerror = () => setImpErr("the file could not be read");
+    rd.readAsText(file);
+  };
 
   const E = (v, dp = u.dp) => fmt(v / u.ke, dp);
   const P = (v, dp = u.dp) => fmt(v / u.kp, dp);
@@ -357,18 +425,112 @@ export function BessTab({ st, set, scale, tmy, kWpHint, lat }) {
         </Section>
       </>) : (<>
         <Section code="B2" title="The load">
-          <Num label={`Annual consumption (${u.e})`} value={st.annualLoadKWh / u.ke} step={u.ke === 1 ? 100 : 1}
-            onChange={(v) => set({ ...st, annualLoadKWh: v * u.ke })} />
-          <Sel label="Daily shape" value={st.shape} onChange={(v) => set({ ...st, shape: v })}
-            options={LOAD_SHAPES} />
-          <Num label="Weekend load, relative to a weekday" value={st.weekendFactor} step={0.05} min={0}
-            onChange={(v) => set({ ...st, weekendFactor: v })} />
-          <Num label="Seasonal swing" unit="±%" value={st.seasonalAmp} step={5} min={0}
-            onChange={(v) => set({ ...st, seasonalAmp: v })} />
-          <Sel label="Season of peak demand" value={st.seasonalPeak}
-            onChange={(v) => set({ ...st, seasonalPeak: v })}
-            options={[{ value: "winter", label: "Winter — heating-led" },
-              { value: "summer", label: "Summer — cooling-led" }]} />
+          <Sel label="Where the load comes from" value={st.loadSource}
+            onChange={(v) => set({ ...st, loadSource: v })}
+            options={[
+              { value: "shape", label: "An annual figure and a shape — assumed" },
+              { value: "monthly", label: "Twelve monthly bills — totals real, shape assumed" },
+              { value: "file", label: "A meter file — measured" },
+            ]} />
+
+          {st.loadSource === "file" && (<>
+            <label className="btn" style={{ cursor: "pointer" }}>
+              {st.imported ? "Replace the meter file" : "Upload a meter file (CSV)"}
+              <input type="file" accept=".csv,.txt,.tsv" style={{ display: "none" }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
+            </label>
+            {impErr && (
+              <div className="warn" style={{ width: "100%" }}>
+                &#9888; <b>That file could not be read:</b> {impErr}. It needs one column of
+                readings, optionally with a timestamp column beside it, at quarter-hourly,
+                half-hourly, hourly, daily or monthly resolution covering one year.
+              </div>
+            )}
+            {st.imported && (<>
+              <div className="readout" style={{ width: "100%", border: `1px solid #4fb06a` }}>
+                <b>Running on {st.imported.name}.</b> {fmt(st.imported.rows, 0)} rows read as
+                {" "}<b>{st.imported.resolution}</b> from column {st.imported.column}
+                {st.imported.columnName ? ` ("${st.imported.columnName}")` : ""}, treated as
+                {" "}<b>{st.imported.unit === "kw" ? "kW, power" : "kWh, energy"}</b>. That comes to
+                {" "}<b>{E(st.imported.annualKWh)} {u.e}</b> a year, peaking at
+                {" "}<b>{P(st.imported.peakKW)} {u.p}</b>.
+              </div>
+              {st.imported.warnings?.length > 0 && (
+                <div className="warn" style={{ width: "100%" }}>
+                  &#9888; <b>Worth checking before you trust this:</b>
+                  <ul style={{ margin: "5px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
+                    {st.imported.warnings.map((wn, i) => <li key={i}>{wn}</li>)}
+                  </ul>
+                </div>
+              )}
+            </>)}
+            {!st.imported && (
+              <div className="readout" style={{ width: "100%" }}>
+                <b>This is the input that makes the rest of the tab worth trusting.</b> Everything
+                below turns on when the load runs against when the sun shines, and a stylised
+                shape gets that roughly right at best. Most suppliers will export half-hourly data
+                on request; it usually arrives as a timestamp column and a reading column. The
+                reader works out the delimiter, whether there is a header, which column holds the
+                reading and whether it is kW or kWh, and reports each decision so you can check
+                it. Until a file is loaded the stylised shape is used.
+              </div>
+            )}
+          </>)}
+
+          {st.loadSource === "monthly" && (<>
+            <div style={{ width: "100%", display: "flex", gap: 7, flexWrap: "wrap" }}>
+              {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((mn, i) => (
+                <label key={mn} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ font: "10px system-ui", color: C.muted }}>{mn}</span>
+                  <input type="number" value={st.monthlyKWh[i]} step={10}
+                    onChange={(e) => { const v = [...st.monthlyKWh];
+                      v[i] = Number(e.target.value); set({ ...st, monthlyKWh: v }); }}
+                    style={{ width: 72, background: C.panel2, border: `1px solid ${C.line}`,
+                      borderRadius: 4, color: C.text, font: "12px var(--mono)",
+                      padding: "4px 6px", outline: "none", textAlign: "right" }} />
+                </label>
+              ))}
+            </div>
+            <div className="readout" style={{ width: "100%" }}>
+              <b>Twelve numbers off the bills is what people actually have</b>, and it is a far
+              better position than one annual figure. Each month is scaled to its own total, so
+              the seasonal swing is measured rather than assumed — and the seasonal swing is what
+              decides whether PV and load agree at all. Only the distribution within the day is
+              still taken from the shape below. Total:
+              {" "}<b>{E(st.monthlyKWh.reduce((a, b) => a + b, 0))} {u.e}</b>.
+            </div>
+          </>)}
+
+          {st.loadSource === "shape" && (
+            <Num label={`Annual consumption (${u.e})`} value={st.annualLoadKWh / u.ke} step={u.ke === 1 ? 100 : 1}
+              onChange={(v) => set({ ...st, annualLoadKWh: v * u.ke })} />
+          )}
+          <Sel label={st.loadSource === "file" && st.imported ? "Daily shape (the file provides it)" : "Daily shape"}
+            value={st.shape} onChange={(v) => set({ ...st, shape: v })} options={LOAD_SHAPES} />
+          {!(st.loadSource === "file" && st.imported) && (
+            <Num label="Weekend load, relative to a weekday" value={st.weekendFactor} step={0.05} min={0}
+              onChange={(v) => set({ ...st, weekendFactor: v })} />
+          )}
+          {st.loadSource === "shape" && (<>
+            <Num label="Seasonal swing" unit="±%" value={st.seasonalAmp} step={5} min={0}
+              onChange={(v) => set({ ...st, seasonalAmp: v })} />
+            <Sel label="Season of peak demand" value={st.seasonalPeak}
+              onChange={(v) => set({ ...st, seasonalPeak: v })}
+              options={[{ value: "winter", label: "Winter — heating-led" },
+                { value: "summer", label: "Summer — cooling-led" }]} />
+          </>)}
+
+          <Chart title="The average day"
+            legend={st.loadSource === "shape"
+              ? [["#3a96e0", "in use"]]
+              : [["#3a96e0", "in use"], ["#6b7480", "the stylised shape, for comparison"]]}
+            subtitle={st.loadSource === "file" && st.imported
+              ? "Measured, averaged over the year"
+              : st.loadSource === "monthly" ? "Monthly totals measured, within-day shape assumed"
+                : "Entirely assumed"}>
+            <ChartDayShape a={shapes.used}
+              b={st.loadSource === "shape" ? null : shapes.modelled} u={u} />
+          </Chart>
           <Working n="B1" title="Average daily consumption"
             formula="E_day = E_year / 365"
             sub={`${E(st.annualLoadKWh)} ${u.e} / 365`}
@@ -636,7 +798,65 @@ export function BessTab({ st, set, scale, tmy, kWpHint, lat }) {
             that same usable capacity, which is how warranties are written.
           </p>
 
-          <p style={{ margin: "0 0 6px" }}><b>6 · The knee, not the maximum.</b></p>
+          <p style={{ margin: "0 0 6px" }}><b>6 · What the mount type changes, and what it does not.</b></p>
+          <p style={{ margin: "0 0 10px" }}>
+            Nothing in the physics above. The derate chain, the dispatch rule and the knee are
+            the same whether the array is on a roof or in a field — a kilowatt-hour behaves the
+            same either way. What changes is the <i>shape of the problem</i>, and it changes
+            enough to be worth stating:
+          </p>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 18, lineHeight: 1.8 }}>
+            <li>
+              <b>Roof</b> opens in kW and kWh on a load-following basis, because a rooftop
+              battery is almost always bought to raise self-consumption against a retail tariff,
+              and the array is fixed by the roof rather than chosen. The useful question is how
+              much of the evening it covers. Typical duty is one cycle a day, so 250 to 350
+              equivalent cycles a year, and the battery is sized against a <i>daily</i> surplus
+              — generally a fraction of a day of consumption, which is why the sweep runs from
+              there to two days of autonomy.
+            </li>
+            <li>
+              <b>Ground</b> opens in MW and MWh on a stated requirement, because a utility
+              battery is usually specified before it is designed — a tender, a grid service, a
+              capacity contract — and the job is to meet a number rather than discover one. The
+              dispatch pane still works and is worth running where there is a real site load, but
+              the capacity chain is what the contract is written against.
+            </li>
+            <li>
+              <b>An east–west roof changes the battery case specifically.</b> Two faces peak at
+              different times, so the generation profile is flatter and wider than a single south
+              face of the same size. That overlaps the morning and evening load better, which
+              lowers the surplus available to charge and lowers the deficit needing discharge —
+              a flatter profile means a smaller battery does more of the work. A south-facing
+              roof of the same capacity has a taller midday peak, more surplus to bank, and
+              justifies a larger battery. The simulation picks this up on its own because it runs
+              on the actual hourly profile; it is worth knowing that is <i>why</i> the answer
+              moves when the roof changes.
+            </li>
+            <li>
+              <b>The array size links, the rest does not.</b> The roof tab can send its kWp
+              straight here. Tilt and azimuth affect the battery only through the generation
+              profile, so where PVGIS TMY has been pulled they are already in it; on the clear-sky
+              fallback the shape is right and the absolute is high, and the sizing comparison
+              survives that better than the absolute self-sufficiency figure does.
+            </li>
+          </ul>
+
+          <p style={{ margin: "0 0 6px" }}><b>7 · Where the load came from, and why it matters most.</b></p>
+          <p style={{ margin: "0 0 10px" }}>
+            Three sources, and they are not equal. A stylised shape with an annual total is
+            entirely assumed and gets the answer roughly right at best. Twelve monthly bills make
+            the seasonal swing real and leave only the within-day distribution assumed, which is
+            a large improvement for very little effort, because the seasonal swing is what decides
+            whether generation and consumption agree at all. A half-hourly meter file is measured
+            throughout and is the only one of the three that makes the self-sufficiency figure
+            worth quoting. The reader works out the delimiter, the header, the reading column and
+            whether it holds kW or kWh, and reports every one of those decisions, because a
+            silent misread invalidates everything downstream — reading half-hourly kW as kWh
+            doubles the year.
+          </p>
+
+          <p style={{ margin: "0 0 6px" }}><b>8 · The knee, not the maximum.</b></p>
           <p style={{ margin: 0 }}>
             Self-sufficiency against battery size saturates, so the largest size swept always
             scores highest and reporting it would be useless advice. The knee is defined as the

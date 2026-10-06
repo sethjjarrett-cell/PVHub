@@ -156,6 +156,16 @@ const DAY_SHAPES = {
   flat: new Array(24).fill(1 / 24),
 };
 
+/* Normalise each shape to sum to exactly 1, so a caller can scale a
+   day's energy by it directly and get that energy back. loadProfile
+   rescales the whole year anyway and would not notice, but the CSV
+   daily branch multiplies through without a second normalisation, and a
+   shape summing to 0.954 silently lost 4.6% of the year there. */
+for (const k of Object.keys(DAY_SHAPES)) {
+  const sum = DAY_SHAPES[k].reduce((a, b) => a + b, 0);
+  if (sum > 0) DAY_SHAPES[k] = DAY_SHAPES[k].map((v) => v / sum);
+}
+
 export const LOAD_SHAPES = [
   { value: "residential", label: "Residential — morning and evening peaks" },
   { value: "commercial", label: "Commercial — daytime plateau" },
@@ -431,4 +441,242 @@ export function suggestSizes(dailyLoadKWh, steps = 12) {
   const out = [];
   for (let i = 1; i <= steps; i++) out.push(Math.round((top * i) / steps * 100) / 100);
   return out;
+}
+
+/* ---------------------------------------------------------------
+   6.  REAL LOAD DATA
+   --------------------------------------------------------------- */
+
+/* Hours in each month of a non-leap year, and the cumulative index of
+   the first hour of each month. */
+const MONTH_HOURS = [744, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744];
+const MONTH_START = MONTH_HOURS.reduce((a, h, i) => { a.push(a[i] + h); return a; }, [0]);
+
+/**
+ * Twelve monthly totals into 8,760 hours.
+ *
+ * This is the data people actually have. Nobody arriving at a battery
+ * question has a meter file; everybody has twelve numbers off their
+ * bills. Each month is scaled to its own total and the daily shape
+ * distributes it within the month, so the annual and the monthly totals
+ * are both exactly right and only the within-day distribution is
+ * assumed. That is a much better position than assuming the lot.
+ */
+export function loadFromMonthly(monthlyKWh, shape = "residential", weekendFactor = 1, startDay = 0) {
+  const day = DAY_SHAPES[shape] || DAY_SHAPES.residential;
+  const out = new Float64Array(8760);
+  for (let m = 0; m < 12; m++) {
+    const from = MONTH_START[m], to = MONTH_START[m + 1];
+    let w = 0;
+    for (let h = from; h < to; h++) {
+      const dow = (startDay + Math.floor(h / 24)) % 7;
+      const v = day[h % 24] * (dow === 5 || dow === 6 ? weekendFactor : 1);
+      out[h] = v; w += v;
+    }
+    const k = w > 0 ? (monthlyKWh[m] || 0) / w : 0;
+    for (let h = from; h < to; h++) out[h] *= k;
+  }
+  return out;
+}
+
+/**
+ * Pick the delimiter the file actually uses.
+ *
+ * Taking the first one that splits anything is wrong, and wrong in a way
+ * that corrupts the data rather than failing: a semicolon-delimited
+ * file with decimal commas splits happily on the comma, and every
+ * reading comes out an order of magnitude too big. So choose by which
+ * delimiter gives the same field count on most lines, preferring more
+ * fields when two agree equally well.
+ */
+function pickDelimiter(lines) {
+  const sample = lines.slice(0, Math.min(40, lines.length));
+  let best = null;
+  for (const d of [";", ",", "\t", "|"]) {
+    const counts = sample.map((l) => l.split(d).length);
+    const tally = new Map();
+    for (const c of counts) tally.set(c, (tally.get(c) || 0) + 1);
+    let mode = 1, modeN = 0;
+    for (const [c, n] of tally) if (n > modeN || (n === modeN && c > mode)) { mode = c; modeN = n; }
+    if (mode < 2) continue;
+    const score = (modeN / sample.length) * 100 + mode;
+    if (!best || score > best.score) best = { d, score };
+  }
+  return best ? best.d : null;
+}
+
+function splitRow(line, d) {
+  const parts = d ? line.split(d) : [line];
+  return parts.map((x) => x.trim().replace(/^"|"$/g, ""));
+}
+
+const numOf = (s) => {
+  if (s === undefined || s === null) return NaN;
+  /* A decimal comma and a thousands comma look identical until you count
+     them, so decide by which separator appears last. */
+  let t = String(s).trim().replace(/\s/g, "");
+  if (/,\d{1,3}$/.test(t) && !/\.\d/.test(t)) t = t.replace(/\./g, "").replace(",", ".");
+  else t = t.replace(/,/g, "");
+  const v = Number(t);
+  return Number.isFinite(v) ? v : NaN;
+};
+
+/**
+ * A meter export into an 8,760-hour load in kWh.
+ *
+ * Deliberately forgiving about format, because every utility exports
+ * something different, and deliberately loud about what it decided,
+ * because a silent misread here invalidates everything downstream.
+ *
+ * What it works out for itself:
+ *   delimiter        comma, semicolon, tab or pipe
+ *   header           present or not, by whether row one parses as numbers
+ *   value column     named (kwh / kw / load / demand / consumption /
+ *                    usage / import) if it can, otherwise the last
+ *                    column that is numeric on most rows
+ *   units            kW is power and must be multiplied by the interval
+ *                    to become energy; kWh is already energy. Getting
+ *                    this backwards at half-hourly resolution doubles
+ *                    or halves the whole year, so it is reported and
+ *                    can be overridden.
+ *   resolution       from the row count — 35,040 is quarter-hourly,
+ *                    17,520 half-hourly, 8,760 hourly, 365 daily, 12
+ *                    monthly. Anything else is resampled onto 8,760 and
+ *                    said so.
+ */
+export function parseLoadCsv(text, opts = {}) {
+  const warnings = [];
+  const lines = String(text).split(/\r?\n/).filter((l) => l.trim().length);
+  if (!lines.length) throw new Error("the file is empty");
+
+  const delim = pickDelimiter(lines);
+  const rows = lines.map((l) => splitRow(l, delim));
+  const width = Math.max(...rows.map((r) => r.length));
+
+  /* A header is a first row whose cells are not numbers. */
+  const firstNumeric = rows[0].filter((c) => Number.isFinite(numOf(c))).length;
+  const hasHeader = firstNumeric < Math.max(1, Math.floor(rows[0].length / 2));
+  const header = hasHeader ? rows[0].map((h) => h.toLowerCase()) : null;
+  const body = hasHeader ? rows.slice(1) : rows;
+  if (!body.length) throw new Error("no data rows under the header");
+
+  /* Pick the value column. A named one beats a positional guess. */
+  let col = -1, unitHint = null;
+  if (header) {
+    const named = [
+      [/k?wh|m?wh|energy|consumption|usage|import/, "kwh"],
+      [/\b[km]?w\b|power|demand|load/, "kw"],
+    ];
+    for (const [re, unit] of named) {
+      const i = header.findIndex((h) => re.test(h));
+      if (i >= 0) { col = i; unitHint = unit; break; }
+    }
+  }
+  if (col < 0) {
+    /* The last column that is numeric on most rows. Timestamps sit on
+       the left and the reading on the right in almost every export. */
+    for (let c = width - 1; c >= 0; c--) {
+      const good = body.filter((r) => Number.isFinite(numOf(r[c]))).length;
+      if (good > body.length * 0.8) { col = c; break; }
+    }
+    if (col >= 0) warnings.push(
+      `No column was named as a load, so column ${col + 1} was used — the last one that is `
+      + "numeric throughout. Check that is the reading and not a meter index or a cost.");
+  }
+  if (col < 0) throw new Error("no column in this file is numeric enough to be a load reading");
+  /* Checked after the column is settled, however it was settled. */
+  if (header && /\bm(w|wh)\b|megawatt/.test(header[col] || "")) warnings.push(
+    "The column header mentions MW or MWh. Values are read as given and treated as kW or kWh — "
+    + "multiply by 1,000 before importing if the file really is in megawatts.");
+
+  const raw = [];
+  for (const r of body) {
+    const v = numOf(r[col]);
+    if (Number.isFinite(v)) raw.push(v);
+  }
+  if (raw.length < 12) throw new Error(`only ${raw.length} numeric rows — too few to build a year`);
+  if (raw.some((v) => v < 0)) warnings.push(
+    "Some readings are negative, which usually means export is in the same column as import. "
+    + "They are floored at zero here; a battery sized on a load that goes negative is being "
+    + "sized on the wrong series.");
+
+  /* Resolution from the count. */
+  const n = raw.length;
+  let perHour, resolution;
+  if (n >= 34000 && n <= 36000) { perHour = 4; resolution = "quarter-hourly"; }
+  else if (n >= 17000 && n <= 18000) { perHour = 2; resolution = "half-hourly"; }
+  else if (n >= 8600 && n <= 8800) { perHour = 1; resolution = "hourly"; }
+  else if (n >= 360 && n <= 370) { perHour = 1 / 24; resolution = "daily"; }
+  else if (n === 12) { perHour = null; resolution = "monthly"; }
+  else {
+    perHour = n / 8760; resolution = `${n} rows`;
+    warnings.push(
+      `${n} rows is not a whole year at any usual resolution, so the series was resampled onto `
+      + "8,760 hours. Check the file covers exactly one year and has no gaps — a missing day "
+      + "shifts everything after it.");
+  }
+
+  /* kW is average power over the interval, so energy is power × hours.
+     kWh is already energy and passes through. */
+  const unit = opts.unit || unitHint || (perHour && perHour > 1 ? "kw" : "kwh");
+  if (!opts.unit && !unitHint) warnings.push(
+    `Nothing in the file says whether the readings are kW or kWh, so they are being treated as `
+    + `${unit === "kw" ? "kW (power)" : "kWh (energy)"}. At ${resolution} resolution that choice `
+    + "changes the annual total, so set it by hand if the total below looks wrong.");
+
+  let load;
+  if (resolution === "monthly") {
+    load = loadFromMonthly(raw.map((v) => Math.max(0, v)), opts.shape || "residential",
+      opts.weekendFactor ?? 1);
+  } else {
+    load = new Float64Array(8760);
+    const intervalH = perHour >= 1 ? 1 / perHour : 24;
+    for (let h = 0; h < 8760; h++) {
+      if (perHour >= 1) {
+        /* Sum the sub-hour readings that fall in this hour. */
+        let acc = 0;
+        for (let k = 0; k < perHour; k++) {
+          const i = Math.min(raw.length - 1, Math.round(h * perHour + k));
+          const v = Math.max(0, raw[i]);
+          acc += unit === "kw" ? v * intervalH : v;
+        }
+        load[h] = acc;
+      } else {
+        /* Daily or coarser: spread the day's figure over its hours using
+           the residential shape rather than flat, because a flat day
+           would make the battery look useless. */
+        const d = Math.min(raw.length - 1, Math.floor(h / 24));
+        const day = DAY_SHAPES[opts.shape || "residential"] || DAY_SHAPES.residential;
+        const v = Math.max(0, raw[d]);
+        load[h] = (unit === "kw" ? v * 24 : v) * day[h % 24];
+      }
+    }
+    if (perHour < 1) warnings.push(
+      "The file is daily or coarser, so the within-day shape is assumed rather than measured. "
+      + "The totals are real; when the load falls inside each day is not, and that is exactly "
+      + "what decides whether a battery helps.");
+  }
+
+  let annualKWh = 0;
+  for (let h = 0; h < 8760; h++) annualKWh += load[h];
+  let peakKW = 0;
+  for (let h = 0; h < 8760; h++) if (load[h] > peakKW) peakKW = load[h];
+
+  return {
+    load, annualKWh, peakKW, rows: n, resolution, unit,
+    column: col + 1, columnName: header ? header[col] : null,
+    hasHeader, warnings,
+  };
+}
+
+/** Day-of-week and hour-of-day averages, for showing a profile back. */
+export function profileSummary(load) {
+  const byHour = new Array(24).fill(0);
+  const byMonth = new Array(12).fill(0);
+  for (let h = 0; h < 8760; h++) {
+    byHour[h % 24] += load[h];
+    let m = 0; while (m < 11 && h >= MONTH_START[m + 1]) m++;
+    byMonth[m] += load[h];
+  }
+  return { byHour: byHour.map((v) => v / 365), byMonth };
 }

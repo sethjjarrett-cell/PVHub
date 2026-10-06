@@ -120,6 +120,17 @@ table has a sensible starting order. Enter the real PVsyst numbers and the
 star marks the best run within your ILR cap. Rows breaching the cap turn red.
 Pick one with **Use** and it carries into the frame and layout steps.
 
+**Which DC/AC ratio to pick is a shape, not a column.** Every candidate string count is
+plotted as a point — one per whole string, because that is how the choice is actually made.
+Clipping loss rises with ratio and always argues for the smallest array, which is wrong,
+because the modules you did not clip were generating all year. The series that decides is the
+marginal net gain: what the *next* string adds once its own clipping is paid for. It falls
+through the threshold at the knee, and past that point you are buying modules whose output
+the inverter throws away. The ILR cap is drawn as a shaded limit, the current selection is
+picked out, and any real PVsyst clipping figures entered in the table plot as diamonds on the
+same axes — a modelled curve and a measured result belong on one chart rather than in two
+columns.
+
 ### 6 · Pitch & Shading
 
 Deliberately does not simulate. You run the pitch candidates in PVsyst and
@@ -293,6 +304,16 @@ catches it, which is why the interface says so rather than assuming.
 Units then round up and the larger requirement governs, and which one governs is as useful
 as the count — energy-driven means the power came free and a cheaper conversion stage may
 suit; power-driven means the duration is longer than asked for.
+
+**Where the load comes from**, in ascending order of how much is measured. A stylised shape
+with an annual total is entirely assumed. Twelve monthly bills — the data people actually
+have — make the seasonal swing real and leave only the within-day distribution assumed, which
+is a large improvement for very little effort, because the seasonal swing decides whether
+generation and consumption agree at all. A meter file is measured throughout and is the only
+one of the three that makes a self-sufficiency figure worth quoting. The reader works out the
+delimiter by which one splits consistently across rows, whether there is a header, which
+column holds the reading and whether it is kW or kWh, and reports every decision — reading
+half-hourly kW as kWh doubles the year, so none of it is allowed to be silent.
 
 **"How big a battery is worth buying?"** Arithmetic cannot answer that, because the answer
 depends on when the sun shines against when the load runs. Two sites with identical annual
@@ -592,13 +613,31 @@ And no layout generator, because the layout generator tiles open ground with tra
 roads and does not understand a roof plane, an obstruction or a setback — offering it for a
 roof would be worse than not offering it at all.
 
-In its place is a **roof area check**: one row per roof plane, each with its own tilt and
-azimuth, because a house with an east and a west pitch is two generators sharing an inverter
-and averaging them loses the thing that matters. It divides the usable rectangle by the
-module, floors in both directions because a module that does not fit does not go on the
-roof, and applies obstructions as a percentage. On a small roof that rounding is most of the
-answer — losing one column to a 100 mm setback can cost a tenth of the system — so the grid
-is shown as well as the count.
+In its place is a **roof area check**. The thing that makes a roof different from a field is
+that the surface already has an angle, so the first question is the roof's own pitch and
+which way it faces, and the second is what you do about it:
+
+- **Flush** — modules lie on the roof. Tilt and azimuth are the roof's, and no row spacing is
+  needed because a single plane cannot shade itself. This is what nearly every pitched roof
+  gets, and the array inherits whatever the builder chose decades ago.
+- **Tilted up** — modules raised steeper than the surface. Normal on a flat or shallow roof,
+  where leaving them horizontal gives away yield and lets dirt sit on them. The cost is rows:
+  a tilted module shades the one behind, so they must be spaced at
+  `p = l·cos β + l·sin β / tan α`, where α is the sun elevation below which you accept
+  shading. Lowering α buys back row spacing at the cost of the morning and evening hours,
+  which on an area-limited roof is usually a trade worth making. Tilting above a roof already
+  at 15° or more is flagged — it needs a structural reason, not a yield one, because the gain
+  over flush on a roof near optimum rarely covers the extra steelwork and the lost modules.
+
+One row per plane, each with its own pitch, azimuth and mounting, because a house with an
+east and a west face is two generators sharing an inverter and averaging them loses the thing
+that matters. It divides the usable rectangle by the module, floors in both directions
+because a module that does not fit does not go on the roof, and applies obstructions as a
+percentage. On a small roof that rounding is most of the answer — losing one column to a
+100 mm setback can cost a tenth of the system — so the grid is shown as well as the count,
+along with how the modules split across the planes and whether each divides into whole
+strings. A plane with modules left over is called out, because stringing across planes puts
+different tilts and azimuths in series and a string is limited by its worst-lit module.
 
 It is an area check and it says so. A real roof has the vent in the middle of the best row
 and a rooflight that costs three modules rather than the two a percentage implies. The count

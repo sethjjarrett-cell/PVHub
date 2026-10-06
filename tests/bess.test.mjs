@@ -5,6 +5,7 @@
 import {
   nameplateFromUsable, usableFromNameplate, unitCount,
   loadProfile, pvProfile, dispatch, sweepBattery, suggestSizes,
+  parseLoadCsv, loadFromMonthly, profileSummary,
 } from '../src/bess.js';
 
 let pass = 0, fail = 0;
@@ -153,6 +154,86 @@ console.log('\n--- sweep and the knee ---');
   const pv = new Float64Array(8760).fill(0).map((_, h) => (h % 24 >= 9 && h % 24 < 15 ? 60 : 0));
   const s = sweepBattery({ pv, load, powerKW: 100, rtePct: 95 }, [1, 2, 3, 4]);
   ok('an unbracketed sweep is flagged', s.bracketed === false, s.bracketed); }
+
+console.log('\n--- monthly bills into a year ---');
+{ const m = [500, 450, 400, 320, 280, 250, 240, 250, 300, 380, 450, 520];
+  const L = loadFromMonthly(m, 'residential');
+  near('annual total matches the sum of the bills', L.reduce((a,b)=>a+b,0), m.reduce((a,b)=>a+b,0), 1e-6);
+  const jan = L.slice(0, 744).reduce((a,b)=>a+b,0);
+  near('January matches its own bill', jan, 500, 1e-6);
+  const jul = L.slice(4344, 5088).reduce((a,b)=>a+b,0);
+  near('July matches its own bill', jul, 240, 1e-6);
+  ok('8760 hours', L.length === 8760); }
+
+console.log('\n--- CSV import ---');
+const mkCsv = (n, perHour, unit, header = true) => {
+  const out = header ? [`timestamp,${unit}`] : [];
+  for (let i = 0; i < n; i++) {
+    const h = Math.floor(i / perHour) % 24;
+    const kw = 0.3 + 0.5 * Math.sin((h / 24) * Math.PI * 2 + 1) ** 2;
+    out.push(`2024-01-01T${String(h).padStart(2,'0')}:00,${(unit === 'kW' ? kw : kw / perHour).toFixed(4)}`);
+  }
+  return out.join('\n');
+};
+{ const r = parseLoadCsv(mkCsv(8760, 1, 'kWh'));
+  ok('hourly recognised', r.resolution === 'hourly', r.resolution);
+  ok('named kWh column found', r.unit === 'kwh', r.unit);
+  ok('8760 hours out', r.load.length === 8760);
+  ok('a plausible annual total', r.annualKWh > 0, r.annualKWh.toFixed(0)); }
+{ const r = parseLoadCsv(mkCsv(17520, 2, 'kW'));
+  ok('half-hourly recognised', r.resolution === 'half-hourly', r.resolution);
+  ok('kW column found', r.unit === 'kw', r.unit);
+  /* Same numbers, different stated unit. At half-hourly a kW reading is
+     power held for half an hour, so it contributes half as much energy
+     as the same figure read as kWh. Getting this backwards doubles or
+     halves the year, which is why it is reported. */
+  const same = Array.from({ length: 17520 }, () => '2024,2').join('\n');
+  const asKw = parseLoadCsv('t,kW\n' + same);
+  const asKwh = parseLoadCsv('t,kWh\n' + same);
+  near('kWh at half-hourly sums the readings', asKwh.annualKWh, 17520 * 2, 1e-6);
+  near('kW at half-hourly halves them', asKw.annualKWh, 17520 * 2 * 0.5, 1e-6);
+  ok('the two units give different years', asKw.annualKWh !== asKwh.annualKWh); }
+{ const r = parseLoadCsv(mkCsv(35040, 4, 'kW'));
+  ok('quarter-hourly recognised', r.resolution === 'quarter-hourly', r.resolution); }
+{ const r = parseLoadCsv('500\n450\n400\n320\n280\n250\n240\n250\n300\n380\n450\n520'.split('\n').map((v,i)=>`M${i+1},${v}`).join('\n'));
+  ok('twelve rows read as monthly', r.resolution === 'monthly', r.resolution);
+  near('monthly totals preserved', r.annualKWh, 4340, 1e-6); }
+{ const semi = 'Zeitstempel;Verbrauch kWh\n' + Array.from({length: 8760}, (_, i) => `2024;${(0.5).toFixed(1).replace('.', ',')}`).join('\n');
+  const r = parseLoadCsv(semi);
+  ok('semicolon and decimal comma handled', Math.abs(r.annualKWh - 4380) < 1, r.annualKWh); }
+{ const r = parseLoadCsv(mkCsv(8760, 1, 'kWh', false));
+  ok('headerless file still parses', r.hasHeader === false && r.load.length === 8760);
+  ok('headerless warns about the column guess', r.warnings.some(w => /No column was named/.test(w))); }
+{ const r = parseLoadCsv('t,kWh\n' + Array.from({length: 365}, () => '2024,10').join('\n'));
+  ok('daily recognised', r.resolution === 'daily', r.resolution);
+  near('daily totals preserved', r.annualKWh, 3650, 1e-6);
+  ok('daily warns the shape is assumed', r.warnings.some(w => /within-day shape is assumed/.test(w))); }
+{ const r = parseLoadCsv('t,kWh\n' + Array.from({length: 8760}, (_, i) => `2024,${i % 100 === 0 ? -2 : 1}`).join('\n'));
+  ok('negative readings are flagged', r.warnings.some(w => /negative/.test(w)));
+  ok('negatives are floored, not summed', r.annualKWh > 8600, r.annualKWh); }
+{ let threw = null; try { parseLoadCsv(''); } catch (e) { threw = e.message; }
+  ok('an empty file fails clearly', /empty/.test(threw || ''), threw);
+  threw = null; try { parseLoadCsv('a,b\n1,2'); } catch (e) { threw = e.message; }
+  ok('too few rows fails clearly', /too few/.test(threw || ''), threw); }
+{ const r = parseLoadCsv('t,MWh\n' + Array.from({length: 8760}, () => '2024,1').join('\n'));
+  ok('an MW header is flagged', r.warnings.some(w => /MW or MWh/.test(w))); }
+
+console.log('\n--- profile summary ---');
+{ const L = loadProfile({ annualKWh: 4000, shape: 'residential' });
+  const s = profileSummary(L);
+  ok('24 hourly averages', s.byHour.length === 24);
+  ok('12 monthly totals', s.byMonth.length === 12);
+  near('monthly totals sum to the year', s.byMonth.reduce((a,b)=>a+b,0), 4000, 1e-6);
+  const peak = s.byHour.indexOf(Math.max(...s.byHour));
+  ok('residential peak lands in the evening', peak >= 17 && peak <= 21, peak); }
+
+{ /* An imported profile must drive the dispatch the same as a built one. */
+  const r = parseLoadCsv(mkCsv(8760, 1, 'kWh'));
+  const { pv } = pvProfile({ kWp: 4, specificYield: 1000, lat: 51.5, prRatio: 1 });
+  const d = dispatch({ pv, load: r.load, nameplateKWh: 10, powerKW: 3.7, rtePct: 90 });
+  near('load balance holds on imported data', d.direct + d.discharged + d.imported, d.loadTotal, 1e-6);
+  ok('self-sufficiency is in range', d.selfSufficiencyPct > 0 && d.selfSufficiencyPct <= 100,
+    d.selfSufficiencyPct.toFixed(1)); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

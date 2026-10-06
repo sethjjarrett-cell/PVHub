@@ -115,8 +115,9 @@ Tests that run without a browser, both dependency-free:
 ```bash
 node tests/batchAnalyser.test.mjs    # 58 assertions against the Solango fixture
 node tests/cableTables.test.mjs     # 783 derating values against the source workbook
-node tests/bess.test.mjs            # 70 assertions: the capacity chain against the
-                                    # workbook, the dispatch against conservation of energy
+node tests/bess.test.mjs            # 103 assertions: the capacity chain against the
+                                    # workbook, the dispatch against conservation of
+                                    # energy, and the meter-file reader
 ```
 
 **Known pre-existing noise:** ~270 console errors of the form
@@ -243,6 +244,22 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **The roof tool is an area check, not a layout.** It assumes one clear rectangle per plane
   and spreads obstructions as a percentage, and it says so. Do not present its count as a
   layout; a real roof layout is a separate tool that does not exist yet (GAPS §G24).
+- **Flush and tilted are different geometries, not a preference.** Flush takes the roof's own
+  pitch and azimuth and needs no row spacing, because one plane cannot shade itself. Tilted
+  sets the module angle independently and must pay for it in row pitch —
+  `p = l·cos β + l·sin β / tan α` at the stated limit elevation. Tilting above a roof already
+  at 15° or more is flagged, because it needs a structural reason rather than a yield one.
+- **A roof plane is never averaged with another.** East and west faces are two generators
+  sharing an inverter; averaging them to one tilt and azimuth loses the fact that they peak
+  at different times, which is what changes both the inverter sizing and the battery case.
+- **The load source is always stated.** `parseLoadCsv` works out the delimiter by consistency
+  across rows (not by first match — a semicolon file with decimal commas splits happily on
+  the comma and comes out tenfold), the header, the reading column and whether it holds kW or
+  kWh, and reports every one of those decisions. Reading half-hourly kW as kWh doubles the
+  year. Do not make any of it silent.
+- **`DAY_SHAPES` are normalised to sum to exactly 1 at module load.** `loadProfile` rescales
+  the whole year and would not notice otherwise, but the daily-CSV branch multiplies straight
+  through, and a shape summing to 0.954 lost 4.6% of the year there.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.

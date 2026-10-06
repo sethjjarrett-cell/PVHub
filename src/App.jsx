@@ -5523,6 +5523,136 @@ function FrameTab({ frame, setFrame, mod, elec, uiMode }) {
   );
 }
 
+/* =====================================================================
+   WHICH DC/AC RATIO TO PICK, PLOTTED
+
+   The table underneath has every candidate in it, but a column of
+   marginal percentages is not how anyone decides. The decision is a
+   shape: adding strings keeps adding energy until clipping eats the
+   addition, and the point where those two curves cross is the answer.
+   So plot them.
+
+   Two series share the x-axis of DC/AC ratio:
+
+     clipping loss      rises non-linearly and accelerates
+     marginal net gain  what the NEXT string actually adds, after its
+                        clipping is paid for — this is the one that
+                        decides, and it falls through zero
+
+   The knee is where marginal net gain drops below the threshold: past
+   it you are paying for modules whose output the inverter throws away.
+   ===================================================================== */
+function IlrChart({ rows, ilrCap, selected, knee, actual }) {
+  if (!rows.length) return null;
+  const w = 820, h = 330, ml = 54, mr = 54, mt = 16, mb = 46;
+  const iw = w - ml - mr, ih = h - mt - mb;
+  const x0 = rows[0].ilr, x1 = rows[rows.length - 1].ilr;
+  const X = (v) => ml + ((v - x0) / Math.max(1e-9, x1 - x0)) * iw;
+
+  const nets = rows.filter((r) => r.net !== undefined).map((r) => r.net);
+  const netMax = Math.max(1, ...nets), netMin = Math.min(0, ...nets);
+  const clipMax = Math.max(1, ...rows.map((r) => r.clip));
+  const YN = (v) => mt + ih - ((v - netMin) / Math.max(1e-9, netMax - netMin)) * ih;
+  const YC = (v) => mt + ih - (v / clipMax) * ih;
+
+  const netPts = rows.filter((r) => r.net !== undefined);
+  const netPath = netPts.map((r, i) => `${i ? "L" : "M"}${X(r.ilr).toFixed(1)},${YN(r.net).toFixed(1)}`).join("");
+  const clipPath = rows.map((r, i) => `${i ? "L" : "M"}${X(r.ilr).toFixed(1)},${YC(r.clip).toFixed(1)}`).join("");
+  const kneeRow = knee >= 0 ? rows[knee] : null;
+  const actRows = rows.filter((r) => actual[r.s] !== undefined && actual[r.s] !== null);
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ display: "block" }}>
+      {/* left axis — marginal net gain */}
+      {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+        const v = netMin + (netMax - netMin) * f;
+        return (
+          <g key={f}>
+            <line x1={ml} x2={w - mr} y1={YN(v)} y2={YN(v)} stroke={C.line} />
+            <text x={ml - 6} y={YN(v) + 4} textAnchor="end"
+              style={{ font: "10px var(--mono)", fill: "#59b56f" }}>{fmt(v, 1)}</text>
+          </g>
+        );
+      })}
+      {/* right axis — clipping */}
+      {[0, 0.5, 1].map((f) => (
+        <text key={f} x={w - mr + 6} y={YC(clipMax * f) + 4}
+          style={{ font: "10px var(--mono)", fill: "#d64545" }}>{fmt(clipMax * f, 1)}%</text>
+      ))}
+      {/* zero line for the net series — the sign change that matters */}
+      {netMin < 0 && (
+        <line x1={ml} x2={w - mr} y1={YN(0)} y2={YN(0)} stroke="#6b7480" strokeWidth="1.5" />
+      )}
+      {/* the ILR cap */}
+      {ilrCap >= x0 && ilrCap <= x1 && (
+        <g>
+          <rect x={X(ilrCap)} y={mt} width={Math.max(0, w - mr - X(ilrCap))} height={ih}
+            fill="#d64545" opacity="0.07" />
+          <line x1={X(ilrCap)} x2={X(ilrCap)} y1={mt} y2={mt + ih}
+            stroke="#d64545" strokeWidth="1.5" strokeDasharray="5 3" />
+          <text x={X(ilrCap) + 5} y={mt + 11}
+            style={{ font: "600 10px var(--mono)", fill: "#d64545" }}>cap {fmt(ilrCap, 2)}</text>
+        </g>
+      )}
+      {/* the knee */}
+      {kneeRow && (
+        <g>
+          <line x1={X(kneeRow.ilr)} x2={X(kneeRow.ilr)} y1={mt} y2={mt + ih}
+            stroke="#59b56f" strokeWidth="1.5" strokeDasharray="4 3" />
+          <text x={X(kneeRow.ilr) + 5} y={mt + ih - 6}
+            style={{ font: "600 10px var(--mono)", fill: "#59b56f" }}>
+            knee {fmt(kneeRow.ilr, 2)}
+          </text>
+        </g>
+      )}
+      <path d={clipPath} fill="none" stroke="#d64545" strokeWidth="2" opacity="0.85" />
+      <path d={netPath} fill="none" stroke="#59b56f" strokeWidth="2.5" />
+      {/* every candidate as a point, because the choice is discrete —
+          you add a whole string or you do not */}
+      {rows.map((r) => (
+        <circle key={`c${r.s}`} cx={X(r.ilr)} cy={YC(r.clip)} r="3" fill="#d64545" opacity="0.8" />
+      ))}
+      {netPts.map((r) => {
+        const sel = r.s === selected;
+        return (
+          <g key={`n${r.s}`}>
+            <circle cx={X(r.ilr)} cy={YN(r.net)} r={sel ? 6 : 3.5}
+              fill={sel ? "#e8820c" : "#59b56f"}
+              stroke={sel ? "#fff" : "none"} strokeWidth={sel ? 1.5 : 0} />
+            {sel && (
+              <text x={X(r.ilr)} y={YN(r.net) - 11} textAnchor="middle"
+                style={{ font: "600 10px var(--mono)", fill: "#e8820c" }}>
+                {r.s} strings
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {/* PVsyst figures entered by hand, so a modelled curve and a real
+          result sit on the same axes rather than in separate columns */}
+      {actRows.map((r) => (
+        <g key={`a${r.s}`}>
+          <rect x={X(r.ilr) - 4} y={YC(actual[r.s]) - 4} width="8" height="8"
+            fill="none" stroke="#e8c07a" strokeWidth="2" transform={`rotate(45 ${X(r.ilr)} ${YC(actual[r.s])})`} />
+        </g>
+      ))}
+      <text x={13} y={mt + ih / 2} textAnchor="middle" transform={`rotate(-90 13 ${mt + ih / 2})`}
+        style={{ font: "10px system-ui", fill: "#59b56f" }}>Marginal net gain, % per string</text>
+      <text x={w - 11} y={mt + ih / 2} textAnchor="middle" transform={`rotate(90 ${w - 11} ${mt + ih / 2})`}
+        style={{ font: "10px system-ui", fill: "#d64545" }}>Clipping loss, %</text>
+      <text x={ml + iw / 2} y={h - 7} textAnchor="middle"
+        style={{ font: "10px system-ui", fill: C.muted }}>DC/AC ratio (ILR)</text>
+      {rows.filter((_, i) => i % Math.max(1, Math.ceil(rows.length / 9)) === 0).map((r) => (
+        <g key={`x${r.s}`}>
+          <line x1={X(r.ilr)} x2={X(r.ilr)} y1={mt + ih} y2={mt + ih + 4} stroke={C.line} />
+          <text x={X(r.ilr)} y={h - 22} textAnchor="middle"
+            style={{ font: "9.5px var(--mono)", fill: C.muted }}>{fmt(r.ilr, 2)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 function ClippingTab({ mod, inv, elec, setElec, ilrCap, setIlrCap }) {
   const ac = inv.acKva || 0;
   const stringKWp = elec.modulesPerString * mod.power / 1000;
@@ -5568,6 +5698,55 @@ function ClippingTab({ mod, inv, elec, setElec, ilrCap, setIlrCap }) {
         </div>
       </div>
       {!ac && <div className="warn">⚠ Set the inverter AC rating in Step 2 first.</div>}
+
+      {rows.length > 0 && (<>
+        <div style={{ width: "100%", background: C.panel, border: `1px solid ${C.line}`,
+          borderRadius: 6, padding: "10px 12px 12px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+            <div style={{ font: "600 12px system-ui", color: C.text }}>Which ratio to pick</div>
+            <div style={{ font: "10.5px system-ui", color: C.muted, flex: 1 }}>
+              Every candidate plotted. One point per whole string, because that is how the
+              choice is actually made.
+            </div>
+          </div>
+          <div style={{ background: C.paper, borderRadius: 4, overflow: "hidden" }}>
+            <IlrChart rows={rows} ilrCap={ilrCap} selected={elec.stringsPerInverter}
+              knee={knee} actual={actual} />
+          </div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 7,
+            font: "10.5px system-ui", color: C.muted }}>
+            {[["#59b56f", "marginal net gain per added string"], ["#d64545", "clipping loss"],
+              ["#e8820c", "currently selected"], ["#e8c07a", "PVsyst figure you entered"]].map(([col, label]) => (
+              <span key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 11, height: 11, borderRadius: 2, background: col }} />{label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="readout" style={{ width: "100%", marginBottom: 12 }}>
+          <b>Read the green line, not the red one.</b> Clipping loss always rises, so on its own
+          it argues for the smallest array that fits — which is wrong, because the modules you
+          did not clip were still generating all year. The green line is what the <i>next</i>
+          string actually adds once its own clipping is paid for, and it is the one that decides.
+          {knee >= 0 ? <>
+            {" "}It falls below the 0.4% threshold at <b>{fmt(rows[knee].ilr, 2)}</b>
+            {" "}({rows[knee].s} strings, {fmt(rows[knee].dc, 0)} kWp), which is where another
+            string stops paying for itself.
+          </> : <>
+            {" "}Over this range it never falls below the 0.4% threshold, so every candidate
+            shown still pays for itself and the binding constraint is the ILR cap rather than
+            clipping economics.
+          </>}
+          {" "}Anything right of the red cap line is above the ratio you set and is shown only
+          for context.
+          <br /><br />
+          The curve is a model, and it is the least trustworthy number on this page — clipping
+          concentrates in the best hours and bifacial rear gain makes the DC side uncertain. Put
+          real PVsyst clipping figures in the table below and they plot as diamonds against the
+          same axes, which is the honest comparison.
+        </div>
+      </>)}
+
       {rows.length > 0 && (
         <div style={{ overflowX: "auto", width: "100%" }}><table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560, font: "12px var(--mono)" }}>
           <thead><tr style={{ color: C.muted, textAlign: "left" }}>
@@ -5926,82 +6105,176 @@ function YieldCurve({ sweep, pitch }) {
    faces is two different generators sharing one inverter, and averaging
    them loses the thing that matters.
    ===================================================================== */
-function RoofAreaTab({ mod, inv, elec, st, set }) {
-  /* The module carries its dimensions as length/width and its rating as
-     power; pmax mirrors power for the tools that read it. */
+/* =====================================================================
+   ROOF
+
+   A roof is not a field, and the thing that makes it different is that
+   the surface already has an angle. So the first question is the roof's
+   own pitch and which way it faces, and the second is what you do about
+   it:
+
+     FLUSH      modules lie on the roof. Tilt = roof pitch, azimuth =
+                roof azimuth, and there is no inter-row shading because
+                the whole plane faces one way. This is what nearly every
+                pitched roof gets, and the array inherits whatever the
+                builder chose decades ago.
+
+     TILTED UP  modules are raised to a steeper angle than the surface.
+                Normal on a flat or shallow roof, where leaving the
+                modules horizontal would be giving away yield and
+                letting dirt sit on them. The cost is rows: a tilted
+                module casts a shadow on the one behind, so they must be
+                spaced, and spacing costs modules. On an already-steep
+                roof it is rare — wind uplift and planning usually
+                settle it — and the tool says so rather than letting it
+                pass unremarked.
+
+   Each plane is entered separately because a house with an east and a
+   west face is two generators sharing an inverter. Averaging them to a
+   single tilt and azimuth loses exactly the thing that matters: they
+   peak at different times, which changes the inverter sizing and
+   changes the battery case.
+
+   This is still an area check, not a layout. It says so, loudly.
+   ===================================================================== */
+function RoofAreaTab({ mod, inv, elec, st, set, onAdopt }) {
   const modL = mod.length || 0, modW = mod.width || 0;
   const modArea = modL * modW;
+  const perString = elec.modulesPerString || 0;
+
   const planes = st.planes.map((p) => {
-    const gross = p.len * p.wid;
-    const usable = gross * (1 - p.setbackPct / 100) * (1 - p.obstructPct / 100);
-    /* Portrait or landscape changes how the module grid divides into the
-       plane, and on a small roof the rounding is most of the answer. */
-    const mw = p.orient === "portrait" ? modW : modL;
-    const ml = p.orient === "portrait" ? modL : modW;
-    const across = mw > 0 ? Math.floor(p.wid * (1 - p.setbackPct / 100) / (mw + p.gap)) : 0;
-    const up = ml > 0 ? Math.floor(p.len * (1 - p.setbackPct / 100) / (ml + p.gap)) : 0;
-    const byGrid = Math.max(0, across * up);
-    /* Obstructions are a percentage rather than placed objects, so they
-       are applied to the grid count rather than to the geometry. */
+    const flush = p.mounting !== "tilted";
+    /* Flush means the array simply inherits the roof. Tilted means the
+       module angle is set independently and the roof pitch becomes the
+       base the frames stand on. */
+    const tilt = flush ? p.roofPitch : p.moduleTilt;
+    const azimuth = p.azimuth;
+
+    /* Module footprint in the plane of the roof. Portrait puts the long
+       side up the slope. */
+    const acrossDim = p.orient === "portrait" ? modW : modL;
+    const upDim = p.orient === "portrait" ? modL : modW;
+
+    const usableW = p.wid * (1 - p.setbackPct / 100);
+    const usableL = p.len * (1 - p.setbackPct / 100);
+
+    /* Across the slope nothing shades anything, so columns pack at the
+       module width plus the frame gap either way. */
+    const across = acrossDim > 0 ? Math.floor(usableW / (acrossDim + p.gap)) : 0;
+
+    /* Up the slope depends on the mounting. Flush: modules butt up the
+       roof at their own length. Tilted: each row needs the horizontal
+       footprint of the module plus enough clear ground for the shadow
+       of the row in front at the chosen limit elevation. */
+    let rowPitch, up, shadeNote = null;
+    if (flush) {
+      rowPitch = upDim + p.gap;
+      up = rowPitch > 0 ? Math.floor(usableL / rowPitch) : 0;
+    } else {
+      const beta = (tilt * Math.PI) / 180;
+      const alpha = (Math.max(1, p.shadeLimit) * Math.PI) / 180;
+      const footprint = upDim * Math.cos(beta);
+      const height = upDim * Math.sin(beta);
+      rowPitch = footprint + height / Math.tan(alpha);
+      up = rowPitch > 0 ? Math.floor((usableL + (rowPitch - footprint)) / rowPitch) : 0;
+      shadeNote = { footprint, height, rowPitch, gcr: rowPitch > 0 ? upDim / rowPitch : 0 };
+    }
+
+    const byGrid = Math.max(0, across * Math.max(0, up));
     const modules = Math.floor(byGrid * (1 - p.obstructPct / 100));
-    return { ...p, gross, usable, across, up, byGrid, modules,
-      kWp: (modules * (mod.power || mod.pmax || 0)) / 1000 };
+    const kWp = (modules * (mod.power || mod.pmax || 0)) / 1000;
+    const strings = perString > 0 ? Math.floor(modules / perString) : 0;
+    const leftover = perString > 0 ? modules - strings * perString : 0;
+    /* Tilting a module above a roof that is already steep is unusual.
+       Worth flagging rather than quietly accepting. */
+    const oddTilt = !flush && p.roofPitch >= 15;
+    return { ...p, flush, tilt, azimuth, across, up, byGrid, modules, kWp,
+      strings, leftover, rowPitch, shadeNote, oddTilt, usableW, usableL,
+      gross: p.len * p.wid };
   });
+
   const totalModules = planes.reduce((a, p) => a + p.modules, 0);
   const totalKWp = planes.reduce((a, p) => a + p.kWp, 0);
   const totalGross = planes.reduce((a, p) => a + p.gross, 0);
+  const totalStrings = planes.reduce((a, p) => a + p.strings, 0);
   const acKva = inv.acKva || 0;
   const dcAc = acKva > 0 ? totalKWp / acKva : null;
 
   const upd = (i, patch) => set({ ...st, planes: st.planes.map((p, j) => (i === j ? { ...p, ...patch } : p)) });
   const addPlane = () => set({ ...st, planes: [...st.planes,
-    { name: `Plane ${st.planes.length + 1}`, len: 8, wid: 6, tilt: 35, azimuth: 180,
+    { name: `Plane ${st.planes.length + 1}`, len: 8, wid: 6, roofPitch: 35, azimuth: 180,
+      mounting: "flush", moduleTilt: 15, shadeLimit: 18,
       orient: "portrait", gap: 0.02, setbackPct: 10, obstructPct: 5 }] });
   const delPlane = (i) => set({ ...st, planes: st.planes.filter((_, j) => j !== i) });
+
+  const Cell = ({ children, align = "right" }) => (
+    <td style={{ padding: "4px 7px", textAlign: align, font: "12px var(--mono)", color: C.text }}>{children}</td>
+  );
+  const NumCell = ({ v, step, onChange, w = 58, disabled }) => (
+    <td style={{ padding: "4px 7px", textAlign: "right" }}>
+      <input type="number" value={v} step={step} disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: w, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 4,
+          color: disabled ? C.muted : C.text, font: "12px var(--mono)", padding: "4px 6px",
+          outline: "none", textAlign: "right", opacity: disabled ? 0.4 : 1 }} />
+    </td>
+  );
 
   return (
     <Page wide>
       <div className="tbl" style={{ marginBottom: 10 }}>
-        ROOF AREA — HOW MANY MODULES FIT, PLANE BY PLANE
+        ROOF — PITCH, MOUNTING AND HOW MANY MODULES FIT
       </div>
 
       <Section code="R1" title="Roof planes">
-        <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
-          One row per roof face. A house with an east and a west pitch is two planes, not one
-          averaged plane, because they generate at different times of day and the difference is
-          the whole reason to model them separately. Setback is the margin left clear at the
-          edges — most fire and wind codes want something, and the installer wants somewhere to
-          stand. Obstructions is everything the grid cannot see: vents, rooflights, chimneys,
-          aerials, and the shadow each throws.
+        <div className="readout" style={{ font: "10.5px/1.65 system-ui", width: "100%" }}>
+          One row per roof face. <b>Pitch</b> is the roof&#39;s own angle and <b>azimuth</b> the
+          direction it faces — 180° is due south, 90° east, 270° west.
+          {" "}<b>Flush</b> lays the modules on the roof, so they take its pitch and its azimuth
+          and no row spacing is needed, because a single plane does not shade itself.
+          {" "}<b>Tilted up</b> sets the module angle independently, which is what a flat roof
+          wants, and then the rows have to be spaced for the shadow each casts on the one
+          behind — the limit elevation is the sun angle you are willing to accept shading
+          below, and 18° is roughly mid-morning at the winter solstice in temperate latitudes.
+          Setback is the clear margin at the edges; obstruction is everything the grid cannot
+          see — vents, rooflights, chimneys and their shadows.
         </div>
         <div style={{ width: "100%", overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 940 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1180 }}>
             <thead><tr>
-              {["Plane", "Length m", "Width m", "Tilt °", "Azimuth °", "Orientation", "Gap m",
-                "Setback %", "Obstruction %", "Grid", "Modules", "kWp", ""].map((h) => (
-                <th key={h} style={{ padding: "5px 8px", borderBottom: `1px solid ${C.line}`,
-                  textAlign: "right", font: "600 9.5px system-ui", textTransform: "uppercase",
-                  letterSpacing: "0.05em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
+              {["Plane", "Length m", "Width m", "Roof pitch °", "Azimuth °", "Mounting",
+                "Module tilt °", "Shade limit °", "Orientation", "Gap m", "Setback %",
+                "Obstr %", "Row pitch m", "Grid", "Modules", "kWp", ""].map((hh) => (
+                <th key={hh} style={{ padding: "5px 7px", borderBottom: `1px solid ${C.line}`,
+                  textAlign: "right", font: "600 9px system-ui", textTransform: "uppercase",
+                  letterSpacing: "0.04em", color: C.muted, whiteSpace: "nowrap" }}>{hh}</th>
               ))}
             </tr></thead>
             <tbody>
               {planes.map((p, i) => (
                 <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td style={{ padding: "4px 8px" }}>
+                  <td style={{ padding: "4px 7px" }}>
                     <input value={p.name} onChange={(e) => upd(i, { name: e.target.value })}
-                      style={{ width: 92, background: C.panel2, border: `1px solid ${C.line}`,
+                      style={{ width: 88, background: C.panel2, border: `1px solid ${C.line}`,
                         borderRadius: 4, color: C.text, font: "12px var(--mono)", padding: "4px 6px", outline: "none" }} />
                   </td>
-                  {[["len", 0.5], ["wid", 0.5], ["tilt", 1], ["azimuth", 5]].map(([k, step]) => (
-                    <td key={k} style={{ padding: "4px 8px", textAlign: "right" }}>
-                      <input type="number" value={p[k]} step={step}
-                        onChange={(e) => upd(i, { [k]: Number(e.target.value) })}
-                        style={{ width: 66, background: C.panel2, border: `1px solid ${C.line}`,
-                          borderRadius: 4, color: C.text, font: "12px var(--mono)",
-                          padding: "4px 6px", outline: "none", textAlign: "right" }} />
-                    </td>
-                  ))}
-                  <td style={{ padding: "4px 8px" }}>
+                  <NumCell v={p.len} step={0.5} onChange={(v) => upd(i, { len: v })} />
+                  <NumCell v={p.wid} step={0.5} onChange={(v) => upd(i, { wid: v })} />
+                  <NumCell v={p.roofPitch} step={1} onChange={(v) => upd(i, { roofPitch: v })} />
+                  <NumCell v={p.azimuth} step={5} onChange={(v) => upd(i, { azimuth: v })} />
+                  <td style={{ padding: "4px 7px" }}>
+                    <select value={p.mounting} onChange={(e) => upd(i, { mounting: e.target.value })}
+                      style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 4,
+                        color: C.text, font: "11px system-ui", padding: "4px 5px", outline: "none" }}>
+                      <option value="flush">Flush</option>
+                      <option value="tilted">Tilted up</option>
+                    </select>
+                  </td>
+                  <NumCell v={p.moduleTilt} step={1} disabled={p.flush}
+                    onChange={(v) => upd(i, { moduleTilt: v })} />
+                  <NumCell v={p.shadeLimit} step={1} disabled={p.flush}
+                    onChange={(v) => upd(i, { shadeLimit: v })} />
+                  <td style={{ padding: "4px 7px" }}>
                     <select value={p.orient} onChange={(e) => upd(i, { orient: e.target.value })}
                       style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 4,
                         color: C.text, font: "11px system-ui", padding: "4px 5px", outline: "none" }}>
@@ -6009,39 +6282,23 @@ function RoofAreaTab({ mod, inv, elec, st, set }) {
                       <option value="landscape">Landscape</option>
                     </select>
                   </td>
-                  {[["gap", 0.005], ["setbackPct", 1], ["obstructPct", 1]].map(([k, step]) => (
-                    <td key={k} style={{ padding: "4px 8px", textAlign: "right" }}>
-                      <input type="number" value={p[k]} step={step}
-                        onChange={(e) => upd(i, { [k]: Number(e.target.value) })}
-                        style={{ width: 62, background: C.panel2, border: `1px solid ${C.line}`,
-                          borderRadius: 4, color: C.text, font: "12px var(--mono)",
-                          padding: "4px 6px", outline: "none", textAlign: "right" }} />
-                    </td>
-                  ))}
-                  <td style={{ padding: "4px 8px", textAlign: "right", font: "12px var(--mono)", color: C.muted }}>
-                    {p.across} × {p.up}
-                  </td>
-                  <td style={{ padding: "4px 8px", textAlign: "right", font: "12px var(--mono)", color: C.text }}>
-                    <b>{p.modules}</b>
-                  </td>
-                  <td style={{ padding: "4px 8px", textAlign: "right", font: "12px var(--mono)", color: C.accent }}>
-                    {fmt(p.kWp, 2)}
-                  </td>
-                  <td style={{ padding: "4px 8px" }}>
-                    <button className="btn" style={{ padding: "3px 8px" }}
-                      onClick={() => delPlane(i)}>✕</button>
+                  <NumCell v={p.gap} step={0.005} w={54} onChange={(v) => upd(i, { gap: v })} />
+                  <NumCell v={p.setbackPct} step={1} w={50} onChange={(v) => upd(i, { setbackPct: v })} />
+                  <NumCell v={p.obstructPct} step={1} w={50} onChange={(v) => upd(i, { obstructPct: v })} />
+                  <Cell><span style={{ color: p.flush ? C.muted : C.accent }}>{fmt(p.rowPitch, 2)}</span></Cell>
+                  <Cell><span style={{ color: C.muted }}>{p.across} × {p.up}</span></Cell>
+                  <Cell><b>{p.modules}</b></Cell>
+                  <Cell><span style={{ color: C.accent }}>{fmt(p.kWp, 2)}</span></Cell>
+                  <td style={{ padding: "4px 7px" }}>
+                    <button className="btn" style={{ padding: "3px 8px" }} onClick={() => delPlane(i)}>✕</button>
                   </td>
                 </tr>
               ))}
               <tr style={{ borderTop: `2px solid ${C.line}` }}>
-                <td style={{ padding: "5px 8px", font: "600 12px system-ui", color: C.text }}>Total</td>
-                <td colSpan={9} />
-                <td style={{ padding: "5px 8px", textAlign: "right", font: "650 13px var(--mono)", color: C.text }}>
-                  {totalModules}
-                </td>
-                <td style={{ padding: "5px 8px", textAlign: "right", font: "650 13px var(--mono)", color: C.accent }}>
-                  {fmt(totalKWp, 2)}
-                </td>
+                <td style={{ padding: "5px 7px", font: "600 12px system-ui", color: C.text }}>Total</td>
+                <td colSpan={13} />
+                <Cell><b style={{ fontSize: 13 }}>{totalModules}</b></Cell>
+                <Cell><b style={{ fontSize: 13, color: C.accent }}>{fmt(totalKWp, 2)}</b></Cell>
                 <td />
               </tr>
             </tbody>
@@ -6050,39 +6307,119 @@ function RoofAreaTab({ mod, inv, elec, st, set }) {
         <button className="btn" onClick={addPlane}>+ Add plane</button>
       </Section>
 
-      <Section code="R2" title="What that comes to">
-        <Working n="R1" title="Modules that fit on a plane"
-          formula="n = FLOOR(W_usable / (w_mod + gap)) × FLOOR(L_usable / (l_mod + gap)) × (1 − obstruction)"
-          sub={planes.length
-            ? `${planes[0].name}: ${planes[0].across} across × ${planes[0].up} up, less ${fmt(planes[0].obstructPct, 0)}%`
-            : "no planes"}
-          result={planes.length ? planes[0].modules : 0} unit="modules"
-          why="Floored in both directions, because a module that does not fit does not go on the roof. On a small roof this rounding is most of the answer — losing one column to a 100 mm setback can cost a tenth of the system — which is why the grid is shown as well as the count." />
-        <Working n="R2" title="Installed DC capacity"
-          formula="kWp = n × P_module / 1000"
+      <Section code="R2" title="The split across planes">
+        <div style={{ width: "100%", display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {planes.map((p, i) => (
+            <div key={i} style={{ flex: "1 1 230px", minWidth: 210, background: C.panel2,
+              border: `1px solid ${p.oddTilt ? "#e0a63a" : C.line}`, borderRadius: 6, padding: "9px 11px" }}>
+              <div style={{ font: "600 12px system-ui", color: C.text, marginBottom: 5 }}>{p.name}</div>
+              <div style={{ font: "11.5px/1.7 var(--mono)", color: C.muted }}>
+                <div>tilt <b style={{ color: C.text }}>{fmt(p.tilt, 0)}°</b>
+                  {p.flush ? " (from the roof)" : " (raised)"}</div>
+                <div>azimuth <b style={{ color: C.text }}>{fmt(p.azimuth, 0)}°</b>
+                  {" "}{p.azimuth === 180 ? "S" : p.azimuth === 90 ? "E" : p.azimuth === 270 ? "W"
+                    : p.azimuth < 180 ? "E of S" : "W of S"}</div>
+                <div>{p.across} across × {p.up} {p.flush ? "up the slope" : "rows"}</div>
+                <div><b style={{ color: C.text }}>{p.modules}</b> modules ·
+                  {" "}<b style={{ color: C.accent }}>{fmt(p.kWp, 2)} kWp</b></div>
+                <div>{fmt(totalModules > 0 ? (p.modules / totalModules) * 100 : 0, 0)}% of the array</div>
+                {perString > 0 && (
+                  <div style={{ color: p.leftover ? "#e0a63a" : "#8fd6a3" }}>
+                    {p.strings} whole string{p.strings === 1 ? "" : "s"} of {perString}
+                    {p.leftover ? `, ${p.leftover} modules left over` : ", exactly"}
+                  </div>
+                )}
+                {p.shadeNote && (
+                  <div style={{ color: C.muted }}>
+                    GCR {fmt(p.shadeNote.gcr, 2)} · {fmt(p.shadeNote.height, 2)} m tall
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {planes.some((p) => p.leftover > 0) && perString > 0 && (
+          <div className="warn" style={{ width: "100%" }}>
+            &#9888; <b>Some planes do not divide into whole strings.</b> Leftover modules on a
+            plane are not free — they either go unconnected, or they are strung across onto
+            another plane, which puts modules at different tilts and azimuths in series. A
+            string is limited by its worst-lit module, so mixing orientations in one string
+            costs more than the geometry suggests. Either adjust the plane, change the string
+            length on the String Sizing tab, or plan for a separate MPPT per plane.
+          </div>
+        )}
+        {planes.some((p) => p.oddTilt) && (
+          <div className="warn" style={{ width: "100%" }}>
+            &#9888; <b>Tilting modules above an already-pitched roof is unusual.</b>
+            {" "}{planes.filter((p) => p.oddTilt).map((p) => p.name).join(", ")}
+            {" "}{planes.filter((p) => p.oddTilt).length === 1 ? "has" : "have"} a roof pitch of
+            15° or more with the modules raised above it. That means ballast or penetrations
+            taking wind uplift on a surface already at an angle, visible frames from the ground,
+            and rows that shade each other on a plane that otherwise would not. It is done, but
+            it needs a structural reason, not a yield one — the yield gain over flush on a
+            roof that is already near optimum is usually small enough that the extra steelwork
+            and the lost modules cancel it.
+          </div>
+        )}
+      </Section>
+
+      <Section code="R3" title="What that comes to">
+        {planes.length > 0 && (<>
+          <Working n="R1" title={planes[0].flush ? "Rows up a flush roof" : "Row pitch for a tilted array"}
+            formula={planes[0].flush
+              ? "rows = FLOOR(L_usable / (l_mod + gap))"
+              : "p = l_mod·cos β + l_mod·sin β / tan α"}
+            sub={planes[0].flush
+              ? `${fmt(planes[0].usableL, 2)} / (${fmt(planes[0].orient === "portrait" ? modL : modW, 3)} + ${fmt(planes[0].gap, 3)})`
+              : `${fmt(planes[0].orient === "portrait" ? modL : modW, 3)}·cos ${fmt(planes[0].tilt, 0)}° + ${fmt(planes[0].orient === "portrait" ? modL : modW, 3)}·sin ${fmt(planes[0].tilt, 0)}° / tan ${fmt(planes[0].shadeLimit, 0)}°`}
+            result={planes[0].flush ? planes[0].up : fmt(planes[0].rowPitch, 2)}
+            unit={planes[0].flush ? "rows" : "m between rows"}
+            why={planes[0].flush
+              ? "A flush array on a single plane cannot shade itself — every module faces the same way at the same angle — so rows pack at the module length plus whatever gap the rails need. This is why flush roofs fit so many more modules than tilted ones."
+              : "The first term is the module's own horizontal footprint; the second is the clear ground its shadow needs at the limit elevation. Lowering the limit angle means accepting shading earlier in the morning and later in the afternoon, which buys back row spacing — on a roof where area is the binding constraint that trade is usually worth making, because the hours lost are the ones worth least."} />
+          <Working n="R2" title="Modules on a plane"
+            formula="n = FLOOR(W_usable / (w_mod + gap)) × rows × (1 − obstruction)"
+            sub={`${planes[0].across} × ${planes[0].up} × (1 − ${fmt(planes[0].obstructPct / 100, 2)})`}
+            result={planes[0].modules} unit="modules"
+            why="Floored in both directions, because a module that does not fit does not go on the roof. On a small roof this rounding is most of the answer — losing one column to a 100 mm setback can cost a tenth of the system — which is why the grid is shown as well as the count." />
+        </>)}
+        <Working n="R3" title="Installed DC capacity"
+          formula="kWp = Σ(n_plane) × P_module / 1000"
           sub={`${totalModules} × ${fmt(mod.power || mod.pmax || 0, 0)} W`}
           result={fmt(totalKWp, 2)} unit="kWp"
           why="The figure the Yield report, the cable tools and the battery tab all work from." />
         {acKva > 0 && (
-          <Working n="R3" title="DC to AC ratio"
+          <Working n="R4" title="DC to AC ratio"
             formula="ratio = kWp_dc / kVA_ac"
             sub={`${fmt(totalKWp, 2)} kWp / ${fmt(acKva, 1)} kVA`}
             result={fmt(dcAc, 2)} unit="×"
             status={dcAc >= 1.0 && dcAc <= 1.4 ? "OK" : "Check"}
-            why="A roof array is usually sized by the roof rather than by the inverter, so this ratio falls out rather than being chosen. Between about 1.0 and 1.3 is conventional for a pitched roof at temperate latitudes; much above that and the inverter clips on the best days, much below and it is oversized for what the roof can ever deliver." />
+            why="A roof array is sized by the roof rather than by the inverter, so this ratio falls out rather than being chosen. Between about 1.0 and 1.3 is conventional for a pitched roof at temperate latitudes. On an east–west roof it can go higher safely, because the two faces peak at different times and never present their combined DC at once." />
         )}
         <div className="readout">
-          <b>{totalModules} modules over {fmt(totalGross, 1)} m² of gross roof</b>, which is
+          <b>{totalModules} modules, {fmt(totalKWp, 2)} kWp</b>
+          {perString > 0 && <>, making <b>{totalStrings} whole strings</b> of {perString}</>}
+          {" "}over {fmt(totalGross, 1)} m² of gross roof, which is
           {" "}{fmt(totalGross > 0 ? (totalModules * modArea / totalGross) * 100 : 0, 0)}% coverage once
-          setbacks and obstructions are taken out. Each module is {fmt(modL, 3)} ×
-          {" "}{fmt(modW, 3)} m, or {fmt(modArea, 2)} m².
+          setbacks and obstructions come out. Each module is {fmt(modL, 3)} × {fmt(modW, 3)} m,
+          or {fmt(modArea, 2)} m².
+          {onAdopt && totalKWp > 0 && (
+            <button className="btn" style={{ marginLeft: 10, padding: "3px 10px" }}
+              onClick={() => onAdopt({ kWp: totalKWp, modules: totalModules,
+                tilt: planes[0]?.tilt ?? 0, azimuth: planes[0]?.azimuth ?? 180 })}>
+              Send {fmt(totalKWp, 2)} kWp to the battery tab
+            </button>
+          )}
         </div>
         <div className="warn" style={{ width: "100%" }}>
           &#9888; <b>This is an area check, not a layout.</b> It assumes one clear rectangle per
-          plane and spreads the obstructions as a percentage. A real roof has the vent in the
-          middle of the best row, a hip that cuts the corner off, and a rooflight that costs
-          three modules rather than the two the percentage implies. Treat the count as the upper
-          bound it is, and confirm it on a drawing before anything is quoted.
+          plane and spreads obstructions as a percentage. A real roof has the vent in the middle
+          of the best row, a hip that cuts the corner off, and a rooflight that costs three
+          modules rather than the two a percentage implies — and a shading obstruction costs
+          what it costs because of where it falls in a string, not because of its area. Treat
+          the count as the upper bound it is, and confirm it on a drawing before anything is
+          quoted. A drawing tool that places modules against real obstructions and exports DWG
+          is the next piece of work, not this one.
         </div>
       </Section>
     </Page>
@@ -6669,6 +7006,8 @@ export default function App() {
      BESS sheet; the residential ones are a 4 kW array on a 4,000 kWh
      house, which is the case most people arrive with. */
   const BESS_GROUND = {
+    loadSource: "shape", monthlyKWh: [170000,160000,170000,165000,170000,165000,170000,170000,165000,170000,165000,170000],
+    imported: null,
     basis: "requirement", powerKW: 35000, usableKWh: 175000, pf: 1,
     dod: 100, rte: 88, aux: 2, retention: 70, sizeFor: "bol",
     unitKWh: 5000, unitKW: 2500,
@@ -6678,6 +7017,8 @@ export default function App() {
     battKWh: 10000, battKW: 5000, hasGrid: true, exportLimit: 0, kneeFraction: 20,
   };
   const BESS_ROOF = {
+    loadSource: "monthly", monthlyKWh: [500,430,400,310,270,240,235,250,300,380,450,520],
+    imported: null,
     basis: "following", powerKW: 5, usableKWh: 10, pf: 1,
     dod: 100, rte: 90, aux: 0, retention: 70, sizeFor: "bol",
     unitKWh: 5, unitKW: 2.5,
@@ -6688,7 +7029,8 @@ export default function App() {
   };
   const [bess, setBess] = useState(BESS_GROUND);
   const [roof, setRoof] = useState({ planes: [
-    { name: "South pitch", len: 8, wid: 6, tilt: 35, azimuth: 180,
+    { name: "South pitch", len: 8, wid: 6, roofPitch: 35, azimuth: 180,
+      mounting: "flush", moduleTilt: 15, shadeLimit: 18,
       orient: "portrait", gap: 0.02, setbackPct: 10, obstructPct: 5 },
   ] });
   const [summary, setSummary] = useState(null);
@@ -7071,7 +7413,8 @@ export default function App() {
           kWpHint={summary?.dcKwp || 0} lat={siteLoc.lat} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "roof" ? "flex" : "none" }}>
-        <RoofAreaTab mod={pvMod} inv={pvInv} elec={elec} st={roof} set={setRoof} />
+        <RoofAreaTab mod={pvMod} inv={pvInv} elec={elec} st={roof} set={setRoof}
+          onAdopt={(r) => { setBess({ ...bess, kWp: r.kWp }); setTool("bess"); }} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "summary" ? "flex" : "none" }}>
         <SummaryTab s={summary} rates={rates} setRates={setRates}
