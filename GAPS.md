@@ -307,6 +307,46 @@ takes effect, and a provenance column in every export marking each figure as cal
 interpolated, extrapolated or entered. Cheap to add and it is the difference between a
 defensible design file and a set of numbers.
 
+### G24. The roof tool is an area check and there is no roof layout
+
+`RoofAreaTab` divides a rectangle by a module and applies an obstruction percentage. For
+"is this a 12-module roof or a 40-module roof" that is the right level of effort, and the
+interface states the limitation plainly rather than implying a layout.
+
+It is still a long way from what a roof needs. A real roof has the vent in the middle of
+the best row, a hip that cuts a corner off, a rooflight that costs three modules rather
+than the two a percentage implies, and a shading obstruction whose cost depends on where it
+falls in the string, not on its area. Nothing here knows any of that, and no drawing comes
+out of it.
+
+**Recommendation.** A proper roof layout tool: draw or import roof planes, set tilt and
+azimuth per plane, place modules against real edge setbacks and placed obstructions, and
+export a DWG. The user has asked for DWG output specifically. The module placement can
+reuse the tiling logic from the ground-mount generator; the plane geometry and the DXF/DWG
+writer are the new work. Until that exists, the area check must keep saying it is an upper
+bound.
+
+### G25. The battery dispatch has no cost model and no tariff
+
+The simulation answers "how much of the load does this battery cover", which is a physical
+question, and reports the knee in self-sufficiency against size. It does not answer "is it
+worth the money", because there is no capital cost, no tariff, no export price and no
+degradation over the project life in it.
+
+That is a real limit on the advice. The knee in self-sufficiency is not the economic
+optimum, and the two can be far apart: under a flat tariff with a poor export rate the
+economic answer is usually a smaller battery than the knee, and under a wide
+peak/off-peak spread it can be larger. The tool is careful to present the knee as a
+physical turning point rather than a recommendation to buy, but a reader in a hurry may not
+make that distinction.
+
+**Recommendation.** Capital cost per kWh and per kW, an import tariff with at least a
+two-rate option, an export price, a discount rate and a cycle-life curve, producing NPV
+against battery size alongside the existing self-sufficiency curve. The dispatch already
+produces the hourly import and export series the calculation needs, so this is a costing
+layer rather than new physics. The same panel would serve the batch analyser's deferred
+cost phase.
+
 ---
 
 ## Severity 4 — Polish
@@ -343,4 +383,5 @@ by more than half.
    the reasoning is still in someone's head.
 6. **G11** — ESLint in CI.
 7. **G21, G22, G23** — cable extrapolation physics, trench independence, override provenance.
-8. **G5, G10, G12–G14**.
+8. **G24, G25** — a real roof layout with DWG export, and a cost model for the battery.
+9. **G5, G10, G12–G14**.

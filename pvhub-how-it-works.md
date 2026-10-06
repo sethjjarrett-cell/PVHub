@@ -265,6 +265,69 @@ from the IEC 60228 20 °C value to an operating temperature you set, because a
 conductor at its 90 °C limit is 27 % more resistive than the table says. Set it to
 20 °C to reproduce a sheet that uses the table value raw.
 
+### 13 · Battery
+
+Two questions, and conflating them is how batteries get specified badly. The tab makes you
+pick which one you are asking.
+
+**"I need 35 MW for 5 hours."** That is a capacity requirement and it is arithmetic. Four
+things stand between the cells and the meter and they multiply:
+
+```
+E_nameplate = E_usable / (DoD × √RTE × (1 − aux) × retention)
+```
+
+Depth of discharge, because a cell is not emptied to zero. The *square root* of round-trip
+efficiency, because the round trip covers a charge and a discharge and only the discharge
+half stands between stored energy and the meter — the even split is the usual convention,
+and a supplier quoting a one-way figure should have it entered as RTE² or the loss lands
+twice. Auxiliary load, because HVAC, controls and fire suppression draw on the same
+connection. Retention only if sizing day one for year twenty-five, which costs about a
+third more plant than holding capacity by augmenting later.
+
+The commonest error in the whole calculation is double-counting depth of discharge: a
+container quoted in *usable* kWh already has it in the number, and the input belongs at 100.
+Getting it wrong moves the plant size by a fifth in either direction and nothing downstream
+catches it, which is why the interface says so rather than assuming.
+
+Units then round up and the larger requirement governs, and which one governs is as useful
+as the count — energy-driven means the power came free and a cheaper conversion stage may
+suit; power-driven means the duration is longer than asked for.
+
+**"How big a battery is worth buying?"** Arithmetic cannot answer that, because the answer
+depends on when the sun shines against when the load runs. Two sites with identical annual
+figures need different batteries if one is an office and the other a house. So the tool
+steps through 8,760 hours, which is what HOMER does, on PVGIS TMY where it has been pulled
+and a clear-sky proxy where it has not — flagged either way, the same convention the pitch
+model uses.
+
+Each hour, in priority order: PV serves the load directly, and this energy never enters the
+battery so it suffers no round-trip loss, which is why it is counted separately rather than
+buried in a total. Surplus charges the battery, limited by inverter power and by the
+headroom left. Surplus beyond that exports up to the export limit and is curtailed after.
+A deficit is covered from the battery, limited by power and by what is in it. Whatever is
+still short is imported, or with no grid recorded as unmet load — the number an off-grid
+design lives or dies by, and never silently absorbed. State of charge is tracked in *usable*
+energy, so the bank is empty at the bottom of its permitted window rather than at zero cells,
+and equivalent full cycles are throughput over that same usable capacity, which is how
+warranties are written.
+
+The sweep reports the **knee, not the maximum**. Self-sufficiency against battery size
+saturates — the first kilowatt-hours displace the evening peak every day and earn their
+keep, later ones sit idle most of the year waiting for the few days that need them — so the
+largest size swept always scores highest and reporting it would be useless advice. The knee
+is defined rather than eyeballed: the last size whose marginal gain per kWh is still at
+least a stated fraction of what the first increment delivered. That fraction is a judgement
+and so it is an input. A curve still climbing at the top of the range is reported as not
+bracketed, the same honesty the batch analyser applies to an edge-of-range optimum.
+
+The last section walks the whole chain through in prose with the project's own numbers
+substituted, because a figure you cannot reproduce by hand is a figure you cannot defend in
+a review.
+
+What it does not do is cost anything. The knee in self-sufficiency is a physical turning
+point, not an economic optimum, and the two can be far apart — recorded as GAPS §G25.
+
 ### 12 · Yield report
 
 The tab that answers the question a client asks first: what will it make?
@@ -514,6 +577,37 @@ true vertical scale. Projects save to a single JSON file carrying every
 parameter, the boundary, the terrain and the comparison runs.
 
 ---
+
+## Roof or ground, picked at the start
+
+The landing screen asks two questions in the order they matter: what is being designed, then
+how much detail to show. The mount choice changes which tools are relevant, not the physics.
+
+**Ground mount** is the full tool — trackers or fixed tilt, row pitch and backtracking, a
+boundary to tile, an MV collector ring, the PVsyst pitch sweep.
+
+**Roof mount** drops what a roof does not have. No MV cable tab, because a rooftop system
+connects at low voltage. No batch analyser, because a row-pitch sweep is not a roof question.
+And no layout generator, because the layout generator tiles open ground with trackers and
+roads and does not understand a roof plane, an obstruction or a setback — offering it for a
+roof would be worse than not offering it at all.
+
+In its place is a **roof area check**: one row per roof plane, each with its own tilt and
+azimuth, because a house with an east and a west pitch is two generators sharing an inverter
+and averaging them loses the thing that matters. It divides the usable rectangle by the
+module, floors in both directions because a module that does not fit does not go on the
+roof, and applies obstructions as a percentage. On a small roof that rounding is most of the
+answer — losing one column to a 100 mm setback can cost a tenth of the system — so the grid
+is shown as well as the count.
+
+It is an area check and it says so. A real roof has the vent in the middle of the best row
+and a rooflight that costs three modules rather than the two a percentage implies. The count
+is an upper bound to be confirmed on a drawing, and a proper roof layout tool with DWG
+export is recorded as GAPS §G24.
+
+The battery tab follows the mount: roof opens in kW/kWh on a residential load profile,
+ground in MW/MWh on the utility capacity chain. Both choices can be changed any time from
+the header.
 
 ## The three interface modes
 

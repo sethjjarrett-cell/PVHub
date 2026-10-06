@@ -8,6 +8,7 @@ import {
   Working, NumS, NumO, Page,
 } from "./ui.jsx";
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
+import { BessTab } from "./BessTool.jsx";
 import { YieldReportTab } from "./YieldReport.jsx";
 import { parsePvsystFile } from "./pvsystFiles.js";
 import { BatchAnalyserTab, BATCH_DEFAULTS } from "./BatchAnalyser.jsx";
@@ -5911,7 +5912,184 @@ function YieldCurve({ sweep, pitch }) {
   );
 }
 
-function ShadeTab({ frame, mod, elec, reg, loc }) {
+/* =====================================================================
+   ROOF AREA
+
+   How many modules fit on a roof, from its usable area. Deliberately
+   not a layout generator: it does not place modules, does not know
+   where the vents and rooflights are, and cannot see a hip or a valley.
+   It answers "is this roughly a 12-module roof or a 40-module roof",
+   which is the question at preliminary stage, and it says plainly that
+   a real layout is a drawing exercise.
+
+   Each plane is entered separately because a roof with east and west
+   faces is two different generators sharing one inverter, and averaging
+   them loses the thing that matters.
+   ===================================================================== */
+function RoofAreaTab({ mod, inv, elec, st, set }) {
+  /* The module carries its dimensions as length/width and its rating as
+     power; pmax mirrors power for the tools that read it. */
+  const modL = mod.length || 0, modW = mod.width || 0;
+  const modArea = modL * modW;
+  const planes = st.planes.map((p) => {
+    const gross = p.len * p.wid;
+    const usable = gross * (1 - p.setbackPct / 100) * (1 - p.obstructPct / 100);
+    /* Portrait or landscape changes how the module grid divides into the
+       plane, and on a small roof the rounding is most of the answer. */
+    const mw = p.orient === "portrait" ? modW : modL;
+    const ml = p.orient === "portrait" ? modL : modW;
+    const across = mw > 0 ? Math.floor(p.wid * (1 - p.setbackPct / 100) / (mw + p.gap)) : 0;
+    const up = ml > 0 ? Math.floor(p.len * (1 - p.setbackPct / 100) / (ml + p.gap)) : 0;
+    const byGrid = Math.max(0, across * up);
+    /* Obstructions are a percentage rather than placed objects, so they
+       are applied to the grid count rather than to the geometry. */
+    const modules = Math.floor(byGrid * (1 - p.obstructPct / 100));
+    return { ...p, gross, usable, across, up, byGrid, modules,
+      kWp: (modules * (mod.power || mod.pmax || 0)) / 1000 };
+  });
+  const totalModules = planes.reduce((a, p) => a + p.modules, 0);
+  const totalKWp = planes.reduce((a, p) => a + p.kWp, 0);
+  const totalGross = planes.reduce((a, p) => a + p.gross, 0);
+  const acKva = inv.acKva || 0;
+  const dcAc = acKva > 0 ? totalKWp / acKva : null;
+
+  const upd = (i, patch) => set({ ...st, planes: st.planes.map((p, j) => (i === j ? { ...p, ...patch } : p)) });
+  const addPlane = () => set({ ...st, planes: [...st.planes,
+    { name: `Plane ${st.planes.length + 1}`, len: 8, wid: 6, tilt: 35, azimuth: 180,
+      orient: "portrait", gap: 0.02, setbackPct: 10, obstructPct: 5 }] });
+  const delPlane = (i) => set({ ...st, planes: st.planes.filter((_, j) => j !== i) });
+
+  return (
+    <Page wide>
+      <div className="tbl" style={{ marginBottom: 10 }}>
+        ROOF AREA — HOW MANY MODULES FIT, PLANE BY PLANE
+      </div>
+
+      <Section code="R1" title="Roof planes">
+        <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+          One row per roof face. A house with an east and a west pitch is two planes, not one
+          averaged plane, because they generate at different times of day and the difference is
+          the whole reason to model them separately. Setback is the margin left clear at the
+          edges — most fire and wind codes want something, and the installer wants somewhere to
+          stand. Obstructions is everything the grid cannot see: vents, rooflights, chimneys,
+          aerials, and the shadow each throws.
+        </div>
+        <div style={{ width: "100%", overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 940 }}>
+            <thead><tr>
+              {["Plane", "Length m", "Width m", "Tilt °", "Azimuth °", "Orientation", "Gap m",
+                "Setback %", "Obstruction %", "Grid", "Modules", "kWp", ""].map((h) => (
+                <th key={h} style={{ padding: "5px 8px", borderBottom: `1px solid ${C.line}`,
+                  textAlign: "right", font: "600 9.5px system-ui", textTransform: "uppercase",
+                  letterSpacing: "0.05em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {planes.map((p, i) => (
+                <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
+                  <td style={{ padding: "4px 8px" }}>
+                    <input value={p.name} onChange={(e) => upd(i, { name: e.target.value })}
+                      style={{ width: 92, background: C.panel2, border: `1px solid ${C.line}`,
+                        borderRadius: 4, color: C.text, font: "12px var(--mono)", padding: "4px 6px", outline: "none" }} />
+                  </td>
+                  {[["len", 0.5], ["wid", 0.5], ["tilt", 1], ["azimuth", 5]].map(([k, step]) => (
+                    <td key={k} style={{ padding: "4px 8px", textAlign: "right" }}>
+                      <input type="number" value={p[k]} step={step}
+                        onChange={(e) => upd(i, { [k]: Number(e.target.value) })}
+                        style={{ width: 66, background: C.panel2, border: `1px solid ${C.line}`,
+                          borderRadius: 4, color: C.text, font: "12px var(--mono)",
+                          padding: "4px 6px", outline: "none", textAlign: "right" }} />
+                    </td>
+                  ))}
+                  <td style={{ padding: "4px 8px" }}>
+                    <select value={p.orient} onChange={(e) => upd(i, { orient: e.target.value })}
+                      style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 4,
+                        color: C.text, font: "11px system-ui", padding: "4px 5px", outline: "none" }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </td>
+                  {[["gap", 0.005], ["setbackPct", 1], ["obstructPct", 1]].map(([k, step]) => (
+                    <td key={k} style={{ padding: "4px 8px", textAlign: "right" }}>
+                      <input type="number" value={p[k]} step={step}
+                        onChange={(e) => upd(i, { [k]: Number(e.target.value) })}
+                        style={{ width: 62, background: C.panel2, border: `1px solid ${C.line}`,
+                          borderRadius: 4, color: C.text, font: "12px var(--mono)",
+                          padding: "4px 6px", outline: "none", textAlign: "right" }} />
+                    </td>
+                  ))}
+                  <td style={{ padding: "4px 8px", textAlign: "right", font: "12px var(--mono)", color: C.muted }}>
+                    {p.across} × {p.up}
+                  </td>
+                  <td style={{ padding: "4px 8px", textAlign: "right", font: "12px var(--mono)", color: C.text }}>
+                    <b>{p.modules}</b>
+                  </td>
+                  <td style={{ padding: "4px 8px", textAlign: "right", font: "12px var(--mono)", color: C.accent }}>
+                    {fmt(p.kWp, 2)}
+                  </td>
+                  <td style={{ padding: "4px 8px" }}>
+                    <button className="btn" style={{ padding: "3px 8px" }}
+                      onClick={() => delPlane(i)}>✕</button>
+                  </td>
+                </tr>
+              ))}
+              <tr style={{ borderTop: `2px solid ${C.line}` }}>
+                <td style={{ padding: "5px 8px", font: "600 12px system-ui", color: C.text }}>Total</td>
+                <td colSpan={9} />
+                <td style={{ padding: "5px 8px", textAlign: "right", font: "650 13px var(--mono)", color: C.text }}>
+                  {totalModules}
+                </td>
+                <td style={{ padding: "5px 8px", textAlign: "right", font: "650 13px var(--mono)", color: C.accent }}>
+                  {fmt(totalKWp, 2)}
+                </td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <button className="btn" onClick={addPlane}>+ Add plane</button>
+      </Section>
+
+      <Section code="R2" title="What that comes to">
+        <Working n="R1" title="Modules that fit on a plane"
+          formula="n = FLOOR(W_usable / (w_mod + gap)) × FLOOR(L_usable / (l_mod + gap)) × (1 − obstruction)"
+          sub={planes.length
+            ? `${planes[0].name}: ${planes[0].across} across × ${planes[0].up} up, less ${fmt(planes[0].obstructPct, 0)}%`
+            : "no planes"}
+          result={planes.length ? planes[0].modules : 0} unit="modules"
+          why="Floored in both directions, because a module that does not fit does not go on the roof. On a small roof this rounding is most of the answer — losing one column to a 100 mm setback can cost a tenth of the system — which is why the grid is shown as well as the count." />
+        <Working n="R2" title="Installed DC capacity"
+          formula="kWp = n × P_module / 1000"
+          sub={`${totalModules} × ${fmt(mod.power || mod.pmax || 0, 0)} W`}
+          result={fmt(totalKWp, 2)} unit="kWp"
+          why="The figure the Yield report, the cable tools and the battery tab all work from." />
+        {acKva > 0 && (
+          <Working n="R3" title="DC to AC ratio"
+            formula="ratio = kWp_dc / kVA_ac"
+            sub={`${fmt(totalKWp, 2)} kWp / ${fmt(acKva, 1)} kVA`}
+            result={fmt(dcAc, 2)} unit="×"
+            status={dcAc >= 1.0 && dcAc <= 1.4 ? "OK" : "Check"}
+            why="A roof array is usually sized by the roof rather than by the inverter, so this ratio falls out rather than being chosen. Between about 1.0 and 1.3 is conventional for a pitched roof at temperate latitudes; much above that and the inverter clips on the best days, much below and it is oversized for what the roof can ever deliver." />
+        )}
+        <div className="readout">
+          <b>{totalModules} modules over {fmt(totalGross, 1)} m² of gross roof</b>, which is
+          {" "}{fmt(totalGross > 0 ? (totalModules * modArea / totalGross) * 100 : 0, 0)}% coverage once
+          setbacks and obstructions are taken out. Each module is {fmt(modL, 3)} ×
+          {" "}{fmt(modW, 3)} m, or {fmt(modArea, 2)} m².
+        </div>
+        <div className="warn" style={{ width: "100%" }}>
+          &#9888; <b>This is an area check, not a layout.</b> It assumes one clear rectangle per
+          plane and spreads the obstructions as a percentage. A real roof has the vent in the
+          middle of the best row, a hip that cuts the corner off, and a rooflight that costs
+          three modules rather than the two the percentage implies. Treat the count as the upper
+          bound it is, and confirm it on a drawing before anything is quoted.
+        </div>
+      </Section>
+    </Page>
+  );
+}
+
+function ShadeTab({ frame, mod, elec, reg, loc, onTmy }) {
   const geo = computeFrameGeometry(mod, frame);
   const cw = geo.collectW;
   const [metric, setMetric] = useState("yield");
@@ -5947,6 +6125,7 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
         if (!res.ok) { last = new Error(`HTTP ${res.status}`); continue; }
         const rows = parseTmy(await res.json());
         setTmy(rows);
+        onTmy?.(rows);
         setWx({ state: "ok", msg: `${fmt(rows.length, 0)} hours of PVGIS TMY loaded.`, url: h + qs });
         return;
       } catch (e) { last = e; }
@@ -6134,7 +6313,7 @@ function ShadeTab({ frame, mod, elec, reg, loc }) {
           <span style={{ font: "11px system-ui", color: tmy ? "#7fd694" : C.warn }}>
             {tmy ? `✓ ${wx.msg}` : "Using a clear-sky model — geometry is right, absolute yield runs high"}
           </span>
-          {tmy && <button className="btn" onClick={() => { setTmy(null); setWx({ state: "idle", msg: "", url: "" }); }}>
+          {tmy && <button className="btn" onClick={() => { setTmy(null); onTmy?.(null); setWx({ state: "idle", msg: "", url: "" }); }}>
             Back to clear-sky</button>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", width: "100%" }}>
@@ -6458,6 +6637,11 @@ export default function App() {
   const phone = useNarrow(760);
   const [menuOpen, setMenuOpen] = useState(false);
   const [uiMode, setUiMode] = useState("engineer");
+  /* Roof or ground. It changes which tools are relevant, not the physics:
+     a roof has no MV ring and no field to tile, and the layout generator
+     tiles a field with trackers and roads, which a roof is not. */
+  const [mount, setMount] = useState("ground");
+  const [sharedTmy, setSharedTmy] = useState(null);
   const [entered, setEntered] = useState(false);
   const [pvMod, setPvMod] = useState({
     length: 2.278, width: 1.134, power: 650,
@@ -6481,6 +6665,32 @@ export default function App() {
   const [ilrCap, setIlrCap] = useState(1.2);
   // Beyla, Simandou — the mine PV array that is the worked example.
   const [siteLoc, setSiteLoc] = useState({ lat: 8.616413, lon: -8.860021 });
+  /* Battery defaults. The utility figures reproduce the source workbook's
+     BESS sheet; the residential ones are a 4 kW array on a 4,000 kWh
+     house, which is the case most people arrive with. */
+  const BESS_GROUND = {
+    basis: "requirement", powerKW: 35000, usableKWh: 175000, pf: 1,
+    dod: 100, rte: 88, aux: 2, retention: 70, sizeFor: "bol",
+    unitKWh: 5000, unitKW: 2500,
+    annualLoadKWh: 2000000, shape: "industrial", weekendFactor: 1,
+    seasonalAmp: 0, seasonalPeak: "winter",
+    kWp: 1000, specificYield: 1500,
+    battKWh: 10000, battKW: 5000, hasGrid: true, exportLimit: 0, kneeFraction: 20,
+  };
+  const BESS_ROOF = {
+    basis: "following", powerKW: 5, usableKWh: 10, pf: 1,
+    dod: 100, rte: 90, aux: 0, retention: 70, sizeFor: "bol",
+    unitKWh: 5, unitKW: 2.5,
+    annualLoadKWh: 4000, shape: "residential", weekendFactor: 1.15,
+    seasonalAmp: 20, seasonalPeak: "winter",
+    kWp: 4, specificYield: 950,
+    battKWh: 10, battKW: 3.7, hasGrid: true, exportLimit: 0, kneeFraction: 20,
+  };
+  const [bess, setBess] = useState(BESS_GROUND);
+  const [roof, setRoof] = useState({ planes: [
+    { name: "South pitch", len: 8, wid: 6, tilt: 35, azimuth: 180,
+      orient: "portrait", gap: 0.02, setbackPct: 10, obstructPct: 5 },
+  ] });
   const [summary, setSummary] = useState(null);
   const [cables, setCables] = useState(CABLE_DEFAULTS);
   const [report, setReport] = useState(REPORT_DEFAULTS);
@@ -6494,6 +6704,7 @@ export default function App() {
     const data = {
       app: "PVhub", version: 1, saved: new Date().toISOString(),
       pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables, report, batch,
+      mount, bess, roof,
       layout: reg.current.layout?.get(), shade: reg.current.shade?.get(),
     };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -6514,6 +6725,9 @@ export default function App() {
         if (d.frame) setFrame(d.frame);
         if (d.ilrCap) setIlrCap(d.ilrCap);
         if (d.uiMode) setUiMode(d.uiMode);
+        if (d.mount) setMount(d.mount);
+        if (d.bess) setBess({ ...(d.mount === "roof" ? BESS_ROOF : BESS_GROUND), ...d.bess });
+        if (d.roof) setRoof(d.roof);
         if (d.rates) setRates(d.rates);
         if (d.siteLoc) setSiteLoc(d.siteLoc);
         // Merge rather than replace, so a project saved before a cable
@@ -6538,20 +6752,43 @@ export default function App() {
     ["string", "String Sizing"], ["clip", "Paralleling"],
     ["shade", "Pitch & Yield"], ["layout", "Layout"], ["summary", "Summary"],
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
-    ["report", "Yield report"], ["batch", "Batch analyser"],
+    ["report", "Yield report"], ["batch", "Batch analyser"], ["bess", "Battery"],
+    ["roof", "Roof area"],
   ];
-  const GROUPS = [
+  /* Ground mount is the full tool. Roof mount drops what a roof does not
+     have — an MV collector ring, a field to tile, a row-pitch sweep — and
+     puts a roof-area check where the layout generator was. Hiding them is
+     the honest move: the layout generator tiles open ground with trackers
+     and roads and does not understand a roof plane, an obstruction or a
+     setback, and pretending otherwise would be worse than not offering it. */
+  const GROUPS_GROUND = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Layout", ["layout"]],
     ["Cables", ["cdc", "cac", "cmv", "csc"]],
-    ["Yield & Summary", ["shade", "report", "batch", "summary"]],
+    ["Yield & Summary", ["shade", "report", "batch", "bess", "summary"]],
   ];
+  const GROUPS_ROOF = [
+    ["Technologies", ["module", "inverter", "frame"]],
+    ["Calculations", ["string", "clip"]],
+    ["Roof", ["roof"]],
+    ["Cables", ["cdc", "cac", "csc"]],
+    ["Yield & Summary", ["shade", "report", "bess", "summary"]],
+  ];
+  const GROUPS = mount === "roof" ? GROUPS_ROOF : GROUPS_GROUND;
   const visGroups = uiMode === "stupid"
-    ? GROUPS.filter(([g]) => g === "Layout" || g === "Yield & Summary")
+    ? GROUPS.filter(([g]) => g === "Layout" || g === "Roof" || g === "Yield & Summary")
         .map(([g, ids]) => [g, ids.filter((i) => i !== "shade")])
     : GROUPS;
   const activeGroup = visGroups.find(([, ids]) => ids.includes(tool)) || visGroups[0];
+  /* Switching mount can strand you on a tool the other mount does not
+     have, so land on the first tool of the new set when that happens. */
+  const switchMount = (m) => {
+    setMount(m);
+    setBess(m === "roof" ? BESS_ROOF : BESS_GROUND);
+    const allowed = (m === "roof" ? GROUPS_ROOF : GROUPS_GROUND).flatMap(([, ids]) => ids);
+    if (!allowed.includes(tool)) setTool(m === "roof" ? "roof" : "layout");
+  };
   const MODES = [
     ["stupid", "Stupid", "Draw a site, type an AC target, read the verdict and cost. Everything else is a sensible default. For anyone."],
     ["simple", "Simple", "The full workflow with only the essential inputs showing. For engineers working from datasheets."],
@@ -6565,10 +6802,30 @@ export default function App() {
         <span style={{ font: "800 34px system-ui", color: "#000", background: "#f90",
           borderRadius: 8, padding: "0 10px", marginLeft: 3 }}>hub</span>
       </div>
-      <div style={{ font: "13px system-ui", color: "#8b95a3" }}>How much detail do you want to work at?</div>
+      {/* Two questions, in the order they matter. What is being designed
+          decides which tools are even relevant; how much detail decides
+          how much of each one shows. */}
+      <div style={{ font: "13px system-ui", color: "#8b95a3" }}>What are you designing?</div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center", maxWidth: 740 }}>
+        {[["ground", "Ground mount", "An open site: trackers or fixed tilt, row pitch and backtracking, a boundary to tile, an MV collector ring. Utility and large commercial."],
+          ["roof", "Roof mount", "Roof planes at their own tilt and azimuth, area-limited, LV connection only. No MV ring and no field to tile, so those tools are hidden. Residential and commercial rooftop."]].map(([id, name, blurb]) => (
+          <button key={id} onClick={() => { setMount(id); setBess(id === "roof" ? BESS_ROOF : BESS_GROUND);
+            setTool(id === "roof" ? "module" : "module"); }}
+            style={{ width: 290, textAlign: "left", background: "#1c2128", color: "#e8eaed",
+              border: `1px solid ${mount === id ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
+              padding: "14px 15px 12px", cursor: "pointer" }}>
+            <div style={{ font: "700 14px system-ui", color: mount === id ? "#e8820c" : "#cfd6de", marginBottom: 5 }}>
+              {name}{mount === id ? "  ✓" : ""}
+            </div>
+            <div style={{ font: "11px/1.5 system-ui", color: "#9aa3ae" }}>{blurb}</div>
+          </button>
+        ))}
+      </div>
+      <div style={{ font: "13px system-ui", color: "#8b95a3", marginTop: 4 }}>How much detail do you want to work at?</div>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center", maxWidth: 860 }}>
         {MODES.map(([id, name, blurb]) => (
-          <button key={id} onClick={() => { setUiMode(id); setEntered(true); if (id === "stupid") setTool("layout"); }}
+          <button key={id} onClick={() => { setUiMode(id); setEntered(true);
+            if (id === "stupid") setTool(mount === "roof" ? "roof" : "layout"); }}
             style={{ width: 240, textAlign: "left", background: "#1c2128", color: "#e8eaed",
               border: `1px solid ${uiMode === id ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
               padding: "16px 16px 14px", cursor: "pointer" }}>
@@ -6577,7 +6834,9 @@ export default function App() {
           </button>
         ))}
       </div>
-      <div style={{ font: "10.5px system-ui", color: "#5c6572" }}>You can switch modes any time from the header.</div>
+      <div style={{ font: "10.5px system-ui", color: "#5c6572" }}>
+        Pick the detail level to start. Both choices can be changed any time from the header.
+      </div>
     </div>
   );
 
@@ -6706,11 +6965,18 @@ export default function App() {
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) loadProject(f); e.target.value = ""; }} />
               </label>
             </div>
+            <div style={{ display: "flex", gap: 4, flexShrink: 0, marginRight: 8 }}>
+              {[["ground", "Ground"], ["roof", "Roof"]].map(([m, label]) => (
+                <button key={m} className="btn" title={`${label} mount`} style={mount === m
+                  ? { background: "#3a96e0", borderColor: "#3a96e0", color: "#06121c", fontWeight: 600 } : {}}
+                  onClick={() => switchMount(m)}>{label}</button>
+              ))}
+            </div>
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               {["stupid", "simple", "engineer"].map((m) => (
                 <button key={m} className="btn" style={uiMode === m
                   ? { background: C.accent, borderColor: C.accent, color: "#181206", fontWeight: 600 } : {}}
-                  onClick={() => { setUiMode(m); if (m === "stupid") setTool("layout"); }}>{m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}</button>
+                  onClick={() => { setUiMode(m); if (m === "stupid") setTool(mount === "roof" ? "roof" : "layout"); }}>{m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}</button>
               ))}
             </div>
           </>
@@ -6721,10 +6987,16 @@ export default function App() {
           display: "flex", flexWrap: "wrap", gap: 6, padding: "10px 12px",
           background: "#0d0f12", borderBottom: `1px solid ${C.line}`, flexShrink: 0,
         }}>
+          {[["ground", "Ground mount"], ["roof", "Roof mount"]].map(([m, label]) => (
+            <button key={m} className="btn" style={mount === m
+              ? { background: "#3a96e0", borderColor: "#3a96e0", color: "#06121c", fontWeight: 600 } : {}}
+              onClick={() => { switchMount(m); setMenuOpen(false); }}>{label}</button>
+          ))}
+          <div style={{ flexBasis: "100%" }} />
           {["stupid", "simple", "engineer"].map((m) => (
             <button key={m} className="btn" style={uiMode === m
               ? { background: C.accent, borderColor: C.accent, color: "#181206", fontWeight: 600 } : {}}
-              onClick={() => { setUiMode(m); if (m === "stupid") setTool("layout"); setMenuOpen(false); }}>
+              onClick={() => { setUiMode(m); if (m === "stupid") setTool(mount === "roof" ? "roof" : "layout"); setMenuOpen(false); }}>
               {m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}
             </button>
           ))}
@@ -6765,7 +7037,8 @@ export default function App() {
           ilrCap={ilrCap} setIlrCap={setIlrCap} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "shade" ? "flex" : "none" }}>
-        <ShadeTab frame={frame} mod={pvMod} elec={elec} reg={reg} loc={siteLoc} />
+        <ShadeTab frame={frame} mod={pvMod} elec={elec} reg={reg} loc={siteLoc}
+          onTmy={setSharedTmy} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "layout" ? "flex" : "none" }}>
         <LayoutTool module={pvMod} setModule={setMod2} frame={frame} setFrame={setFrame}
@@ -6791,6 +7064,14 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
         <BatchAnalyserTab st={batch} set={setBatch} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "bess" ? "flex" : "none" }}>
+        <BessTab st={bess} set={setBess} scale={mount === "roof" ? "small" : "large"}
+          tmy={sharedTmy ? sharedTmy.map((r) => r.ghi) : null}
+          kWpHint={summary?.dcKwp || 0} lat={siteLoc.lat} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "roof" ? "flex" : "none" }}>
+        <RoofAreaTab mod={pvMod} inv={pvInv} elec={elec} st={roof} set={setRoof} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "summary" ? "flex" : "none" }}>
         <SummaryTab s={summary} rates={rates} setRates={setRates}

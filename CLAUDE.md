@@ -20,6 +20,8 @@ src/CableRefTables.jsx the reference-table display layer — RefCard, the three
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
+src/bess.js            battery capacity chain and the 8,760-hour dispatch — no React
+src/BessTool.jsx       Battery tab: capacity chain, dispatch, sweep, the walkthrough
 src/batchAnalyser.js   PVsyst batch CSV parsing and tilt/pitch analysis, no React
 src/BatchAnalyser.jsx  Batch analyser tab: six hand-rolled charts, recommendation, exports
 src/main.jsx           mount + boot-overlay teardown
@@ -80,10 +82,18 @@ never run `playwright install`). Serve over `http://` — `file://` blocks the o
 calls.
 
 **Healthy baseline:** boot overlay clears, `pageerror` count is 0, and five tab groups
-render — `Technologies` (module, inverter, frame), `Calculations` (string, clip), `Layout`,
-`Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, report, batch, summary). `GROUPS` in
-`src/App.jsx` maps the tools onto those groups, and Stupid mode filters to Layout +
-Yield & Summary.
+render. The set depends on the mount type picked on the landing screen:
+
+- **Ground** — `Technologies` (module, inverter, frame), `Calculations` (string, clip),
+  `Layout`, `Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, report, batch, bess,
+  summary).
+- **Roof** — the same, but `Roof` (roof) replaces `Layout`, `Cables` loses `cmv`, and
+  `Yield & Summary` loses `batch`.
+
+`GROUPS_GROUND` / `GROUPS_ROOF` in `src/App.jsx` map the tools onto those groups, and
+Stupid mode filters to Layout (or Roof) + Yield & Summary. Check both mounts when touching
+the shell — `switchMount` exists because changing mount can otherwise strand the user on a
+tool the new set does not contain.
 
 Check the phone path too, because it is a separate layout rather than the same one
 narrowed: at an iPhone viewport `document.documentElement.scrollWidth` must equal
@@ -105,6 +115,8 @@ Tests that run without a browser, both dependency-free:
 ```bash
 node tests/batchAnalyser.test.mjs    # 58 assertions against the Solango fixture
 node tests/cableTables.test.mjs     # 783 derating values against the source workbook
+node tests/bess.test.mjs            # 70 assertions: the capacity chain against the
+                                    # workbook, the dispatch against conservation of energy
 ```
 
 **Known pre-existing noise:** ~270 console errors of the form
@@ -209,6 +221,28 @@ Deliberate engineering decisions, each stated in the UI's own text:
   explicit choice, not an assumption.
 - **Frames are never rotated to follow a boundary** — alignment is done by staggering frame
   ends, so tracking geometry and yield are preserved.
+- **A capacity requirement and a load-following question are never conflated.** "35 MW for
+  5 hours" is arithmetic — the derate chain and a unit count, no weather involved. "How big
+  a battery is worth buying" is an 8,760-hour simulation, because the answer depends on
+  when the sun shines against when the load runs. `src/bess.js` keeps both and the tab
+  makes you choose which you are asking. Do not let one answer stand in for the other.
+- **The battery derate chain divides by √RTE, not RTE.** The round trip covers a charge and
+  a discharge; only the discharge half stands between stored energy and the meter, and the
+  even split is the usual convention. The dispatch uses the same √RTE each way, so the two
+  halves of the file agree. A supplier quoting a one-way figure should have it entered as
+  RTE², which the interface says.
+- **Depth of discharge is the easiest thing to double-count.** A container quoted in
+  *usable* kWh already has DoD in the number and the input belongs at 100. The interface
+  says so because getting it wrong moves the plant size by a fifth in either direction and
+  nothing downstream catches it.
+- **The battery sweep reports the knee, never the maximum.** Self-sufficiency against size
+  saturates, so the largest size swept always scores highest and reporting it is useless
+  advice. The knee is the last size whose marginal gain is still a stated fraction of the
+  first increment's, that fraction is an input, and a curve still climbing at the top of the
+  range is reported as not bracketed — the same convention the batch analyser uses.
+- **The roof tool is an area check, not a layout.** It assumes one clear rectangle per plane
+  and spreads obstructions as a percentage, and it says so. Do not present its count as a
+  layout; a real roof layout is a separate tool that does not exist yet (GAPS §G24).
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.

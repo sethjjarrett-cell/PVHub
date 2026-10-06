@@ -2,6 +2,7 @@
 
 Browser-based tools for utility-scale PV preliminary design: parameter capture,
 string sizing, string paralleling, pitch comparison, DC/AC/MV cable sizing,
+battery sizing with an hourly dispatch simulation,
 short-circuit withstand, and an automatic layout generator with terrain awareness.
 
 It works on a phone: the tables scroll inside their own boxes, the site canvas
