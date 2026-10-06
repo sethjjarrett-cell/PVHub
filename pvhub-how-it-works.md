@@ -639,10 +639,57 @@ along with how the modules split across the planes and whether each divides into
 strings. A plane with modules left over is called out, because stringing across planes puts
 different tilts and azimuths in series and a string is limited by its worst-lit module.
 
-It is an area check and it says so. A real roof has the vent in the middle of the best row
-and a rooflight that costs three modules rather than the two a percentage implies. The count
-is an upper bound to be confirmed on a drawing, and a proper roof layout tool with DWG
-export is recorded as GAPS §G24.
+It is an area check and it says so — a quick answer when you know the roof is a clear
+rectangle. For anything with obstructions in it, the **Roof designer** beside it does the job
+properly.
+
+### The roof designer
+
+A plan-view editor for one roof plane. Draw the outline, drag the numbered nodes, place the
+obstructions where they actually are, fill it with modules and take a DXF away.
+
+The idea that makes it a roof rather than a shape is that **pitch and node heights are the
+same information**, so either drives the other. Type 35° and the nodes take the heights that
+make a 35° plane about whichever node you have anchored. Type a node height and the pitch and
+azimuth are refitted from the nodes by least squares. Neither is the master, and the interface
+says which way it last went so you are never guessing. Dragging a node sideways re-reads its
+height off the current plane, so it stays on the roof instead of hanging in the air.
+
+Because the fit is least squares over all the nodes, it also answers a question worth asking:
+**is this actually one plane?** Four nodes that do not lie on one usually mean a hip or a
+valley caught in a single outline, or a typo in a height. The worst residual is reported in
+millimetres — a few millimetres of survey noise is fine, 300 mm is two faces drawn as one.
+
+The fill works in **surface coordinates**, where u runs along the eave and v up the slope and
+both are true lengths, then projects each module to plan. That is the whole reason the tool
+exists rather than a spreadsheet: a 2.28 m module lying up a 35° roof covers 1.87 m of plan,
+so a layout measured off a site plan under-counts the roof and a layout measured off the roof
+over-counts the plan. Setbacks come off the perimeter first, with the ridge and eave taken
+separately because they are rarely given the same clearance, then every obstruction is grown
+by its keep-out and removed. A module survives only if it is wholly inside what is left.
+
+**Auto-generate sweeps the phase.** Where the grid starts is not a detail — a 50 mm shift
+wins or loses a whole column — so the first arrangement the arithmetic happens to produce is
+an arbitrary answer rather than a fair one. It tries both orientations at thirty-six starting
+offsets each and keeps the best, and reports the spread so you can see how much the phase was
+worth. On a 10 × 7 m roof at 35° it typically moves the count by three or four modules.
+
+**The DXF comes out in 3D.** Every module corner carries the height of the roof plane at that
+point, so a section through the drawing is true and PVsyst sees a tilted surface rather than a
+flat one. It is written as R12 (AC1009), the flavour every reader made in the last forty years
+opens without comment; AutoCAD opens it directly and saves it as DWG in one step if the native
+format is wanted. Geometry goes on named layers — `PV-ROOF-OUTLINE`, `PV-ROOF-SETBACK`,
+`PV-OBSTRUCTION`, `PV-OBSTRUCTION-BUFFER`, `PV-MODULE` (one closed polyline each), `PV-NODE`
+and `PV-TEXT` — so the receiving end can switch parts off: modules alone for an import, the
+lot for a drawing to issue.
+
+What a DXF does not carry: module electrical data, string assignments, or any yield figure.
+It is geometry. Those are set up in whatever receives it.
+
+Still missing, and recorded as GAPS §G24: more than one plane at a time, a shading model (an
+obstruction currently removes the modules under its keep-out and nothing else, but a chimney
+costs a row output for part of the day and that depends on where it falls in a string), and
+PVGIS yield for the drawn coordinates.
 
 The battery tab follows the mount: roof opens in kW/kWh on a residential load profile,
 ground in MW/MWh on the utility capacity chain. Both choices can be changed any time from

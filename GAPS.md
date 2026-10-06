@@ -307,7 +307,37 @@ takes effect, and a provenance column in every export marking each figure as cal
 interpolated, extrapolated or entered. Cheap to add and it is the difference between a
 defensible design file and a set of numbers.
 
-### G24. The roof tool is an area check and there is no roof layout
+### G24. The roof designer places modules but cannot shade them
+
+**Substantially addressed.** `src/RoofDesigner.jsx` draws a roof plane with draggable nodes,
+couples pitch and node heights in both directions, takes placed obstructions with their own
+keep-outs, fills the plane with modules in surface coordinates, sweeps orientation and grid
+phase for the best fit, and exports a 3D DXF on named layers.
+
+What it still does not do:
+
+- **One plane at a time.** A hipped roof is four planes and the tool holds one. The state is
+  already an array (`st.planes`, `st.active`) so the editor can take a plane selector, but
+  nothing aggregates across planes yet.
+- **No shading.** An obstruction removes the modules under its keep-out and nothing else. A
+  chimney to the south of a row costs that row output for part of the day, and that loss
+  depends on where it falls in a string, not on its footprint. The keep-out is a placement
+  rule, not a shading model.
+- **No yield.** The drawn coordinates are not sent to PVGIS, so the designer reports capacity
+  and not generation. The call already exists in `src/pvgis.js`; wiring the designer's
+  centroid and the fitted tilt and azimuth into it is a small piece of work and would make
+  the tab answer "what will this roof produce" rather than "how many modules fit".
+- **Mitred offset only.** `offsetPolygon` is exact for a convex outline and good for a simple
+  concave one. A setback deep enough to split a plane in two needs a straight-skeleton
+  offset; the degenerate case is detected and refused rather than returning nonsense, which
+  is the right behaviour but not the complete one.
+
+**Recommendation.** In order: multiple planes with a selector and a roll-up; PVGIS yield for
+the drawn location; then a real shading model. The DXF writer needs nothing further for the
+AutoCAD path — if PVsyst import turns out to want a particular layer convention, that is a
+change to `ROOF_LAYERS` and nothing else.
+
+### G24a. The original roof area check, superseded but kept
 
 `RoofAreaTab` divides a rectangle by a module and applies an obstruction percentage. For
 "is this a 12-module roof or a 40-module roof" that is the right level of effort, and the
@@ -390,7 +420,7 @@ by more than half.
    the reasoning is still in someone's head.
 6. **G11** — ESLint in CI.
 7. **G21, G22, G23** — cable extrapolation physics, trench independence, override provenance.
-8. **G24** — the 2D roof drawing tool with DXF/DWG export. The largest single outstanding
-   piece and the one most explicitly asked for.
+8. **G24** — multiple planes, PVGIS yield for the drawn roof, then shading. The drawing tool
+   and DXF export are done.
 9. **G25** — a cost model for the battery.
 10. **G5, G10, G12–G14**.

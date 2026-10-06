@@ -9,6 +9,7 @@ import {
 } from "./ui.jsx";
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { BessTab } from "./BessTool.jsx";
+import { RoofDesignerTab, ROOF_PLANE_DEFAULT } from "./RoofDesigner.jsx";
 import { YieldReportTab } from "./YieldReport.jsx";
 import { parsePvsystFile } from "./pvsystFiles.js";
 import { BatchAnalyserTab, BATCH_DEFAULTS } from "./BatchAnalyser.jsx";
@@ -7028,6 +7029,7 @@ export default function App() {
     battKWh: 10, battKW: 3.7, hasGrid: true, exportLimit: 0, kneeFraction: 20,
   };
   const [bess, setBess] = useState(BESS_GROUND);
+  const [rdesign, setRdesign] = useState({ active: 0, planes: [ROOF_PLANE_DEFAULT] });
   const [roof, setRoof] = useState({ planes: [
     { name: "South pitch", len: 8, wid: 6, roofPitch: 35, azimuth: 180,
       mounting: "flush", moduleTilt: 15, shadeLimit: 18,
@@ -7046,7 +7048,7 @@ export default function App() {
     const data = {
       app: "PVhub", version: 1, saved: new Date().toISOString(),
       pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables, report, batch,
-      mount, bess, roof,
+      mount, bess, roof, rdesign,
       layout: reg.current.layout?.get(), shade: reg.current.shade?.get(),
     };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -7070,6 +7072,7 @@ export default function App() {
         if (d.mount) setMount(d.mount);
         if (d.bess) setBess({ ...(d.mount === "roof" ? BESS_ROOF : BESS_GROUND), ...d.bess });
         if (d.roof) setRoof(d.roof);
+        if (d.rdesign) setRdesign(d.rdesign);
         if (d.rates) setRates(d.rates);
         if (d.siteLoc) setSiteLoc(d.siteLoc);
         // Merge rather than replace, so a project saved before a cable
@@ -7095,7 +7098,7 @@ export default function App() {
     ["shade", "Pitch & Yield"], ["layout", "Layout"], ["summary", "Summary"],
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
     ["report", "Yield report"], ["batch", "Batch analyser"], ["bess", "Battery"],
-    ["roof", "Roof area"],
+    ["roof", "Roof area"], ["rdesign", "Roof designer"],
   ];
   /* Ground mount is the full tool. Roof mount drops what a roof does not
      have — an MV collector ring, a field to tile, a row-pitch sweep — and
@@ -7113,7 +7116,7 @@ export default function App() {
   const GROUPS_ROOF = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
-    ["Roof", ["roof"]],
+    ["Roof", ["roof", "rdesign"]],
     ["Cables", ["cdc", "cac", "csc"]],
     ["Yield & Summary", ["shade", "report", "bess", "summary"]],
   ];
@@ -7411,6 +7414,9 @@ export default function App() {
         <BessTab st={bess} set={setBess} scale={mount === "roof" ? "small" : "large"}
           tmy={sharedTmy ? sharedTmy.map((r) => r.ghi) : null}
           kWpHint={summary?.dcKwp || 0} lat={siteLoc.lat} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "rdesign" ? "flex" : "none" }}>
+        <RoofDesignerTab mod={pvMod} inv={pvInv} elec={elec} st={rdesign} set={setRdesign} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "roof" ? "flex" : "none" }}>
         <RoofAreaTab mod={pvMod} inv={pvInv} elec={elec} st={roof} set={setRoof}

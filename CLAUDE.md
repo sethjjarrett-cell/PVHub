@@ -20,6 +20,9 @@ src/CableRefTables.jsx the reference-table display layer — RefCard, the three
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
+src/roofGeom.js        roof polygon maths, the plane fit and the module auto-fill — no React
+src/dxf.js             DXF R12 writer — string assembly, no React, no dependencies
+src/RoofDesigner.jsx   Roof designer tab: plan editor, auto-generate, DXF export
 src/bess.js            battery capacity chain and the 8,760-hour dispatch — no React
 src/BessTool.jsx       Battery tab: capacity chain, dispatch, sweep, the walkthrough
 src/batchAnalyser.js   PVsyst batch CSV parsing and tilt/pitch analysis, no React
@@ -118,6 +121,8 @@ node tests/cableTables.test.mjs     # 783 derating values against the source wor
 node tests/bess.test.mjs            # 103 assertions: the capacity chain against the
                                     # workbook, the dispatch against conservation of
                                     # energy, and the meter-file reader
+node tests/roof.test.mjs            # 93 assertions: polygon maths, the plane fit both
+                                    # ways, the fill, and the DXF structure
 ```
 
 **Known pre-existing noise:** ~270 console errors of the form
@@ -241,6 +246,22 @@ Deliberate engineering decisions, each stated in the UI's own text:
   advice. The knee is the last size whose marginal gain is still a stated fraction of the
   first increment's, that fraction is an input, and a curve still climbing at the top of the
   range is reported as not bracketed — the same convention the batch analyser uses.
+- **`offsetPolygon` is negative-inward, and a deep inset is degenerate.** The mitre inverts
+  once past the point where the shape closes and inverts *again* past that, coming back to a
+  valid winding with a plausible area that is nowhere near the requested distance from the
+  original edges. Winding and area checks miss that second case; the distance test
+  (`distanceToBoundary` ≥ |d| for every output vertex) catches all of them. Do not remove it.
+- **Touching is not crossing.** `polysCross` uses a *proper* crossing test. A module laid
+  flush against the setback line shares an edge with it, and treating that as a collision
+  rejects the entire perimeter ring of every roof — which reads as "a module that would not
+  fit" rather than as the bug it is. `segmentsCross` stays inclusive for the general API;
+  containment and keep-out tests use the strict one, and `polysOverlap` compares centroids
+  rather than vertices for the same reason.
+- **The module grid phase is arbitrary, so it is swept, not trusted.** Where the grid starts
+  changes the count: a 50 mm shift wins or loses a whole column. `autoFill` at one phase is a
+  valid answer, not the answer; `bestFill` tries both orientations at thirty-six offsets and
+  that is what the designer shows. A test asserting an exact count from a single `autoFill`
+  is asserting the phase, not the geometry.
 - **The roof tool is an area check, not a layout.** It assumes one clear rectangle per plane
   and spreads obstructions as a percentage, and it says so. Do not present its count as a
   layout; a real roof layout is a separate tool that does not exist yet (GAPS §G24).
@@ -260,6 +281,19 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **`DAY_SHAPES` are normalised to sum to exactly 1 at module load.** `loadProfile` rescales
   the whole year and would not notice otherwise, but the daily-CSV branch multiplies straight
   through, and a shape summing to 0.954 lost 4.6% of the year there.
+- **Pitch and node heights are one piece of information, driven either way.** `fitPlane`
+  reads the pitch and azimuth off the nodes; `heightsFromPitch` moves the nodes to match a
+  stated pitch about an anchor. Neither is the master and the interface says which way it
+  last went. Dragging a node in plan re-reads its height off the current plane, so it stays
+  on the roof instead of hanging in the air.
+- **A non-planar outline is reported, not silently averaged.** Four nodes that do not lie on
+  one plane usually mean a hip or a valley caught in one outline, or a typo. The best-fit
+  plane is used and the worst residual is shown in millimetres, because a few millimetres of
+  survey noise is fine and 300 mm is two roof faces drawn as one.
+- **The DXF goes out in 3D, on named layers.** Every module corner carries the plane's height
+  at that point — a flat export would throw away the one thing worth exporting. R12 (AC1009)
+  because every reader opens it. A DXF carries geometry, layers and text; it does not carry
+  module electrical data, string assignments or yield, and the interface says so.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.
