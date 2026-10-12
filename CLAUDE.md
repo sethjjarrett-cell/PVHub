@@ -22,6 +22,8 @@ src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
 src/roofGeom.js        roof polygon maths, the plane fit and the module auto-fill — no React
 src/dxf.js             DXF R12 writer — string assembly, no React, no dependencies
+src/dxfRead.js         DXF reader: polylines, lines with stitching, layers — no React
+src/layoutDxf.js       trench occupancy from routed cable, and the layout DXF — no React
 src/RoofDesigner.jsx   Roof designer tab: plan editor, auto-generate, DXF export
 src/bess.js            battery capacity chain and the 8,760-hour dispatch — no React
 src/BessTool.jsx       Battery tab: capacity chain, dispatch, sweep, the walkthrough
@@ -123,6 +125,8 @@ node tests/bess.test.mjs            # 103 assertions: the capacity chain against
                                     # energy, and the meter-file reader
 node tests/roof.test.mjs            # 93 assertions: polygon maths, the plane fit both
                                     # ways, the fill, and the DXF structure
+node tests/layoutDxf.test.mjs       # 51 assertions: trench occupancy, the layout export,
+                                    # and the reader against four producers
 ```
 
 **Known pre-existing noise:** ~270 console errors of the form
@@ -294,6 +298,24 @@ Deliberate engineering decisions, each stated in the UI's own text:
   at that point — a flat export would throw away the one thing worth exporting. R12 (AC1009)
   because every reader opens it. A DXF carries geometry, layers and text; it does not carry
   module electrical data, string assignments or yield, and the interface says so.
+- **Cable grouping is measured off the layout, not remembered.** `analyseTrenches` counts how
+  many routed runs share each stretch of trench and reports the busiest, which is what the
+  grouping factor must be looked up on. Segments are keyed on *rounded* endpoints and
+  order-independently — a millimetre of drift between two geometrically identical routes would
+  otherwise read as two trenches carrying one circuit each, and a route is counted once per
+  segment even if it doubles back.
+- **The maximum sizes the cable; the distribution costs it.** Both are reported. One short
+  segment carrying forty circuits is a different problem from half the route carrying forty:
+  the first is solved by splitting that segment. Where under a tenth of the route is at the
+  maximum the interface says so rather than letting the whole run be sized for it.
+- **Trench length is the union of segments, not the sum of route lengths.** Shared trench is
+  counted once. `routeLengths` gives cable metres and `analyseTrenches` gives trench metres;
+  they differ by the sharing and neither is wrong.
+- **There are two DXF readers and that is deliberate.** `parseDxf` in `App.jsx` serves the
+  boundary-and-terrain import, where the Y-flip (CAD is Y-up, screen Y-down) and the shared
+  geo origin that keeps 6-figure UTM out of the SVG maths both matter. `src/dxfRead.js` is the
+  general reader used for cable-route analysis, where neither applies. Do not route the
+  boundary import through the general one — it has no idea about either.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.

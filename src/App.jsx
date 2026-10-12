@@ -10,6 +10,8 @@ import {
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { BessTab } from "./BessTool.jsx";
 import { RoofDesignerTab, ROOF_PLANE_DEFAULT } from "./RoofDesigner.jsx";
+import { analyseTrenches, layoutToDxf } from "./layoutDxf.js";
+import { parseDxf as readDxf, pickOutline, routeLengths } from "./dxfRead.js";
 import { YieldReportTab } from "./YieldReport.jsx";
 import { parsePvsystFile } from "./pvsystFiles.js";
 import { BatchAnalyserTab, BATCH_DEFAULTS } from "./BatchAnalyser.jsx";
@@ -793,7 +795,7 @@ function parseXyzText(text) {
     plus POINT and 3DFACE entities (terrain). */
 function parseDxf(text) {
   const lines = text.split(/\r?\n/);
-  const polylines = [], points = [];
+  const polylines = [], points = [], loose = [];
   let i = 0;
   const next = () => [lines[i++]?.trim(), lines[i++]?.trim()];
   while (i < lines.length - 1) {
@@ -815,11 +817,12 @@ function parseDxf(text) {
       if (elev !== 0) for (const p of pts) points.push({ x: p.x, y: p.y, z: elev, layer });
     } else if (val === "POLYLINE") {
       // old-style polyline: vertices follow as separate entities
-      let layer = "";
+      let layer = "", polyClosed = false;
       while (i < lines.length - 1) {
         const [c, v] = next();
         if (c === "0") { i -= 2; break; }
         if (c === "8") layer = v;
+        if (c === "70") polyClosed = (Number(v) & 1) === 1;
       }
       const pts = [];
       while (i < lines.length - 1) {
@@ -837,8 +840,29 @@ function parseDxf(text) {
           pts.push({ x, y, z });
         } else { i -= 2; break; }
       }
-      if (pts.length >= 3) polylines.push({ pts, closed: false, layer, elev: 0 });
+      /* The closed flag lives on the POLYLINE header, not the vertices,
+         so it has to be carried down from the loop above — reading it as
+         always-open meant an R12 boundary never registered as closed and
+         fell through to the "no outline" path. */
+      if (pts.length >= 3) polylines.push({ pts, closed: polyClosed, layer, elev: 0 });
       if (pts.some((p) => p.z !== 0)) for (const p of pts) points.push({ ...p, layer });
+    } else if (val === "LINE") {
+      /* Plenty of drawings have a boundary that looks closed and is
+         actually a few dozen separate lines that happen to meet.
+         Collected here and stitched after the walk, because a boundary
+         the reader cannot see is indistinguishable from one that is not
+         there. */
+      let x1 = 0, y1 = 0, x2 = 0, y2 = 0, layer = "";
+      while (i < lines.length - 1) {
+        const [c, v] = next();
+        if (c === "0") { i -= 2; break; }
+        if (c === "8") layer = v;
+        if (c === "10") x1 = Number(v);
+        if (c === "20") y1 = Number(v);
+        if (c === "11") x2 = Number(v);
+        if (c === "21") y2 = Number(v);
+      }
+      loose.push({ a: { x: x1, y: y1 }, b: { x: x2, y: y2 }, layer });
     } else if (val === "POINT") {
       let x = 0, y = 0, z = 0, layer = "";
       while (i < lines.length - 1) {
@@ -862,6 +886,34 @@ function parseDxf(text) {
           points.push({ x: co[`1${k}`], y: co[`2${k}`], z: co[`3${k}`] || 0, layer });
         }
       }
+    }
+  }
+  /* Stitch the loose lines into rings and offer them alongside the real
+     polylines, so a boundary drawn as separate segments is usable. The
+     tolerance is generous because hand-drawn CAD rarely snaps exactly;
+     anything that does not close is left out rather than forced shut. */
+  const tol = 0.05;
+  const near = (p, q) => Math.hypot(p.x - q.x, p.y - q.y) <= tol;
+  for (const s0 of loose) s0.used = false;
+  for (const s0 of loose) {
+    if (s0.used) continue;
+    s0.used = true;
+    const chain = [s0.a, s0.b];
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const t of loose) {
+        if (t.used || t.layer !== s0.layer) continue;
+        const head = chain[0], tail = chain[chain.length - 1];
+        if (near(tail, t.a)) { chain.push(t.b); t.used = true; grew = true; }
+        else if (near(tail, t.b)) { chain.push(t.a); t.used = true; grew = true; }
+        else if (near(head, t.b)) { chain.unshift(t.a); t.used = true; grew = true; }
+        else if (near(head, t.a)) { chain.unshift(t.b); t.used = true; grew = true; }
+      }
+    }
+    if (chain.length > 3 && near(chain[0], chain[chain.length - 1])) {
+      chain.pop();
+      polylines.push({ pts: chain, closed: true, layer: s0.layer, elev: 0, stitched: true });
     }
   }
   return { polylines, points };
@@ -3163,6 +3215,34 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     return planCabling(v.blocks, polygon, v.stagger, v.laneMid, v.vertical, ss, ssOver);
   }, [variants, activeIdx, polygon, ss, ssOver]);
 
+  /* What the routed layout says about cable grouping. The cable tools
+     have always asked how many circuits share a trench; the layout has
+     always known. This is the number, measured rather than remembered. */
+  const trenches = useMemo(
+    () => (cabling ? analyseTrenches(cabling.paths) : null), [cabling]);
+  const mvTrenches = useMemo(
+    () => (cabling ? analyseTrenches(cabling.mvPaths) : null), [cabling]);
+
+  const exportLayoutDxf = (withFrames) => {
+    const v = active;
+    const dxf = layoutToDxf({
+      boundary: polygon,
+      blocks: (v?.blocks || []).map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, inv: b.inv })),
+      frames: (v?.frames || []).map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h })),
+      cabling: showSs ? cabling : null,
+      poi: showSs ? ss : null,
+      trenches,
+      includeFrames: !!withFrames,
+      title: `PVHUB LAYOUT - ${v ? fmt(v.dcMWp, 2) : "0"} MWP DC`,
+    });
+    const blob = new Blob([dxf], { type: "application/dxf" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = withFrames ? "pvhub-layout-with-frames.dxf" : "pvhub-layout.dxf";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const feas = useMemo(() => {
     if (capacity.kind === "none" || !variants.length) return null;
     const anyMet = variants.some((v) => v.met === true);
@@ -3332,6 +3412,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           <Section code="01" title="Site boundary">
             <Num label="Boundary setback" unit="m" value={site.setback} step={0.5} min={0}
               onChange={(v) => setSite({ ...site, setback: v })} />
+
             <div className="fld" style={{ justifyContent: "flex-end" }}>
               <span className="fld-l">Area</span>
               <div className="readout" style={{ padding: "6px 10px" }}>
@@ -3364,10 +3445,37 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                 </div>
               ) : null;
             })()}
-            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+            <div style={{ display: "flex", gap: 8, width: "100%", flexWrap: "wrap" }}>
               <button className="btn" onClick={() => replaceBoundary(EXAMPLE_BOUNDARY)}>Load example</button>
               <button className="btn" onClick={() => { pushHist(); setPolygonRaw([]); setDraft([]); setMode("draw"); }}>Clear</button>
+              <button className="btn" onClick={() => exportLayoutDxf(false)}
+                disabled={!active || !polygon.length}
+                title="Boundary, blocks, routed cable and substations — the general arrangement"
+                style={active && polygon.length
+                  ? { background: "#3a96e0", borderColor: "#3a96e0", color: "#06121c", fontWeight: 600 } : {}}>
+                Export DXF
+              </button>
+              <button className="btn" onClick={() => exportLayoutDxf(true)}
+                disabled={!active || !polygon.length}
+                title="The same, plus every frame rectangle — large on a big site">
+                + frames
+              </button>
             </div>
+            {active && polygon.length > 0 && (
+              <div className="readout" style={{ width: "100%", font: "10.5px/1.6 system-ui" }}>
+                <b>Export DXF</b> writes the general arrangement — boundary, block outlines with
+                their inverter numbers, the routed LV and MV cable, substations, inverter
+                positions and the point of connection, each on its own layer. It is a drawing to
+                work on in CAD, not a construction issue: array the modules in there, where that
+                is a one-line operation. <b>+ frames</b> adds every frame rectangle, which on a
+                large site is tens of thousands of entities and a file that opens slowly.
+                {trenches?.maxCircuits > 0 && <> The busiest trench is drawn on its own
+                  layer, because a grouping problem is far more legible as a red line down the
+                  middle of the site than as a factor in a table.</>}
+                {" "}Everything is flat at z = 0: a ground-mount plan is a plan, and a fabricated
+                z would imply a terrain model that is not in the export.
+              </div>
+            )}
             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
               <label className="btn" style={{ textAlign: "center", cursor: "pointer" }}>
                 Import KMZ / KML / DXF / XYZ / CSV (boundary + terrain)
@@ -3831,6 +3939,85 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           )}
           {uiMode === "engineer" && (<>
           {/* 08 BLOCKS */}
+          <Section code="09" title="Cable grouping, measured off this layout">
+            <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui" }}>
+              The cable tools ask how many circuits share a trench. Until now that was a number
+              you typed from memory; the routed layout already knows. Every LV run from an
+              inverter back to its substation follows the corridor graph, many share the same
+              stretch, and <b>the busiest stretch is what the grouping factor has to be looked up
+              on</b>. This counts them.
+            </div>
+            {!showSs ? (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ Turn the substation on to route the cable — there is nothing to measure until
+                the runs exist.
+              </div>
+            ) : !trenches || !trenches.segments.length ? (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ No routed cable yet. Generate a block layout first.
+              </div>
+            ) : (<>
+              <div style={{ display: "flex", gap: 9, flexWrap: "wrap", width: "100%" }}>
+                {[["Busiest trench", trenches.maxCircuits, "circuits", true],
+                  ["At that count", fmt(trenches.lengthAtMax, 0), "m of route", false],
+                  ["Typical metre", fmt(trenches.weightedMean, 1), "circuits", false],
+                  ["Total LV route", fmtKm(trenches.totalLength), "", false],
+                  ["MV busiest", mvTrenches?.maxCircuits || 0, "circuits", false]].map(([l, v, un, hot]) => (
+                  <div key={l} style={{ background: C.panel2,
+                    border: `1px solid ${hot ? C.accent : C.line}`, borderRadius: 6,
+                    padding: "8px 11px", minWidth: 104 }}>
+                    <div style={{ font: "10px system-ui", color: C.muted }}>{l}</div>
+                    <div style={{ font: "650 16px var(--mono)", color: hot ? C.accent : C.text }}>
+                      {v}<span style={{ font: "10px system-ui", color: C.muted }}> {un}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="readout" style={{ width: "100%" }}>
+                <b>The maximum decides the cable size; the distribution decides what it costs.</b>
+                {" "}Here the busiest stretch carries <b>{trenches.maxCircuits}</b> circuits over
+                {" "}{fmt(trenches.lengthAtMax, 0)} m, while a typical metre of trench carries
+                {" "}{fmt(trenches.weightedMean, 1)}. A site where one short segment carries the lot
+                and everything else is quiet is solved by splitting that segment; one where half
+                the route is at the maximum is not.
+                {trenches.lengthAtMax < trenches.totalLength * 0.1 && (
+                  <> <b>Only {fmt((trenches.lengthAtMax / trenches.totalLength) * 100, 0)}% of the
+                  route is at the maximum</b>, so sizing the whole run for it is probably wasteful —
+                  worth splitting that stretch across two trenches, or sizing it separately.</>
+                )}
+              </div>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 360 }}>
+                  <thead><tr>{["Circuits in trench", "Segments", "Length m", "% of route"].map((h) => (
+                    <th key={h} style={{ padding: "5px 9px", borderBottom: `1px solid ${C.line}`,
+                      textAlign: "right", font: "600 9.5px system-ui", textTransform: "uppercase",
+                      letterSpacing: "0.06em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}</tr></thead>
+                  <tbody>
+                    {[...trenches.histogram].reverse().map((h) => (
+                      <tr key={h.circuits} style={{ borderTop: `1px solid ${C.line}`,
+                        background: h.circuits === trenches.maxCircuits ? "rgba(232,130,12,0.12)" : "transparent" }}>
+                        {[h.circuits, h.segments, fmt(h.length, 0),
+                          `${fmt((h.length / trenches.totalLength) * 100, 1)}%`].map((v, j) => (
+                          <td key={j} style={{ padding: "4px 9px", font: "12px var(--mono)",
+                            textAlign: "right", color: h.circuits === trenches.maxCircuits ? C.accent : C.text }}>{v}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="readout" style={{ width: "100%", font: "10.5px/1.6 system-ui" }}>
+                This is <b>circuits routed together</b> in the sense IEC 60364-5-52 B.52.18/19
+                NOTE 3 means it. A circuit with several conductors per pole in parallel still
+                counts as that many circuits, and that multiplication belongs in the cable tool
+                where the parallel count is set — it is not applied here. Nor does this know about
+                anything else sharing the trench: auxiliary supplies, comms, earth. Those go in
+                the cable tool's "other loaded circuits" field.
+              </div>
+            </>)}
+          </Section>
+
           <Section code="08" title="Blocks & corridors">
             <Num
               label={frame.mounting !== "fixed" ? "Block gap (E–W)" : "Block gap (N–S)"}
@@ -4080,6 +4267,12 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                 <div className="tbl">Substations</div>
                 <div className="tbv" style={{ fontSize: 12.5 }}>
                   {cabling && cabling.combo.length ? cabling.combo.join("+") : "—"}
+                </div>
+              </div>
+              <div className="tbcell" title="Circuits sharing the busiest stretch of trench, measured off the routed layout">
+                <div className="tbl">Busiest trench</div>
+                <div className="tbv" style={{ color: trenches?.maxCircuits > 20 ? "#e08b8b" : C.text }}>
+                  {trenches?.maxCircuits || "—"} <small>circuits</small>
                 </div>
               </div>
             </>

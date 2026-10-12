@@ -384,6 +384,39 @@ produces the hourly import and export series the calculation needs, so this is a
 layer rather than new physics. The same panel would serve the batch analyser's deferred
 cost phase.
 
+### G26. Trench occupancy counts routes, not what is actually in the trench
+
+`analyseTrenches` counts how many routed LV runs share each stretch and reports the busiest.
+That is a real improvement on a number typed from memory, and it is the right quantity for
+IEC 60364-5-52 B.52.18/19 NOTE 3. It is still not the whole trench.
+
+It does not know about anything the routing does not draw: auxiliary supplies, comms, earth
+conductors, or a second phase of the project sharing the same route later. It assumes one
+route is one circuit, so parallel conductors per pole are applied downstream in the cable
+tool rather than here — correct, but it means the figure on the Layout tab is not the number
+that goes into the lookup unless the parallel count is one. And it has no notion of vertical
+separation: two circuits in the same trench at different depths are counted as neighbours
+when the standard would treat them differently.
+
+**Recommendation.** An "other services in this trench" input on the Layout tab that carries
+through to the cable tool, and a depth band per route so a trench with two layers is counted
+as two groups. Neither is hard; both need the routing to carry more than geometry.
+
+### G27. The DXF export has no coordinate reference
+
+The layout exports in the local metre grid the tool works in, with the origin wherever the
+boundary import put it. Opened on its own that is fine. Overlaid on a survey it is not — there
+is no georeference, no scale statement beyond the implied metres, and no record of which
+projection the boundary came from, so a drawing that came in as UTM goes out as something
+near the origin instead.
+
+The boundary importer does keep a geo origin internally to stop 6-figure coordinates reaching
+the SVG maths, so the information exists; it simply is not written back out.
+
+**Recommendation.** Write the stored geo origin into the DXF as a header variable and offer an
+"export in source coordinates" option that adds it back to every point. Until then, anyone
+overlaying the export on a survey has to move it manually, and the interface should say so.
+
 ---
 
 ## Severity 4 — Polish
@@ -423,4 +456,5 @@ by more than half.
 8. **G24** — multiple planes, PVGIS yield for the drawn roof, then shading. The drawing tool
    and DXF export are done.
 9. **G25** — a cost model for the battery.
-10. **G5, G10, G12–G14**.
+10. **G26, G27** — other services in the trench, and a georeferenced DXF export.
+11. **G5, G10, G12–G14**.

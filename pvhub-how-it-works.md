@@ -599,6 +599,46 @@ parameter, the boundary, the terrain and the comparison runs.
 
 ---
 
+### The layout as a drawing, and what it says about cable grouping
+
+**Export DXF** writes the general arrangement: boundary, block outlines with their inverter
+numbers, the routed LV and MV cable, substations, inverter positions and the point of
+connection, each on its own layer. It is a drawing to work on in CAD, not a construction
+issue — the modules are a one-line array operation in there, which is why they are not in the
+file by default. **+ frames** adds every frame rectangle, which on a large site is tens of
+thousands of entities.
+
+Everything is written flat at z = 0. A ground-mount plan is a plan; the frames have a tilt
+but that is a property of the mounting, and a fabricated z would imply a terrain model the
+export does not carry.
+
+The more useful half is what the routing says about **cable grouping**. The cable tools have
+always asked how many circuits are routed together — the factor that costs the most capacity
+of the four — and that was a number typed from memory. The routed layout already knows: every
+LV run from an inverter back to its substation follows the corridor graph, many share the same
+stretch, and the busiest stretch is what the factor must be looked up on. Counting the runs
+over each segment turns a guess into a measurement.
+
+Two numbers come out of it and they answer different questions. **The maximum sizes the
+cable**: it is the grouping the factor is read at. **The distribution costs it**: a site where
+one short segment carries forty circuits and everything else carries four is solved by
+splitting that segment, and one where half the route is at forty is not. Where less than a
+tenth of the route sits at the maximum the tool says so, because sizing the whole run for a
+stretch that short is usually waste.
+
+Trench length is the union of the segments, not the sum of the route lengths — shared trench
+is counted once, so a site with 4,400 m of cable may have only 3,000 m of trench.
+
+The same measurement works on a drawing from anywhere else. The cable tools take a DXF of
+cable routes, list the layers that carry more than one run, and report the busiest trench on
+whichever layer you pick, with a button to adopt it. PVhub's own export reads back through
+exactly this path, which is how the round trip is tested.
+
+What it counts is **circuits routed together** in the sense IEC 60364-5-52 B.52.18/19 NOTE 3
+means it. Parallel conductors per pole still multiply it, and that happens on the method card
+where the parallel count lives. Anything in the trench the drawing does not show — auxiliary
+supplies, comms, earth — goes in "other loaded circuits".
+
 ## Roof or ground, picked at the start
 
 The landing screen asks two questions in the order they matter: what is being designed, then

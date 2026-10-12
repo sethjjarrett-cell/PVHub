@@ -22,6 +22,8 @@
 
 import React, { useState, useMemo } from "react";
 import { fmt, C, Num, Sel, Section, Page, Working } from "./ui.jsx";
+import { parseDxf, routeLengths } from "./dxfRead.js";
+import { analyseTrenches } from "./layoutDxf.js";
 import {
   RefCard, Table1D, TableGroup, TableCCC, FactorChain, HighlightKey, HL,
 } from "./CableRefTables.jsx";
@@ -587,6 +589,45 @@ function MethodCard({ method, kind, table, st, set, designCurrent, open, onToggl
 
 function LvSizing({ kind, table, designCurrent, st, set, firstCode = 3 }) {
   const code = (n) => `C${firstCode + n}`;
+
+  /* A drawing of the cable routes answers the grouping question
+     directly: count the runs sharing each stretch of trench and take
+     the busiest. Works on PVhub's own layout export and on anything
+     else that draws its routes as polylines, which is most of them. */
+  const [dxf, setDxf] = useState(null);
+  const readRoutes = (file) => {
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const parsed = parseDxf(String(rd.result));
+        const byLayer = {};
+        for (const e of parsed.entities) {
+          if (!e.points || e.points.length < 2) continue;
+          (byLayer[e.layer] = byLayer[e.layer] || []).push(e.points);
+        }
+        const layers = Object.entries(byLayer)
+          .map(([name, paths]) => ({ name, paths, ...analyseTrenches(paths) }))
+          .filter((l) => l.routes > 1)
+          .sort((a, b) => b.maxCircuits - a.maxCircuits || b.routes - a.routes);
+        if (!layers.length) {
+          setDxf({ ok: false, name: file.name,
+            reason: parsed.skipped.some((x) => x.type === "INSERT")
+              ? "no layer in that file has more than one route on it, and the drawing contains "
+                + "block references whose contents are not expanded — explode them in CAD and export again."
+              : "no layer in that file has more than one route on it. Cable routes need to be "
+                + "polylines or lines on a layer of their own; a single run cannot share a trench with anything." });
+          return;
+        }
+        setDxf({ ok: true, name: file.name, layers, pick: layers[0].name,
+          skipped: parsed.skipped, allLayers: parsed.layers });
+      } catch (e) { setDxf({ ok: false, name: file.name, reason: e.message }); }
+    };
+    rd.onerror = () => setDxf({ ok: false, name: file.name, reason: "the file could not be read" });
+    rd.readAsText(file);
+  };
+  const picked = dxf?.ok ? dxf.layers.find((l) => l.name === dxf.pick) : null;
+  const applyCircuits = (n) => set({ ...st,
+    rows: Object.fromEntries(Object.entries(st.rows).map(([k, r]) => [k, { ...r, circ: n }])) });
   /* Which cards are expanded. All three are on screen either way; this
      only controls whether the arithmetic under each is unfolded. The
      first view is the three answers, which is what a first glance wants. */
@@ -612,6 +653,63 @@ function LvSizing({ kind, table, designCurrent, st, set, firstCode = 3 }) {
         onChange={(v) => set({ ...st, soil: v })} />
       <Num label="Burial depth" unit="m" value={st.depth} step={0.05}
         onChange={(v) => set({ ...st, depth: v })} />
+      <div style={{ width: "100%", padding: "9px 11px", borderRadius: 6,
+        background: C.panel2, border: `1px solid ${C.line}` }}>
+        <div style={{ font: "600 11px system-ui", color: C.text, marginBottom: 2 }}>
+          Measure the grouping off a drawing
+        </div>
+        <div style={{ font: "10.5px/1.6 system-ui", color: C.muted, marginBottom: 8 }}>
+          How many circuits share a trench is the factor that costs the most capacity, and it is
+          usually typed from memory. A DXF of the cable routes answers it: every run is counted
+          onto the stretches it uses and the busiest stretch is what the factor must be looked up
+          on. PVhub&#39;s own layout export works, and so does anything that draws its routes as
+          polylines on a named layer.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <label className="btn" style={{ cursor: "pointer" }}>
+            {dxf ? "Replace the drawing" : "Import cable routes (DXF)"}
+            <input type="file" accept=".dxf" style={{ display: "none" }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) readRoutes(f); e.target.value = ""; }} />
+          </label>
+          {dxf?.ok && dxf.layers.length > 1 && (
+            <Sel label="Layer" value={dxf.pick} onChange={(v) => setDxf({ ...dxf, pick: v })}
+              options={dxf.layers.map((l) => ({ value: l.name,
+                label: `${l.name} — ${l.routes} routes, max ${l.maxCircuits}` }))} />
+          )}
+        </div>
+        {dxf && !dxf.ok && (
+          <div className="warn" style={{ width: "100%", marginTop: 8 }}>
+            &#9888; <b>{dxf.name}:</b> {dxf.reason}
+          </div>
+        )}
+        {picked && (
+          <div className="readout" style={{ width: "100%", marginTop: 8, border: `1px solid ${C.accent}` }}>
+            <b>{dxf.name}, layer {picked.name}:</b> {picked.routes} routes over
+            {" "}{fmt(picked.totalLength, 0)} m of trench. The busiest stretch carries
+            {" "}<b style={{ color: C.accent }}>{picked.maxCircuits} circuits</b> for
+            {" "}{fmt(picked.lengthAtMax, 0)} m; a typical metre carries
+            {" "}{fmt(picked.weightedMean, 1)}.
+            <button className="btn" style={{ marginLeft: 10, padding: "3px 10px" }}
+              onClick={() => applyCircuits(picked.maxCircuits)}>
+              Use {picked.maxCircuits} circuits
+            </button>
+            <br /><br />
+            <span style={{ font: "10.5px/1.6 system-ui", color: C.muted }}>
+              That is <b>circuits routed together</b> as IEC 60364-5-52 B.52.18/19 NOTE 3 means
+              it. Parallel conductors per pole still multiply it, and that happens on each method
+              card below where the parallel count lives — it is not applied here. Anything else
+              in the trench that the drawing does not show, such as auxiliary supplies or comms,
+              belongs in &ldquo;other loaded circuits&rdquo;.
+              {picked.lengthAtMax < picked.totalLength * 0.1 && <>
+                {" "}<b>Only {fmt((picked.lengthAtMax / picked.totalLength) * 100, 0)}% of the
+                route is at the maximum</b>, so sizing the whole run for it is probably wasteful —
+                worth splitting that stretch or sizing it separately.
+              </>}
+            </span>
+          </div>
+        )}
+      </div>
+
       <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
         Four numbers set every buried rating below. Air temperature drives the tray case only;
         the other three drive both buried cases. Everything else is per method and sits on its
