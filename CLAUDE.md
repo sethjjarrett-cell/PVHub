@@ -25,6 +25,8 @@ src/dxf.js             DXF R12 writer — string assembly, no React, no dependen
 src/dxfRead.js         DXF reader: polylines, lines with stitching, layers — no React
 src/layoutDxf.js       trench occupancy from routed cable, and the layout DXF — no React
 src/RoofDesigner.jsx   Roof designer tab: plan editor, auto-generate, DXF export
+src/costing.js         the quote library, LCOE, NPV and IRR — no React, no prices in it
+src/CostingTool.jsx    Costing tab: quote library, ageing, escalation, LCOE, comparison
 src/bess.js            battery capacity chain and the 8,760-hour dispatch — no React
 src/BessTool.jsx       Battery tab: capacity chain, dispatch, sweep, the walkthrough
 src/batchAnalyser.js   PVsyst batch CSV parsing and tilt/pitch analysis, no React
@@ -96,6 +98,8 @@ and `switchWorkspace` moves between them:
 | `layout` | `layout` alone; the generator already carries every input it needs |
 | `cable` | `cdc`, `cac`, `cmv`, `csc` |
 | `string` | `module`, `inverter`, `string`, `clip` |
+| `yield` | `shade`, `report`, `batch` |
+| `cost` | `cost` alone |
 | `bess` | `bess` alone |
 
 They are **one app with one state tree**, not separate apps — a value typed in any workspace
@@ -150,6 +154,9 @@ node tests/roof.test.mjs            # 93 assertions: polygon maths, the plane fi
                                     # ways, the fill, and the DXF structure
 node tests/layoutDxf.test.mjs       # 51 assertions: trench occupancy, the layout export,
                                     # and the reader against four producers
+node tests/costing.test.mjs         # 79 assertions: the finance against closed forms, and
+                                    # the quote handling against the cases that corrupt a
+                                    # comparison silently
 ```
 
 **Known pre-existing noise:** ~270 console errors of the form
@@ -339,6 +346,29 @@ Deliberate engineering decisions, each stated in the UI's own text:
   geo origin that keeps 6-figure UTM out of the SVG maths both matter. `src/dxfRead.js` is the
   general reader used for cable-route analysis, where neither applies. Do not route the
   boundary import through the general one — it has no idea about either.
+- **The costing tool ships with no prices in it, and that is a refusal rather than a gap.**
+  Module prices, EPC rates and connection charges move faster than any embedded figure stays
+  true, and a plausible default gets used — it ends up in a board paper with nobody
+  remembering where it came from. `REGIONS` carries climate-driven physical bands, structural
+  notes and a cost-of-capital band, and no money at all. Do not add a default price to it.
+- **A quote's pricing date is a property, not a footnote.** `stalenessOf` reports it
+  everywhere a quote is used, with the thresholds stated (six months current, eighteen
+  ageing) because they are a judgement rather than a standard. A quote with no date reads as
+  "unknown", never as fresh.
+- **Escalation never overwrites.** `escalate` returns a copy carrying `escalatedFrom` with the
+  original lines, date, rate and factor, so the interface shows the quoted figure struck
+  through beside the indexed one — the same convention as an overridden derating factor. An
+  indexed price is an assumption and must stay distinguishable from one somebody gave you.
+- **Regional indices are derived from two real quotes, never assumed.** `deriveIndices`
+  divides one of your quotes by another, per line, and reports which lines only one of them
+  carries rather than treating a zero as a price. It also reports a currency mismatch, because
+  a ratio across currencies includes the exchange rate and is not a cost index.
+- **Lump sums do not scale per watt.** A substation priced at 5 MW neither costs the same at
+  100 MW nor twenty times as much. `quoteAt` offers as-quoted, linear and a power law
+  (default exponent 0.7), reports which was applied per line, and the choice is the user's.
+- **Currency is never converted.** There is no exchange rate in the tool. Quotes in different
+  currencies sit side by side, and `compareQuotes` says they are not comparable on money
+  rather than quietly applying a rate that would be stale by the time it is read.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.

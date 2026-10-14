@@ -10,6 +10,7 @@ import {
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { BessTab } from "./BessTool.jsx";
 import { RoofDesignerTab, ROOF_PLANE_DEFAULT } from "./RoofDesigner.jsx";
+import { CostingTab, COSTING_DEFAULT } from "./CostingTool.jsx";
 import { analyseTrenches, layoutToDxf } from "./layoutDxf.js";
 import { parseDxf as readDxf, pickOutline, routeLengths } from "./dxfRead.js";
 import { YieldReportTab } from "./YieldReport.jsx";
@@ -7230,6 +7231,7 @@ export default function App() {
   };
   const [bess, setBess] = useState(BESS_GROUND);
   const [rdesign, setRdesign] = useState({ active: 0, planes: [ROOF_PLANE_DEFAULT] });
+  const [costing, setCosting] = useState(COSTING_DEFAULT);
   const [roof, setRoof] = useState({ planes: [
     { name: "South pitch", len: 8, wid: 6, roofPitch: 35, azimuth: 180,
       mounting: "flush", moduleTilt: 15, shadeLimit: 18,
@@ -7248,7 +7250,7 @@ export default function App() {
     const data = {
       app: "PVhub", version: 1, saved: new Date().toISOString(),
       pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables, report, batch,
-      mount, workspace, bess, roof, rdesign,
+      mount, workspace, bess, roof, rdesign, costing,
       layout: reg.current.layout?.get(), shade: reg.current.shade?.get(),
     };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -7274,6 +7276,7 @@ export default function App() {
         if (d.bess) setBess({ ...(d.mount === "roof" ? BESS_ROOF : BESS_GROUND), ...d.bess });
         if (d.roof) setRoof(d.roof);
         if (d.rdesign) setRdesign(d.rdesign);
+        if (d.costing) setCosting({ ...COSTING_DEFAULT, ...d.costing });
         if (d.rates) setRates(d.rates);
         if (d.siteLoc) setSiteLoc(d.siteLoc);
         // Merge rather than replace, so a project saved before a cable
@@ -7299,7 +7302,7 @@ export default function App() {
     ["shade", "Pitch & Yield"], ["layout", "Layout"], ["summary", "Summary"],
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
     ["report", "Yield report"], ["batch", "Batch analyser"], ["bess", "Battery"],
-    ["roof", "Roof area"], ["rdesign", "Roof designer"],
+    ["roof", "Roof area"], ["rdesign", "Roof designer"], ["cost", "Costing"],
   ];
   /* Ground mount is the full tool. Roof mount drops what a roof does not
      have — an MV collector ring, a field to tile, a row-pitch sweep — and
@@ -7312,14 +7315,14 @@ export default function App() {
     ["Calculations", ["string", "clip"]],
     ["Layout", ["layout"]],
     ["Cables", ["cdc", "cac", "cmv", "csc"]],
-    ["Yield & Summary", ["shade", "report", "batch", "bess", "summary"]],
+    ["Yield & Summary", ["shade", "report", "batch", "bess", "cost", "summary"]],
   ];
   const GROUPS_ROOF = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Roof", ["roof", "rdesign"]],
     ["Cables", ["cdc", "cac", "csc"]],
-    ["Yield & Summary", ["shade", "report", "bess", "summary"]],
+    ["Yield & Summary", ["shade", "report", "bess", "cost", "summary"]],
   ];
   /* The workspaces. Each is the same engines with a different amount of
      the application on screen — not a separate app, because duplicating
@@ -7348,6 +7351,18 @@ export default function App() {
         + "Reads PVsyst .PAN and .OND files directly.",
       note: "Four tabs. No site, layout or cable work.",
       groups: [["Technologies", ["module", "inverter"]], ["Calculations", ["string", "clip"]]] },
+    { id: "yield", name: "Shading and yield", short: "Yield",
+      blurb: "Row pitch against shading loss, the PVGIS pull for a real year, expected "
+        + "generation, and the trade-off between a wider pitch and the ground it costs. "
+        + "The PVsyst batch analyser sits here too.",
+      note: "Three tabs. No cables, no layout.",
+      groups: [["Yield", ["shade", "report", "batch"]]] },
+    { id: "cost", name: "Costing", short: "Costing",
+      blurb: "A library of the quotes you have actually received, with the date each was "
+        + "priced, and what they do to LCOE. Ships with no prices in it on purpose — the "
+        + "money is yours and the tool tells you how old it is.",
+      note: "One tab. Import your quotes as CSV.",
+      groups: [["Costing", ["cost"]]] },
     { id: "bess", name: "Battery sizing", short: "Battery",
       blurb: "A stated requirement worked back through depth of discharge, round-trip losses "
         + "and auxiliaries to a unit count — or a load profile run hour by hour over a year "
@@ -7732,6 +7747,11 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
         <BatchAnalyserTab st={batch} set={setBatch} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "cost" ? "flex" : "none" }}>
+        <CostingTab st={costing} set={setCosting}
+          kWpHint={summary?.dcKwp ? summary.dcKwp * 1000 : 0}
+          yieldHint={report?.specificYield || 0} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "bess" ? "flex" : "none" }}>
         <BessTab st={bess} set={setBess} scale={mount === "roof" ? "small" : "large"}

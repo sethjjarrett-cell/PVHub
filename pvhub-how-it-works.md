@@ -651,6 +651,8 @@ module datasheet and draw a boundary to get an answer.
 | **Layout generator** | The tiling generator with every parameter it needs on one tab — boundary, module, frame, pitch, electrical grouping, target — and a DXF out. |
 | **Cable sizing and derating** | DC, AC, MV and short circuit. Type the currents; no module, inverter or layout required. |
 | **String sizing** | Module and inverter in, string length and paralleling out. Reads .PAN and .OND. |
+| **Shading and yield** | Row pitch against shading loss, the PVGIS pull, expected generation and the pitch trade-off. The PVsyst batch analyser sits here too. |
+| **Costing** | A library of the quotes you have actually received, with the date each was priced, and what they do to LCOE. |
 | **Battery sizing** | The capacity chain and the hourly dispatch, on their own. |
 
 They are **one application with one project**, not five separate tools. A value typed in any
@@ -662,6 +664,57 @@ Where a standalone tool would otherwise read from a tab that is not on screen, i
 link for a plain input writing to the same state underneath. The cable tools are the case
 that needs it: in the preliminary tool the string current comes from the Module and String
 Sizing tabs, and standalone it is four numbers off a datasheet.
+
+### Costing
+
+**Nothing in it ships with a price.** That is a refusal rather than an omission. Module
+prices, EPC rates and grid connection charges move faster than any embedded figure stays
+true, and a plausible default gets used — it ends up in a board paper with nobody remembering
+where it came from. So the money is yours: load the quotes you have actually received, and
+the tool tells you how old each one is everywhere it is used. A 2023 module price and a 2026
+one are different numbers, and the difference is usually larger than the engineering.
+
+The unit is the **quote**: a set of costs, for a named project, in a named country, in a
+stated currency, priced on a stated date, from a stated source, at a stated plant size. Three
+consequences shape everything else.
+
+**Age is a property, not a footnote.** Every quote carries its pricing date and the tool
+reports the age beside it wherever it appears — current under six months, ageing to eighteen,
+stale beyond. Those thresholds are a judgement and are stated as one. A quote with no date
+reads as "unknown", never as fresh.
+
+**Escalation never overwrites.** An old quote can be indexed forward at a rate you set, and
+the indexed figure is marked as such with the quoted figure kept beside it, struck through —
+the same convention the cable tools use for an overridden derating factor. What somebody gave
+you and what you assumed stay distinguishable. A single rate across every line is a
+convenience rather than a model: module prices and civils labour have not moved together in
+any recent year, and if a line matters it should be requoted rather than indexed.
+
+**Regional indices are derived, never assumed.** To know what a German price implies for
+Kenya, the tool divides one of your real quotes by another, line by line. It reports which
+lines only one of them carries rather than treating a zero as a price, and it says plainly
+when the two are in different currencies, because a ratio across currencies contains the
+exchange rate and is not a cost index.
+
+The regions themselves carry only what is knowable without a price list: soiling, degradation
+and availability bands, which follow climate; notes on what usually binds — grid queues in the
+UK, inland haulage in East Africa, local content in South Africa; and a cost-of-capital band,
+which is a judgement and is labelled as one. That band is included because it moves LCOE more
+than any line in the capex does — the same plant at 5% and at 13% differs by roughly half.
+
+Lump sums are the trap in reusing a quote. A substation priced at 5 MW neither costs the same
+at 100 MW nor twenty times as much. The tool offers as-quoted, linear and a power law
+(exponent around 0.7, the usual estimating rule), reports which was applied to each line, and
+leaves the choice to you.
+
+LCOE discounts the energy as well as the money, which looks wrong the first time — discounting
+kilowatt-hours has no physical meaning — but it is what makes LCOE the price at which
+discounted revenue exactly covers discounted cost. The test suite checks this directly: a
+tariff set exactly at LCOE returns NPV zero and an IRR equal to the discount rate.
+
+What it will not do is convert currency, know what your quotes covered, or finance anything.
+It is unlevered and pre-tax at a single discount rate, which is right for ranking and wrong
+for a close (GAPS §G29).
 
 **Load flow** is listed on the landing as planned rather than offered as an empty tab. The MV
 tool already accumulates current round a ring and carries R and X per size, so the network is

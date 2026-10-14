@@ -449,6 +449,35 @@ editor, so the ring is entered once. Until it exists, the MV tool should not be 
 compliance check, and the landing screen lists load flow as planned rather than offering an
 empty tab.
 
+### G29. The costing tool is unlevered, pre-tax and single-currency
+
+`src/costing.js` gives LCOE, NPV, IRR and payback at one discount rate. That is the right
+level for ranking options and the wrong level for a financial close. It has no debt, no
+gearing, no tax, no depreciation, no residual value and no DSCR, so the IRR it reports is a
+project IRR and not an equity one, and the two are not close on a geared project.
+
+It also does not convert currency, by design — there is no exchange rate anywhere in it, and
+a comparison across currencies reports that it is not comparable rather than applying a rate
+that would be stale. That is honest but it does leave the cross-region comparison half
+finished: the user has to bring the quotes to one currency themselves.
+
+**Recommendation.** A gearing block (debt share, tenor, margin, DSCR) producing equity IRR
+alongside project IRR; and an exchange-rate table the user maintains with its own date,
+handled exactly as the quotes are — entered, dated, never fetched. Neither is hard; both
+are more spreadsheet than engineering, which is why they are not here yet.
+
+### G30. The quote library lives in the browser
+
+Quotes are held in the project state and in the CSV export. There is no shared store, so two
+people pricing the same market keep separate libraries and neither knows the other exists.
+The CSV is the answer for now — keep it in version control or a shared drive — but it is a
+convention rather than a mechanism, and conventions decay.
+
+**Recommendation.** If this becomes the real cost record for a team, it needs a backing store
+with an append-only history, so a price can be traced to who entered it and when it changed,
+not merely when it was quoted. That is a different kind of application from the rest of
+PVhub and should be a deliberate decision rather than a drift.
+
 ---
 
 ## Severity 4 — Polish
@@ -490,4 +519,5 @@ by more than half.
 9. **G25** — a cost model for the battery.
 10. **G26, G27** — other services in the trench, and a georeferenced DXF export.
 11. **G28** — load flow on the MV collector. The largest outstanding engineering piece.
-12. **G5, G10, G12–G14**.
+12. **G29, G30** — gearing and currency in the costing tool; a shared store for the quotes.
+13. **G5, G10, G12–G14**.
