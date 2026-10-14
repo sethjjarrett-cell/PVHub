@@ -86,8 +86,31 @@ Chromium and Playwright are available (`executablePath: '/opt/pw-browsers/chromi
 never run `playwright install`). Serve over `http://` — `file://` blocks the outbound API
 calls.
 
-**Healthy baseline:** boot overlay clears, `pageerror` count is 0, and five tab groups
-render. The set depends on the mount type picked on the landing screen:
+**Workspaces.** The landing asks which tool you came for before anything else, because that
+decides how much of the application is relevant. `WORKSPACES` in `src/App.jsx` defines them
+and `switchWorkspace` moves between them:
+
+| Workspace | Tabs |
+|---|---|
+| `prelim` | the whole thing — then asks mount type and detail level |
+| `layout` | `layout` alone; the generator already carries every input it needs |
+| `cable` | `cdc`, `cac`, `cmv`, `csc` |
+| `string` | `module`, `inverter`, `string`, `clip` |
+| `bess` | `bess` alone |
+
+They are **one app with one state tree**, not separate apps — a value typed in any workspace
+is still there in the others. Do not fork them; duplicated inputs would drift apart within a
+week. Mount type and detail level are prelim-only concepts and the header hides those
+controls elsewhere (`isPrelim`).
+
+Standalone tools take a `standalone` prop where they would otherwise import from a tab that
+is not on screen. The cable DC and AC tabs use it to swap the `Imported` link table for plain
+`Num` inputs writing to the *same* override state, so a project started standalone opens
+correctly in the preliminary tool.
+
+**Healthy baseline:** boot overlay clears, `pageerror` count is 0, and in the `prelim`
+workspace five tab groups render. The set depends on the mount type picked on the landing
+screen:
 
 - **Ground** — `Technologies` (module, inverter, frame), `Calculations` (string, clip),
   `Layout`, `Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, report, batch, bess,
@@ -96,9 +119,9 @@ render. The set depends on the mount type picked on the landing screen:
   `Yield & Summary` loses `batch`.
 
 `GROUPS_GROUND` / `GROUPS_ROOF` in `src/App.jsx` map the tools onto those groups, and
-Stupid mode filters to Layout (or Roof) + Yield & Summary. Check both mounts when touching
-the shell — `switchMount` exists because changing mount can otherwise strand the user on a
-tool the new set does not contain.
+Stupid mode filters to Layout (or Roof) + Yield & Summary. Check **every workspace** when
+touching the shell, not just both mounts — `landOn` exists because changing either mount or
+workspace can otherwise strand the user on a tool the new set does not contain.
 
 Check the phone path too, because it is a separate layout rather than the same one
 narrowed: at an iPhone viewport `document.documentElement.scrollWidth` must equal

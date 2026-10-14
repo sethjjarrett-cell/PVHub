@@ -1,6 +1,7 @@
 # PVhub — PVhub
 
 Browser-based tools for utility-scale PV preliminary design: parameter capture,
+a workspace picker so a single calculator can be opened without the whole workflow,
 string sizing, string paralleling, pitch comparison, DC/AC/MV cable sizing,
 battery sizing with an hourly dispatch simulation,
 short-circuit withstand, and an automatic layout generator with terrain awareness.

@@ -639,6 +639,35 @@ means it. Parallel conductors per pole still multiply it, and that happens on th
 where the parallel count lives. Anything in the trench the drawing does not show — auxiliary
 supplies, comms, earth — goes in "other loaded circuits".
 
+## Which tool, picked at the start
+
+The landing asks what you are here to do before anything else, because that decides how much
+of the application is even relevant. Someone sizing a cable should not have to fill in a
+module datasheet and draw a boundary to get an answer.
+
+| Workspace | What it is |
+|---|---|
+| **Preliminary design** | The whole workflow, linked end to end. The comprehensive one, and the only one that goes on to ask about mount type and detail level. |
+| **Layout generator** | The tiling generator with every parameter it needs on one tab — boundary, module, frame, pitch, electrical grouping, target — and a DXF out. |
+| **Cable sizing and derating** | DC, AC, MV and short circuit. Type the currents; no module, inverter or layout required. |
+| **String sizing** | Module and inverter in, string length and paralleling out. Reads .PAN and .OND. |
+| **Battery sizing** | The capacity chain and the hourly dispatch, on their own. |
+
+They are **one application with one project**, not five separate tools. A value typed in any
+workspace is still there in the others, so a cable sized standalone is the same cable when
+the project is later opened in the preliminary tool. Forking them would have meant duplicated
+inputs, and duplicated inputs drift.
+
+Where a standalone tool would otherwise read from a tab that is not on screen, it swaps the
+link for a plain input writing to the same state underneath. The cable tools are the case
+that needs it: in the preliminary tool the string current comes from the Module and String
+Sizing tabs, and standalone it is four numbers off a datasheet.
+
+**Load flow** is listed on the landing as planned rather than offered as an empty tab. The MV
+tool already accumulates current round a ring and carries R and X per size, so the network is
+most of the way built, but a one-way drop calculation is not a load flow — it has no voltage
+rise at export, no reactive power and no convergence. GAPS §G28 sets out the method.
+
 ## Roof or ground, picked at the start
 
 The landing screen asks two questions in the order they matter: what is being designed, then

@@ -417,6 +417,38 @@ the SVG maths, so the information exists; it simply is not written back out.
 "export in source coordinates" option that adds it back to every point. Until then, anyone
 overlaying the export on a survey has to move it manually, and the interface should say so.
 
+### G28. Load flow is not built, and the MV tool implies it
+
+The MV cable tool accumulates current round a ring, carries R and X per size, and reports
+cumulative voltage drop per run. That is most of a load flow and it is close enough to one
+that a reader could mistake it for one. It is not: it is a one-way drop calculation along a
+radial path, with no reactive power, no voltage-dependent behaviour and no convergence.
+
+What a real load flow would add, in rough order of value:
+
+- **Voltage rise at full export.** A collector carrying generation rather than load runs the
+  volt drop backwards, and the binding constraint on an MV ring is usually the rise at the
+  far inverter rather than the drop at the substation. The current tool cannot show that
+  because it has no sign convention for generation.
+- **Reactive power.** Grid codes ask for a power factor range at the connection, and holding
+  it changes every current in the network. The MV tool takes a single design power factor and
+  applies it uniformly, which is the right simplification for sizing and the wrong one for
+  compliance.
+- **Losses per segment at a real operating point**, rather than at nameplate.
+- **A closed ring.** Running a ring closed rather than open changes the flows substantially
+  and is how most collectors are actually operated under fault.
+
+**Method.** A PV collector is radial or weakly meshed, so a backward–forward sweep converges
+in a handful of iterations and is perhaps a hundred lines — a full Newton–Raphson is not
+needed and would be harder to explain, which matters in a tool whose whole premise is showing
+the working. The network is already implicit in the MV tab's run table (from, to, inverters,
+length, size); it needs a slack bus at the point of connection and a per-node injection.
+
+**Recommendation.** Build it against the MV run table rather than as a separate network
+editor, so the ring is entered once. Until it exists, the MV tool should not be read as a
+compliance check, and the landing screen lists load flow as planned rather than offering an
+empty tab.
+
 ---
 
 ## Severity 4 — Polish
@@ -457,4 +489,5 @@ by more than half.
    and DXF export are done.
 9. **G25** — a cost model for the battery.
 10. **G26, G27** — other services in the trench, and a georeferenced DXF export.
-11. **G5, G10, G12–G14**.
+11. **G28** — load flow on the MV collector. The largest outstanding engineering piece.
+12. **G5, G10, G12–G14**.

@@ -7172,8 +7172,15 @@ export default function App() {
      a roof has no MV ring and no field to tile, and the layout generator
      tiles a field with trackers and roads, which a roof is not. */
   const [mount, setMount] = useState("ground");
+  /* Which tool you came for. The preliminary workspace is the whole
+     linked workflow; the others are the same engines with only their own
+     inputs on screen, because someone sizing a cable should not have to
+     fill in a module datasheet to get an answer. State is shared, so
+     anything typed in one workspace is still there in another. */
+  const [workspace, setWorkspace] = useState("prelim");
   const [sharedTmy, setSharedTmy] = useState(null);
   const [entered, setEntered] = useState(false);
+  const [landStep, setLandStep] = useState(0);
   const [pvMod, setPvMod] = useState({
     length: 2.278, width: 1.134, power: 650,
     voc: 49.97, vmp: 41.67, isc: 16.3, imp: 15.6,
@@ -7241,7 +7248,7 @@ export default function App() {
     const data = {
       app: "PVhub", version: 1, saved: new Date().toISOString(),
       pvMod, pvInv, elec, frame, ilrCap, uiMode, rates, siteLoc, cables, report, batch,
-      mount, bess, roof, rdesign,
+      mount, workspace, bess, roof, rdesign,
       layout: reg.current.layout?.get(), shade: reg.current.shade?.get(),
     };
     const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
@@ -7263,6 +7270,7 @@ export default function App() {
         if (d.ilrCap) setIlrCap(d.ilrCap);
         if (d.uiMode) setUiMode(d.uiMode);
         if (d.mount) setMount(d.mount);
+        if (d.workspace) setWorkspace(d.workspace);
         if (d.bess) setBess({ ...(d.mount === "roof" ? BESS_ROOF : BESS_GROUND), ...d.bess });
         if (d.roof) setRoof(d.roof);
         if (d.rdesign) setRdesign(d.rdesign);
@@ -7313,19 +7321,77 @@ export default function App() {
     ["Cables", ["cdc", "cac", "csc"]],
     ["Yield & Summary", ["shade", "report", "bess", "summary"]],
   ];
-  const GROUPS = mount === "roof" ? GROUPS_ROOF : GROUPS_GROUND;
-  const visGroups = uiMode === "stupid"
+  /* The workspaces. Each is the same engines with a different amount of
+     the application on screen — not a separate app, because duplicating
+     the inputs would guarantee the two drifted apart. */
+  const WORKSPACES = [
+    { id: "prelim", name: "Preliminary design", short: "Prelim",
+      blurb: "The whole workflow, linked end to end: module and inverter in, string sizing, "
+        + "a generated layout, cables, yield, a battery. Everything feeds everything else. "
+        + "This is the one to start from when you are designing a plant.",
+      note: "Asks for mount type and detail level next." },
+    { id: "layout", name: "Layout generator", short: "Layout",
+      blurb: "Draw or import a boundary, set the module, the frame and the pitch, and get a "
+        + "tiled layout with blocks, corridors, roads and routed cable. Every parameter it "
+        + "needs is on the one tab. Exports DXF to take into CAD.",
+      note: "One tab, all inputs on it. Ground mount.",
+      groups: [["Layout", ["layout"]]] },
+    { id: "cable", name: "Cable sizing and derating", short: "Cable",
+      blurb: "DC, AC and MV cable against IEC 60364-5-52 and 60502-2. Every derating factor "
+        + "shown with the table row it came from, volt drop, power loss, and the adiabatic "
+        + "short-circuit check. Type the currents — nothing else is needed.",
+      note: "Four tabs. No module, inverter or layout required.",
+      groups: [["Cables", ["cdc", "cac", "cmv", "csc"]]] },
+    { id: "string", name: "String sizing", short: "String",
+      blurb: "Module and inverter in, string length out: the maximum on the coldest morning, "
+        + "the minimum off the full-power knee, and how many strings a device will take. "
+        + "Reads PVsyst .PAN and .OND files directly.",
+      note: "Four tabs. No site, layout or cable work.",
+      groups: [["Technologies", ["module", "inverter"]], ["Calculations", ["string", "clip"]]] },
+    { id: "bess", name: "Battery sizing", short: "Battery",
+      blurb: "A stated requirement worked back through depth of discharge, round-trip losses "
+        + "and auxiliaries to a unit count — or a load profile run hour by hour over a year "
+        + "to find what size is actually worth buying. Takes a half-hourly meter file.",
+      note: "One tab. Weather comes from the preliminary tool if you want a real year.",
+      groups: [["Battery", ["bess"]]] },
+  ];
+  /* Listed on the landing so the direction is visible, but not
+     selectable, because a menu entry that opens an empty tab is worse
+     than no menu entry. */
+  const PLANNED = [
+    { id: "loadflow", name: "Load flow", short: "Load flow",
+      blurb: "Voltage rise along the MV collector at full export, losses per segment, and the "
+        + "reactive power needed to hold the connection inside its limits. The MV tool already "
+        + "carries R and X per size and accumulates current round the ring, so the network is "
+        + "most of the way built.",
+      note: "Not built yet — see the note below." },
+  ];
+  const ws = WORKSPACES.find((w) => w.id === workspace) || WORKSPACES[0];
+  const isPrelim = ws.id === "prelim";
+
+  const GROUPS = isPrelim ? (mount === "roof" ? GROUPS_ROOF : GROUPS_GROUND) : ws.groups;
+  const visGroups = isPrelim && uiMode === "stupid"
     ? GROUPS.filter(([g]) => g === "Layout" || g === "Roof" || g === "Yield & Summary")
         .map(([g, ids]) => [g, ids.filter((i) => i !== "shade")])
     : GROUPS;
   const activeGroup = visGroups.find(([, ids]) => ids.includes(tool)) || visGroups[0];
-  /* Switching mount can strand you on a tool the other mount does not
-     have, so land on the first tool of the new set when that happens. */
+  /* Switching mount or workspace can strand you on a tool the new set
+     does not have, so land on the first tool of that set when it does. */
+  const landOn = (groups, fallback) => {
+    const allowed = groups.flatMap(([, ids]) => ids);
+    if (!allowed.includes(tool)) setTool(fallback || allowed[0]);
+  };
   const switchMount = (m) => {
     setMount(m);
     setBess(m === "roof" ? BESS_ROOF : BESS_GROUND);
-    const allowed = (m === "roof" ? GROUPS_ROOF : GROUPS_GROUND).flatMap(([, ids]) => ids);
-    if (!allowed.includes(tool)) setTool(m === "roof" ? "roof" : "layout");
+    landOn(m === "roof" ? GROUPS_ROOF : GROUPS_GROUND, m === "roof" ? "roof" : "layout");
+  };
+  const switchWorkspace = (id) => {
+    setWorkspace(id);
+    const w = WORKSPACES.find((x) => x.id === id);
+    if (!w) return;
+    const g = w.id === "prelim" ? (mount === "roof" ? GROUPS_ROOF : GROUPS_GROUND) : w.groups;
+    landOn(g, w.id === "prelim" ? (mount === "roof" ? "roof" : "layout") : null);
   };
   const MODES = [
     ["stupid", "Stupid", "Draw a site, type an AC target, read the verdict and cost. Everything else is a sensible default. For anyone."],
@@ -7340,41 +7406,87 @@ export default function App() {
         <span style={{ font: "800 34px system-ui", color: "#000", background: "#f90",
           borderRadius: 8, padding: "0 10px", marginLeft: 3 }}>hub</span>
       </div>
-      {/* Two questions, in the order they matter. What is being designed
-          decides which tools are even relevant; how much detail decides
-          how much of each one shows. */}
-      <div style={{ font: "13px system-ui", color: "#8b95a3" }}>What are you designing?</div>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center", maxWidth: 740 }}>
-        {[["ground", "Ground mount", "An open site: trackers or fixed tilt, row pitch and backtracking, a boundary to tile, an MV collector ring. Utility and large commercial."],
-          ["roof", "Roof mount", "Roof planes at their own tilt and azimuth, area-limited, LV connection only. No MV ring and no field to tile, so those tools are hidden. Residential and commercial rooftop."]].map(([id, name, blurb]) => (
-          <button key={id} onClick={() => { setMount(id); setBess(id === "roof" ? BESS_ROOF : BESS_GROUND);
-            setTool(id === "roof" ? "module" : "module"); }}
-            style={{ width: 290, textAlign: "left", background: "#1c2128", color: "#e8eaed",
-              border: `1px solid ${mount === id ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
-              padding: "14px 15px 12px", cursor: "pointer" }}>
-            <div style={{ font: "700 14px system-ui", color: mount === id ? "#e8820c" : "#cfd6de", marginBottom: 5 }}>
-              {name}{mount === id ? "  ✓" : ""}
+      {/* Step one is which tool you came for, because that decides how
+          much of the application is even relevant. Only the preliminary
+          workspace goes on to ask about mount type and detail level —
+          the standalone tools have nothing to configure. */}
+      {landStep === 0 ? (<>
+        <div style={{ font: "13px system-ui", color: "#8b95a3" }}>What are you here to do?</div>
+        <div style={{ display: "flex", gap: 13, flexWrap: "wrap", justifyContent: "center", maxWidth: 1000 }}>
+          {WORKSPACES.map((w) => (
+            <button key={w.id}
+              onClick={() => { switchWorkspace(w.id); if (w.id === "prelim") setLandStep(1); else setEntered(true); }}
+              style={{ width: 232, textAlign: "left", background: "#1c2128", color: "#e8eaed",
+                border: `1px solid ${w.id === "prelim" ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
+                padding: "15px 15px 13px", cursor: "pointer", display: "flex",
+                flexDirection: "column", gap: 6 }}>
+              <div style={{ font: "700 14.5px system-ui", color: w.id === "prelim" ? "#e8820c" : "#cfd6de" }}>
+                {w.name}
+              </div>
+              <div style={{ font: "11px/1.55 system-ui", color: "#9aa3ae", flex: 1 }}>{w.blurb}</div>
+              <div style={{ font: "10px system-ui", color: "#5c6572", borderTop: "1px solid #2c313b",
+                paddingTop: 6 }}>{w.note}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 13, flexWrap: "wrap", justifyContent: "center", maxWidth: 1000 }}>
+          {PLANNED.map((w) => (
+            <div key={w.id}
+              style={{ width: 232, textAlign: "left", background: "#171a1f", color: "#6b7480",
+                border: "1px dashed #2c313b", borderRadius: 8, padding: "15px 15px 13px",
+                display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ font: "700 14.5px system-ui", color: "#7b8695" }}>
+                {w.name} <span style={{ font: "10px system-ui", color: "#5c6572" }}>— planned</span>
+              </div>
+              <div style={{ font: "11px/1.55 system-ui", color: "#6b7480", flex: 1 }}>{w.blurb}</div>
+              <div style={{ font: "10px system-ui", color: "#4e5663", borderTop: "1px solid #242933",
+                paddingTop: 6 }}>{w.note}</div>
             </div>
-            <div style={{ font: "11px/1.5 system-ui", color: "#9aa3ae" }}>{blurb}</div>
-          </button>
-        ))}
-      </div>
-      <div style={{ font: "13px system-ui", color: "#8b95a3", marginTop: 4 }}>How much detail do you want to work at?</div>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center", maxWidth: 860 }}>
-        {MODES.map(([id, name, blurb]) => (
-          <button key={id} onClick={() => { setUiMode(id); setEntered(true);
-            if (id === "stupid") setTool(mount === "roof" ? "roof" : "layout"); }}
-            style={{ width: 240, textAlign: "left", background: "#1c2128", color: "#e8eaed",
-              border: `1px solid ${uiMode === id ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
-              padding: "16px 16px 14px", cursor: "pointer" }}>
-            <div style={{ font: "700 15px system-ui", color: "#e8820c", marginBottom: 6 }}>{name}</div>
-            <div style={{ font: "11.5px/1.55 system-ui", color: "#9aa3ae" }}>{blurb}</div>
-          </button>
-        ))}
-      </div>
-      <div style={{ font: "10.5px system-ui", color: "#5c6572" }}>
-        Pick the detail level to start. Both choices can be changed any time from the header.
-      </div>
+          ))}
+        </div>
+        <div style={{ font: "10.5px system-ui", color: "#5c6572", maxWidth: 680, textAlign: "center" }}>
+          They share one project, so anything typed in one is still there in another, and you can
+          switch from the header at any time. The preliminary tool is the comprehensive one; the
+          rest are the same engines with only their own inputs on screen, so you do not have to
+          walk the whole workflow to size one cable.
+        </div>
+      </>) : (<>
+        <div style={{ font: "13px system-ui", color: "#8b95a3" }}>What are you designing?</div>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center", maxWidth: 740 }}>
+          {[["ground", "Ground mount", "An open site: trackers or fixed tilt, row pitch and backtracking, a boundary to tile, an MV collector ring. Utility and large commercial."],
+            ["roof", "Roof mount", "Roof planes at their own tilt and azimuth, area-limited, LV connection only. No MV ring and no field to tile, so those tools are hidden. Residential and commercial rooftop."]].map(([id, name, blurb]) => (
+            <button key={id} onClick={() => { setMount(id); setBess(id === "roof" ? BESS_ROOF : BESS_GROUND); }}
+              style={{ width: 290, textAlign: "left", background: "#1c2128", color: "#e8eaed",
+                border: `1px solid ${mount === id ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
+                padding: "14px 15px 12px", cursor: "pointer" }}>
+              <div style={{ font: "700 14px system-ui", color: mount === id ? "#e8820c" : "#cfd6de", marginBottom: 5 }}>
+                {name}{mount === id ? "  ✓" : ""}
+              </div>
+              <div style={{ font: "11px/1.5 system-ui", color: "#9aa3ae" }}>{blurb}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ font: "13px system-ui", color: "#8b95a3", marginTop: 4 }}>How much detail do you want to work at?</div>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center", maxWidth: 860 }}>
+          {MODES.map(([id, name, blurb]) => (
+            <button key={id} onClick={() => { setUiMode(id); setEntered(true);
+              setTool(id === "stupid" ? (mount === "roof" ? "roof" : "layout") : "module"); }}
+              style={{ width: 240, textAlign: "left", background: "#1c2128", color: "#e8eaed",
+                border: `1px solid ${uiMode === id ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
+                padding: "16px 16px 14px", cursor: "pointer" }}>
+              <div style={{ font: "700 15px system-ui", color: "#e8820c", marginBottom: 6 }}>{name}</div>
+              <div style={{ font: "11.5px/1.55 system-ui", color: "#9aa3ae" }}>{blurb}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <button className="btn" onClick={() => setLandStep(0)}
+            style={{ background: "transparent", color: "#8b95a3" }}>← back</button>
+          <span style={{ font: "10.5px system-ui", color: "#5c6572" }}>
+            Pick the detail level to start. Everything can be changed from the header.
+          </span>
+        </div>
+      </>)}
     </div>
   );
 
@@ -7503,20 +7615,29 @@ export default function App() {
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) loadProject(f); e.target.value = ""; }} />
               </label>
             </div>
-            <div style={{ display: "flex", gap: 4, flexShrink: 0, marginRight: 8 }}>
-              {[["ground", "Ground"], ["roof", "Roof"]].map(([m, label]) => (
-                <button key={m} className="btn" title={`${label} mount`} style={mount === m
-                  ? { background: "#3a96e0", borderColor: "#3a96e0", color: "#06121c", fontWeight: 600 } : {}}
-                  onClick={() => switchMount(m)}>{label}</button>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-              {["stupid", "simple", "engineer"].map((m) => (
-                <button key={m} className="btn" style={uiMode === m
-                  ? { background: C.accent, borderColor: C.accent, color: "#181206", fontWeight: 600 } : {}}
-                  onClick={() => { setUiMode(m); if (m === "stupid") setTool(mount === "roof" ? "roof" : "layout"); }}>{m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}</button>
-              ))}
-            </div>
+            <select value={workspace} onChange={(e) => switchWorkspace(e.target.value)}
+              title="Which tool you are working in"
+              style={{ background: "#1c2128", border: `1px solid ${C.line}`, borderRadius: 6,
+                color: C.text, font: "600 12px system-ui", padding: "6px 8px", outline: "none",
+                marginRight: 8, flexShrink: 0 }}>
+              {WORKSPACES.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+            {isPrelim && (<>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0, marginRight: 8 }}>
+                {[["ground", "Ground"], ["roof", "Roof"]].map(([m, label]) => (
+                  <button key={m} className="btn" title={`${label} mount`} style={mount === m
+                    ? { background: "#3a96e0", borderColor: "#3a96e0", color: "#06121c", fontWeight: 600 } : {}}
+                    onClick={() => switchMount(m)}>{label}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                {["stupid", "simple", "engineer"].map((m) => (
+                  <button key={m} className="btn" style={uiMode === m
+                    ? { background: C.accent, borderColor: C.accent, color: "#181206", fontWeight: 600 } : {}}
+                    onClick={() => { setUiMode(m); if (m === "stupid") setTool(mount === "roof" ? "roof" : "layout"); }}>{m === "stupid" ? "Stupid" : m === "simple" ? "Simple" : "Engineer"}</button>
+                ))}
+              </div>
+            </>)}
           </>
         )}
       </div>
@@ -7525,13 +7646,20 @@ export default function App() {
           display: "flex", flexWrap: "wrap", gap: 6, padding: "10px 12px",
           background: "#0d0f12", borderBottom: `1px solid ${C.line}`, flexShrink: 0,
         }}>
-          {[["ground", "Ground mount"], ["roof", "Roof mount"]].map(([m, label]) => (
+          <select value={workspace}
+            onChange={(e) => { switchWorkspace(e.target.value); setMenuOpen(false); }}
+            style={{ background: "#1c2128", border: `1px solid ${C.line}`, borderRadius: 6,
+              color: C.text, font: "600 12px system-ui", padding: "7px 8px", outline: "none",
+              flexBasis: "100%" }}>
+            {WORKSPACES.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+          {isPrelim && [["ground", "Ground mount"], ["roof", "Roof mount"]].map(([m, label]) => (
             <button key={m} className="btn" style={mount === m
               ? { background: "#3a96e0", borderColor: "#3a96e0", color: "#06121c", fontWeight: 600 } : {}}
               onClick={() => { switchMount(m); setMenuOpen(false); }}>{label}</button>
           ))}
           <div style={{ flexBasis: "100%" }} />
-          {["stupid", "simple", "engineer"].map((m) => (
+          {isPrelim && ["stupid", "simple", "engineer"].map((m) => (
             <button key={m} className="btn" style={uiMode === m
               ? { background: C.accent, borderColor: C.accent, color: "#181206", fontWeight: 600 } : {}}
               onClick={() => { setUiMode(m); if (m === "stupid") setTool(mount === "roof" ? "roof" : "layout"); setMenuOpen(false); }}>
@@ -7585,10 +7713,12 @@ export default function App() {
           loc={siteLoc} setLoc={setSiteLoc} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cdc" ? "flex" : "none" }}>
-        <CableDcTab mod={pvMod} elec={elec} st={cables.dc} set={setCable("dc")} />
+        <CableDcTab mod={pvMod} elec={elec} st={cables.dc} set={setCable("dc")}
+          standalone={workspace === "cable"} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cac" ? "flex" : "none" }}>
-        <CableAcTab inv={pvInv} setInv={setPvInv} st={cables.ac} set={setCable("ac")} />
+        <CableAcTab inv={pvInv} setInv={setPvInv} st={cables.ac} set={setCable("ac")}
+          standalone={workspace === "cable"} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cmv" ? "flex" : "none" }}>
         <CableMvTab st={cables.mv} set={setCable("mv")} />

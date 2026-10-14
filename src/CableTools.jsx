@@ -835,7 +835,7 @@ function LvSizing({ kind, table, designCurrent, st, set, firstCode = 3 }) {
   </>);
 }
 
-export function CableDcTab({ mod, elec, st, set }) {
+export function CableDcTab({ mod, elec, st, set, standalone = false }) {
   const isc = st.iscOv ?? mod.isc;
   const imp = st.impOv ?? mod.imp;
   const vmp = st.vmpOv ?? mod.vmp;
@@ -865,23 +865,45 @@ export function CableDcTab({ mod, elec, st, set }) {
         CABLE SIZING — DC STRING / ARRAY (H1Z2Z2-K COPPER, XLPO, 2 LOADED CONDUCTORS)
       </div>
 
-      <Section code="C1" title="Imported values — the only link to the other tools">
-        <Scroll min={640}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <ImportedHead />
-            <tbody>
-              <Imported label="Module Isc" source="Module tab" linked={mod.isc}
-                override={st.iscOv} onOverride={(v) => set({ ...st, iscOv: v })} unit="A" />
-              <Imported label="Module Imp" source="Module tab" linked={mod.imp}
-                override={st.impOv} onOverride={(v) => set({ ...st, impOv: v })} unit="A" />
-              <Imported label="Module Vmp" source="Module tab" linked={mod.vmp}
-                override={st.vmpOv} onOverride={(v) => set({ ...st, vmpOv: v })} unit="V" />
-              <Imported label="Modules in series" source="String sizing" linked={elec.modulesPerString}
-                override={st.nModOv} onOverride={(v) => set({ ...st, nModOv: v })} unit="—" dp={0} />
-            </tbody>
-          </table>
-        </Scroll>
-      </Section>
+      {standalone ? (
+        /* Nothing upstream to import from, so these are plain inputs.
+           Same state underneath, so a project started here still works
+           when opened in the preliminary tool, where they link instead. */
+        <Section code="C1" title="The string">
+          <Num label="Module Isc" unit="A" value={isc} step={0.1}
+            onChange={(v) => set({ ...st, iscOv: v })} />
+          <Num label="Module Imp" unit="A" value={imp} step={0.1}
+            onChange={(v) => set({ ...st, impOv: v })} />
+          <Num label="Module Vmp" unit="V" value={vmp} step={0.5}
+            onChange={(v) => set({ ...st, vmpOv: v })} />
+          <Num label="Modules in series" value={nMod} step={1} min={1}
+            onChange={(v) => set({ ...st, nModOv: v })} />
+          <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+            Four numbers off the module datasheet and the string length you have settled on.
+            Isc sets the design current, Imp and Vmp set the volt drop and the loss. In the
+            preliminary tool these come from the Module and String Sizing tabs instead, and
+            anything typed here carries over.
+          </div>
+        </Section>
+      ) : (
+        <Section code="C1" title="Imported values — the only link to the other tools">
+          <Scroll min={640}>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <ImportedHead />
+              <tbody>
+                <Imported label="Module Isc" source="Module tab" linked={mod.isc}
+                  override={st.iscOv} onOverride={(v) => set({ ...st, iscOv: v })} unit="A" />
+                <Imported label="Module Imp" source="Module tab" linked={mod.imp}
+                  override={st.impOv} onOverride={(v) => set({ ...st, impOv: v })} unit="A" />
+                <Imported label="Module Vmp" source="Module tab" linked={mod.vmp}
+                  override={st.vmpOv} onOverride={(v) => set({ ...st, vmpOv: v })} unit="V" />
+                <Imported label="Modules in series" source="String sizing" linked={elec.modulesPerString}
+                  override={st.nModOv} onOverride={(v) => set({ ...st, nModOv: v })} unit="—" dp={0} />
+              </tbody>
+            </table>
+          </Scroll>
+        </Section>
+      )}
 
       <Section code="C2" title="Design current">
         <Num label="Safety factor" value={st.sf} step={0.05} min={1}
@@ -974,7 +996,7 @@ export function CableDcTab({ mod, elec, st, set }) {
 /* =====================================================================
    2.  AC — inverter to transformer feeder
    ===================================================================== */
-export function CableAcTab({ inv, setInv, st, set }) {
+export function CableAcTab({ inv, setInv, st, set, standalone = false }) {
   const linkedI = inv.acKva && inv.vAc ? (inv.acKva * 1000) / (Math.sqrt(3) * inv.vAc) : null;
   const iDesign = st.iOv ?? (Number.isFinite(linkedI) ? linkedI : 0);
 
@@ -1000,22 +1022,35 @@ export function CableAcTab({ inv, setInv, st, set }) {
         CABLE SIZING — AC INVERTER TO TRANSFORMER (ALUMINIUM XLPE, THREE SINGLE-CORES IN TREFOIL)
       </div>
 
-      <Section code="C1" title="Imported values and design current">
-        <Scroll min={640}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <ImportedHead />
-            <tbody>
-              <Imported label="Inverter AC current" source="Inverter tab — S / (√3 × V)"
-                linked={linkedI} override={st.iOv} onOverride={(v) => set({ ...st, iOv: v })} unit="A" />
-            </tbody>
-          </table>
-        </Scroll>
+      <Section code="C1" title={standalone ? "The circuit" : "Imported values and design current"}>
+        {standalone ? (
+          <Num label="Design current" unit="A" value={iDesign} step={1}
+            onChange={(v) => set({ ...st, iOv: v })} />
+        ) : (
+          <Scroll min={640}>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <ImportedHead />
+              <tbody>
+                <Imported label="Inverter AC current" source="Inverter tab — S / (√3 × V)"
+                  linked={linkedI} override={st.iOv} onOverride={(v) => set({ ...st, iOv: v })} unit="A" />
+              </tbody>
+            </table>
+          </Scroll>
+        )}
         <div className="readout">
-          The linked figure is the rated apparent power divided by √3 × line voltage. Use the
-          override for the datasheet's <b>maximum</b> output current instead, which is what
-          IEC 62548 and most grid codes want — it is typically a few per cent above the rating
-          because the inverter is allowed to run at leading or lagging power factor, and the
-          current, not the power, is what heats the cable.
+          {standalone ? <>
+            Use the inverter datasheet&#39;s <b>maximum</b> output current, not the figure implied
+            by its rating — it is typically a few per cent higher, because the device is allowed
+            to run at leading or lagging power factor, and the current, not the power, is what
+            heats the cable. In the preliminary tool this is computed from the Inverter tab as
+            S / (√3 × V) and offered as a link.
+          </> : <>
+            The linked figure is the rated apparent power divided by √3 × line voltage. Use the
+            override for the datasheet&#39;s <b>maximum</b> output current instead, which is what
+            IEC 62548 and most grid codes want — it is typically a few per cent above the rating
+            because the inverter is allowed to run at leading or lagging power factor, and the
+            current, not the power, is what heats the cable.
+          </>}
         </div>
         <Num label="Inverter AC line voltage" unit="V" value={inv.vAc || 0} step={5}
           onChange={(v) => setInv({ ...inv, vAc: v })} />
