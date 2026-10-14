@@ -324,23 +324,23 @@ export function RoofDesignerTab({ mod, inv, elec, st, set }) {
         <div style={{ width: "100%", display: "flex", gap: 9, flexWrap: "wrap", marginTop: 2 }}>
           <div style={{ background: C.panel2, border: `1px solid ${lastDriver === "pitch" ? "#e8820c" : C.line}`,
             borderRadius: 6, padding: "7px 11px" }}>
-            <div style={{ font: "10px system-ui", color: C.muted }}>Driving</div>
+            <div style={{ font: "10.5px system-ui", color: C.muted }}>Driving</div>
             <div style={{ font: "650 13px var(--mono)", color: lastDriver === "pitch" ? "#e8820c" : C.text }}>
               {lastDriver === "pitch" ? "pitch → nodes" : "nodes → pitch"}
             </div>
           </div>
           {fitted && (<>
             <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 11px" }}>
-              <div style={{ font: "10px system-ui", color: C.muted }}>Fitted pitch</div>
+              <div style={{ font: "10.5px system-ui", color: C.muted }}>Fitted pitch</div>
               <div style={{ font: "650 13px var(--mono)", color: C.text }}>{fmt(fitted.pitch, 2)}°</div>
             </div>
             <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 11px" }}>
-              <div style={{ font: "10px system-ui", color: C.muted }}>Fitted azimuth</div>
+              <div style={{ font: "10.5px system-ui", color: C.muted }}>Fitted azimuth</div>
               <div style={{ font: "650 13px var(--mono)", color: C.text }}>{fmt(fitted.azimuth, 1)}°</div>
             </div>
             <div style={{ background: C.panel2,
               border: `1px solid ${fitted.planar ? "#4fb06a" : "#e0a63a"}`, borderRadius: 6, padding: "7px 11px" }}>
-              <div style={{ font: "10px system-ui", color: C.muted }}>Flatness</div>
+              <div style={{ font: "10.5px system-ui", color: C.muted }}>Flatness</div>
               <div style={{ font: "650 13px var(--mono)", color: fitted.planar ? "#8fd6a3" : "#e8c07a" }}>
                 {fitted.planar ? "planar" : `${fmt(fitted.residual * 1000, 0)} mm out`}
               </div>
@@ -457,9 +457,9 @@ export function RoofDesignerTab({ mod, inv, elec, st, set }) {
             ["Coverage", fmt((fill.coverage || 0) * 100, 0), "% of plan"]].map(([l, v, un]) => (
             <div key={l} style={{ background: C.panel2, border: `1px solid ${C.line}`,
               borderRadius: 6, padding: "8px 11px", minWidth: 104 }}>
-              <div style={{ font: "10px system-ui", color: C.muted }}>{l}</div>
+              <div style={{ font: "10.5px system-ui", color: C.muted }}>{l}</div>
               <div style={{ font: "650 16px var(--mono)", color: C.text }}>
-                {v}<span style={{ font: "10px system-ui", color: C.muted }}> {un}</span>
+                {v}<span style={{ font: "10.5px system-ui", color: C.muted }}> {un}</span>
               </div>
             </div>
           ))}

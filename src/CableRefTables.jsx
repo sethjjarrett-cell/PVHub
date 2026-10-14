@@ -50,7 +50,7 @@ const cellStyle = (state) => ({
 
 const headStyle = {
   padding: "5px 9px", borderBottom: `1px solid ${C.line}`, textAlign: "right",
-  font: "600 9.5px system-ui", textTransform: "uppercase", letterSpacing: "0.06em",
+  font: "600 10.5px system-ui", textTransform: "uppercase", letterSpacing: "0.06em",
   color: C.muted, whiteSpace: "nowrap",
 };
 
@@ -74,7 +74,7 @@ export function RefCard({ title, source, note, open: openInit = true, emphasis =
       }}>
         <span style={{ font: "600 12px system-ui", color: C.text }}>{title}</span>
         <span style={{ font: "10.5px system-ui", color: C.muted, flex: 1 }}>{source}</span>
-        <span style={{ color: C.muted, fontSize: 10 }}>{open ? "▴ hide" : "▾ show"}</span>
+        <span style={{ color: C.muted, fontSize: 10.5 }}>{open ? "▴ hide" : "▾ show"}</span>
       </button>
       {open && (
         <div style={{ padding: "0 11px 11px" }}>
@@ -269,13 +269,13 @@ function Chip({ label, value, state, sub, was }) {
       background: col ? col.bg : C.panel2, border: `1px solid ${col ? col.line : C.line}`,
       borderRadius: 6, padding: "6px 10px", minWidth: 78, textAlign: "center",
     }}>
-      <div style={{ font: "10px system-ui", color: C.muted, letterSpacing: "0.03em" }}>{label}</div>
+      <div style={{ font: "10.5px system-ui", color: C.muted, letterSpacing: "0.03em" }}>{label}</div>
       <div style={{ font: "650 15px var(--mono)", color: col ? col.text : C.text }}>{value}</div>
       {was !== null && was !== undefined && (
-        <div style={{ font: "9.5px var(--mono)", color: HL.bypassed.text,
+        <div style={{ font: "10.5px var(--mono)", color: HL.bypassed.text,
           textDecoration: "line-through", marginTop: 1 }}>{was}</div>
       )}
-      {sub && <div style={{ font: "9.5px system-ui", color: C.muted, marginTop: 1 }}>{sub}</div>}
+      {sub && <div style={{ font: "10.5px system-ui", color: C.muted, marginTop: 1 }}>{sub}</div>}
     </div>
   );
 }

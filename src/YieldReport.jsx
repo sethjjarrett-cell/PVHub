@@ -41,7 +41,7 @@ function Source({ name, what, st, onPull, children }) {
       <div style={{ flex: "1 1 240px", minWidth: 200 }}>
         <div style={{ font: "600 12px system-ui", color: C.text }}>
           {name}
-          <span style={{ font: "600 9.5px system-ui", color: tone, marginLeft: 8,
+          <span style={{ font: "600 10.5px system-ui", color: tone, marginLeft: 8,
             letterSpacing: "0.07em", textTransform: "uppercase" }}>
             {st.state === "busy" ? "fetching" : st.state === "ok" ? "loaded"
               : st.state === "err" ? "unavailable" : "not pulled"}
@@ -74,7 +74,7 @@ function MonthlyBars({ monthly, mwp }) {
           <line x1={L} y1={B - f * (B - T)} x2={R} y2={B - f * (B - T)}
             stroke={f === 0 ? C.gridMajor : C.grid} strokeWidth="1" />
           <text x={L - 6} y={B - f * (B - T) + 3} textAnchor="end" fill={C.muted}
-            style={{ font: "9.5px var(--mono)" }}>{fmt(max * f, 0)}</text>
+            style={{ font: "10.5px var(--mono)" }}>{fmt(max * f, 0)}</text>
         </g>
       ))}
       {vals.map((v, i) => (
@@ -82,10 +82,10 @@ function MonthlyBars({ monthly, mwp }) {
           <rect x={L + i * bw + bw * 0.18} y={B - (v / max) * (B - T)}
             width={bw * 0.64} height={(v / max) * (B - T)} fill={C.accent} opacity="0.85" rx="2" />
           <text x={L + i * bw + bw / 2} y={B + 14} textAnchor="middle" fill={C.muted}
-            style={{ font: "9.5px system-ui" }}>{MONTHS[i]}</text>
+            style={{ font: "10.5px system-ui" }}>{MONTHS[i]}</text>
         </g>
       ))}
-      <text x={L} y={T - 2} fill={C.muted} style={{ font: "9.5px system-ui" }}>MWh per month</text>
+      <text x={L} y={T - 2} fill={C.muted} style={{ font: "10.5px system-ui" }}>MWh per month</text>
     </svg>
   );
 }
@@ -114,7 +114,7 @@ function TradeCurve({ rows, chosen }) {
         <g key={r.pitch}>
           <line x1={x(r.pitch)} y1={T} x2={x(r.pitch)} y2={B} stroke={C.grid} strokeWidth="1" />
           <text x={x(r.pitch)} y={B + 14} textAnchor="middle" fill={C.muted}
-            style={{ font: "9.5px var(--mono)" }}>{fmt(r.pitch, 1)}</text>
+            style={{ font: "10.5px var(--mono)" }}>{fmt(r.pitch, 1)}</text>
         </g>
       ))}
       <polyline fill="none" stroke={C.accent} strokeWidth="2"
@@ -128,12 +128,12 @@ function TradeCurve({ rows, chosen }) {
         <line x1={x(best.pitch)} y1={T} x2={x(best.pitch)} y2={B}
           stroke="#59b56f" strokeWidth="1.4" strokeDasharray="4 3" />
         <text x={x(best.pitch)} y={T + 10} textAnchor="middle" fill="#7fc78f"
-          style={{ font: "600 10px var(--mono)" }}>best value {fmt(best.pitch, 1)} m</text>
+          style={{ font: "600 10.5px var(--mono)" }}>best value {fmt(best.pitch, 1)} m</text>
       </g>
       <text x={(L + R) / 2} y={H - 6} textAnchor="middle" fill={C.muted}
-        style={{ font: "10px system-ui" }}>Row pitch (m)</text>
+        style={{ font: "10.5px system-ui" }}>Row pitch (m)</text>
       <text x="12" y={(T + B) / 2} textAnchor="middle" fill={C.muted}
-        transform={`rotate(-90 12 ${(T + B) / 2})`} style={{ font: "10px system-ui" }}>
+        transform={`rotate(-90 12 ${(T + B) / 2})`} style={{ font: "10.5px system-ui" }}>
         Net value vs tightest pitch
       </text>
     </svg>
@@ -420,7 +420,7 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
                     "Yield/kWp", "Energy MWh/yr", "Cable LV+MV",
                     "Extra cable", "Extra capex", `Net over ${fmt(st.years, 0)} yr`, ""].map((h) => (
                     <th key={h} style={{ padding: "6px 9px", borderBottom: `1px solid ${C.line}`,
-                      textAlign: "left", font: "600 9.5px system-ui", textTransform: "uppercase",
+                      textAlign: "left", font: "600 10.5px system-ui", textTransform: "uppercase",
                       letterSpacing: "0.07em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr></thead>
@@ -458,7 +458,7 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
                           color: r.netGain > 0 ? "#59b56f" : r.netGain < 0 ? "#d67070" : C.muted }}>
                           <b>{r.netGain >= 0 ? "+" : ""}{rates.cur}{fmt(r.netGain, 0)}k</b>
                         </td>
-                        <td style={{ padding: "5px 9px", font: "10px system-ui", color: C.muted }}>
+                        <td style={{ padding: "5px 9px", font: "10.5px system-ui", color: C.muted }}>
                           {isBest ? "★ best value" : ""}{isBest && isNow ? " · " : ""}{isNow ? "in use" : ""}
                         </td>
                       </tr>

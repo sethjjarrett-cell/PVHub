@@ -109,6 +109,99 @@ function useNarrow(bp = 900) {
 const COARSE = typeof window !== "undefined" &&
   window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
+
+/* =====================================================================
+   ROWS  —  a table on a desk, cards on a phone
+
+   A twelve-column table does not become usable on a 390 px screen by
+   gaining a horizontal scrollbar. It becomes a table whose first four
+   columns you can see and whose remaining eight you will never look at,
+   which is worse than useless when the columns you cannot see are the
+   ones that matter — the pricing date on a quote, the verdict on a
+   cable, the module count on a roof plane.
+
+   So below the breakpoint each row becomes a card: the primary column
+   as its heading, every other column as a labelled line. Nothing is
+   hidden, nothing needs scrolling sideways, and the labels that were
+   column headings are now beside their values where they can be read.
+
+   `cols` is [{ key, label, align, render, hideNarrow }]. `render(row,
+   index)` returns a node; without it the row's own `key` is printed.
+   ===================================================================== */
+function Rows({ cols, rows, keyOf, primary = 0, rowStyle, min = 700, foot = null, empty = null }) {
+  const narrow = useNarrow(760);
+  if (!rows.length && empty) return empty;
+
+  if (narrow) {
+    return (
+      <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((r, i) => {
+          const extra = rowStyle ? rowStyle(r, i) : null;
+          const head = cols[primary];
+          return (
+            <div key={keyOf ? keyOf(r, i) : i} style={{
+              background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 7,
+              padding: "9px 11px", ...extra,
+            }}>
+              <div style={{ font: "650 13.5px var(--mono)", color: C.text, marginBottom: 6 }}>
+                {head.render ? head.render(r, i) : r[head.key]}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" }}>
+                {cols.map((c, ci) => {
+                  if (ci === primary || c.hideNarrow) return null;
+                  const v = c.render ? c.render(r, i) : r[c.key];
+                  if (v === null || v === undefined || v === "") return null;
+                  return (
+                    <React.Fragment key={c.key || ci}>
+                      <span style={{ font: "11px system-ui", color: C.muted, whiteSpace: "nowrap" }}>
+                        {c.label}
+                      </span>
+                      <span style={{ font: "12.5px var(--mono)", color: C.text, textAlign: "left",
+                        overflowWrap: "anywhere" }}>{v}</span>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {foot && (
+          <div style={{ background: C.panel2, border: `2px solid ${C.line}`, borderRadius: 7,
+            padding: "9px 11px" }}>{foot}</div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: min }}>
+        <thead><tr>
+          {cols.map((c, ci) => (
+            <th key={c.key || ci} style={{ padding: "5px 9px", borderBottom: `1px solid ${C.line}`,
+              textAlign: c.align || "right", font: "600 10.5px system-ui", textTransform: "uppercase",
+              letterSpacing: "0.05em", color: C.muted, whiteSpace: "nowrap" }}>{c.label}</th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={keyOf ? keyOf(r, i) : i}
+              style={{ borderTop: `1px solid ${C.line}`, ...(rowStyle ? rowStyle(r, i) : null) }}>
+              {cols.map((c, ci) => (
+                <td key={c.key || ci} style={{ padding: "4px 9px", font: "12px var(--mono)",
+                  textAlign: c.align || "right", color: C.text }}>
+                  {c.render ? c.render(r, i) : r[c.key]}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {foot}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Working({ n, title, formula, sub, result, unit, why, status }) {
   return (
     <div className="wk">
@@ -163,5 +256,5 @@ function Page({ children, wide }) {
 export {
   fmt, fmtDim, fmtKm, fmtArea, areaUnit, areaVal,
   C, Num, Sel, Section, WarnList, useNarrow, COARSE,
-  Working, NumS, NumO, Page,
+  Working, NumS, NumO, Page, Rows,
 };

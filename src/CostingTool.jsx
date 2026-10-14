@@ -11,7 +11,7 @@
    ===================================================================== */
 
 import React, { useMemo, useState } from "react";
-import { fmt, C, Num, Sel, Section, Page, Working } from "./ui.jsx";
+import { fmt, C, Num, Sel, Section, Page, Working, Rows, useNarrow } from "./ui.jsx";
 import {
   REGIONS, regionById, COST_LINES, SOURCES, emptyQuote,
   quoteAgeMonths, stalenessOf, escalate, quoteAt, deriveIndices,
@@ -23,7 +23,7 @@ const TONE = { ok: "#4fb06a", warn: "#e0a63a", bad: "#d64545" };
 const Stat = ({ label, value, unit, tone }) => (
   <div style={{ background: C.panel2, border: `1px solid ${tone || C.line}`, borderRadius: 6,
     padding: "8px 11px", minWidth: 112 }}>
-    <div style={{ font: "10px system-ui", color: C.muted }}>{label}</div>
+    <div style={{ font: "10.5px system-ui", color: C.muted }}>{label}</div>
     <div style={{ font: "650 17px var(--mono)", color: tone || C.text }}>
       {value}<span style={{ font: "10.5px system-ui", color: C.muted }}> {unit}</span>
     </div>
@@ -31,13 +31,14 @@ const Stat = ({ label, value, unit, tone }) => (
 );
 
 const AgeChip = ({ st }) => (
-  <span style={{ font: "10px system-ui", padding: "2px 7px", borderRadius: 4,
+  <span style={{ font: "10.5px system-ui", padding: "2px 7px", borderRadius: 4,
     background: `${TONE[st.tone]}22`, color: TONE[st.tone], border: `1px solid ${TONE[st.tone]}66` }}>
     {st.months === null ? "no date" : `${st.months} mo · ${st.label}`}
   </span>
 );
 
 export function CostingTab({ st, set, kWpHint, yieldHint }) {
+  const narrow = useNarrow(760);
   const [editing, setEditing] = useState(null);
   const [csvMsg, setCsvMsg] = useState(null);
   const asOf = new Date();
@@ -179,58 +180,48 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
             number in it, which is the correct state rather than a broken one.
           </div>
         ) : (
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 940 }}>
-              <thead><tr>
-                {["", "Name", "Project", "Country", "Region", "Priced", "Age", "Ccy",
-                  "Source", "Basis MWp", `Capex /Wp`, ""].map((h) => (
-                  <th key={h} style={{ padding: "5px 8px", borderBottom: `1px solid ${C.line}`,
-                    textAlign: "left", font: "600 9.5px system-ui", textTransform: "uppercase",
-                    letterSpacing: "0.05em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {quotes.map((q) => {
-                  const stale = stalenessOf(q, asOf);
-                  const at = quoteAt(q, q.kWpBasis || st.kWp || 0, { lumpMode: "asQuoted" });
-                  const on = q.id === st.selectedId;
-                  return (
-                    <tr key={q.id} style={{ borderTop: `1px solid ${C.line}`,
-                      background: on ? "rgba(232,130,12,0.10)" : "transparent" }}>
-                      <td style={{ padding: "4px 8px" }}>
-                        <input type="radio" checked={on} onChange={() => set({ ...st, selectedId: q.id })}
-                          style={{ accentColor: C.accent }} />
-                      </td>
-                      <td style={{ padding: "4px 8px", font: "12px var(--mono)", color: C.text }}>{q.name || "—"}</td>
-                      <td style={{ padding: "4px 8px", font: "11.5px system-ui", color: C.muted }}>{q.project || "—"}</td>
-                      <td style={{ padding: "4px 8px", font: "11.5px system-ui", color: C.muted }}>{q.country || "—"}</td>
-                      <td style={{ padding: "4px 8px", font: "11.5px system-ui", color: C.muted }}>
-                        {regionById(q.regionId).name}</td>
-                      <td style={{ padding: "4px 8px", font: "12px var(--mono)", color: C.text }}>{q.datePriced || "—"}</td>
-                      <td style={{ padding: "4px 8px" }}><AgeChip st={stale} /></td>
-                      <td style={{ padding: "4px 8px", font: "12px var(--mono)", color: C.muted }}>{q.currency}</td>
-                      <td style={{ padding: "4px 8px", font: "11.5px system-ui", color: C.muted }}>
-                        {SOURCES.find((s) => s.value === q.source)?.label || q.source}</td>
-                      <td style={{ padding: "4px 8px", font: "12px var(--mono)", color: C.muted }}>
-                        {q.kWpBasis ? fmt(q.kWpBasis / 1000, 1) : "—"}</td>
-                      <td style={{ padding: "4px 8px", font: "12px var(--mono)", color: C.accent }}>
-                        {q.kWpBasis ? `${q.symbol || ""}${fmt(at.perWp, 3)}` : "—"}</td>
-                      <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>
-                        <button className="btn" style={{ padding: "2px 7px" }}
-                          onClick={() => setEditing(editing === q.id ? null : q.id)}>
-                          {editing === q.id ? "close" : "edit"}
-                        </button>
-                        <button className="btn" style={{ padding: "2px 7px", marginLeft: 4 }}
-                          onClick={() => dupQuote(q)}>copy</button>
-                        <button className="btn" style={{ padding: "2px 7px", marginLeft: 4 }}
-                          onClick={() => delQuote(q.id)}>✕</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Rows min={940} keyOf={(q) => q.id}
+            rows={quotes}
+            rowStyle={(q) => (q.id === st.selectedId
+              ? { background: "rgba(232,130,12,0.10)", borderColor: C.accent } : null)}
+            cols={[
+              { key: "pick", label: "", align: "left", render: (q) => (
+                <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
+                  <input type="radio" checked={q.id === st.selectedId}
+                    onChange={() => set({ ...st, selectedId: q.id })}
+                    style={{ accentColor: C.accent }} />
+                  <span style={{ font: "650 13.5px var(--mono)", color: C.text }}>
+                    {q.name || "unnamed"}
+                  </span>
+                </label>
+              ) },
+              { key: "project", label: "Project", align: "left", render: (q) => q.project || "—" },
+              { key: "country", label: "Country", align: "left", render: (q) => q.country || "—" },
+              { key: "region", label: "Region", align: "left", render: (q) => regionById(q.regionId).name },
+              { key: "datePriced", label: "Priced", render: (q) => q.datePriced || "—" },
+              { key: "age", label: "Age", render: (q) => <AgeChip st={stalenessOf(q, asOf)} /> },
+              { key: "currency", label: "Currency", render: (q) => q.currency },
+              { key: "source", label: "Source", align: "left",
+                render: (q) => SOURCES.find((x) => x.value === q.source)?.label || q.source },
+              { key: "basis", label: "Priced at", render: (q) => (q.kWpBasis ? `${fmt(q.kWpBasis / 1000, 1)} MWp` : "—") },
+              { key: "perWp", label: "Capex /Wp", render: (q) => (q.kWpBasis
+                ? <span style={{ color: C.accent }}>
+                    {q.symbol || ""}{fmt(quoteAt(q, q.kWpBasis, { lumpMode: "asQuoted" }).perWp, 3)}
+                  </span>
+                : "—") },
+              { key: "act", label: "", render: (q) => (
+                <span style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn" style={{ padding: "3px 9px" }}
+                    onClick={() => setEditing(editing === q.id ? null : q.id)}>
+                    {editing === q.id ? "close" : "edit"}
+                  </button>
+                  <button className="btn" style={{ padding: "3px 9px", marginLeft: 5 }}
+                    onClick={() => dupQuote(q)}>copy</button>
+                  <button className="btn" style={{ padding: "3px 9px", marginLeft: 5 }}
+                    onClick={() => delQuote(q.id)}>remove</button>
+                </span>
+              ) },
+            ]} />
         )}
 
         {editing && quotes.find((q) => q.id === editing) && (() => {
@@ -245,7 +236,7 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
                 {[["name", "Name"], ["project", "Project"], ["country", "Country"],
                   ["incoterm", "Incoterm / delivery basis"]].map(([k, label]) => (
                   <label key={k} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <span style={{ font: "10px system-ui", color: C.muted }}>{label}</span>
+                    <span style={{ font: "10.5px system-ui", color: C.muted }}>{label}</span>
                     <input value={q[k] || ""} onChange={(e) => updQuote(q.id, { [k]: e.target.value })}
                       style={{ width: 150, background: C.panel, border: `1px solid ${C.line}`,
                         borderRadius: 4, color: C.text, font: "12px var(--mono)",
@@ -253,7 +244,7 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
                   </label>
                 ))}
                 <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <span style={{ font: "10px system-ui", color: C.muted }}>Date priced</span>
+                  <span style={{ font: "10.5px system-ui", color: C.muted }}>Date priced</span>
                   <input type="date" value={q.datePriced || ""}
                     onChange={(e) => updQuote(q.id, { datePriced: e.target.value })}
                     style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 4,
@@ -280,7 +271,7 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
               <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
                 {COST_LINES.map((l) => (
                   <label key={l.id} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <span style={{ font: "10px system-ui", color: l.unit === "lump" ? C.accent : C.muted }}>
+                    <span style={{ font: "10.5px system-ui", color: l.unit === "lump" ? C.accent : C.muted }}>
                       {l.label}{l.unit === "lump" ? " (lump)" : ""}
                     </span>
                     <input type="number" value={q.lines?.[l.id] ?? 0}
@@ -293,7 +284,7 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
                 ))}
               </div>
               <label style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 9 }}>
-                <span style={{ font: "10px system-ui", color: C.muted }}>Notes — scope, exclusions, who gave it</span>
+                <span style={{ font: "10.5px system-ui", color: C.muted }}>Notes — scope, exclusions, who gave it</span>
                 <textarea value={q.notes || ""} onChange={(e) => updQuote(q.id, { notes: e.target.value })}
                   rows={2} style={{ width: "100%", background: C.panel, border: `1px solid ${C.line}`,
                     borderRadius: 4, color: C.text, font: "11.5px system-ui", padding: "6px 8px",
@@ -389,57 +380,51 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
         </Section>
 
         <Section code="K4" title="Capex, line by line">
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
-              <thead><tr>
-                {["Line", "Quoted", "Applied", "Scaling", `Amount ${sym}`, "% of capex"].map((h) => (
-                  <th key={h} style={{ padding: "5px 9px", borderBottom: `1px solid ${C.line}`,
-                    textAlign: "right", font: "600 9.5px system-ui", textTransform: "uppercase",
-                    letterSpacing: "0.05em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {result?.capex.lines.map((l) => {
-                  const orig = applied?.escalatedFrom?.lines?.[l.id];
-                  const esc = orig !== undefined && Math.abs(orig - l.quoted) > 1e-12;
-                  return (
-                    <tr key={l.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                      <td style={{ padding: "4px 9px", font: "11.5px system-ui", color: C.text, textAlign: "left" }}>
-                        {l.label}{l.unit === "lump" ? <span style={{ color: C.accent }}> (lump)</span> : ""}
-                      </td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", textAlign: "right", color: C.muted }}>
-                        {esc && <span style={{ textDecoration: "line-through", opacity: 0.7, marginRight: 6 }}>
-                          {fmt(orig, l.unit === "lump" ? 0 : 4)}</span>}
-                        {fmt(l.quoted, l.unit === "lump" ? 0 : 4)}
-                      </td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", textAlign: "right", color: C.text }}>
-                        {fmt(l.applied, l.unit === "lump" ? 0 : 4)}
-                      </td>
-                      <td style={{ padding: "4px 9px", font: "10.5px system-ui", textAlign: "right", color: C.muted }}>
-                        {l.scaling || "per Wp"}
-                      </td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", textAlign: "right", color: C.text }}>
-                        {fmt(l.amount, 0)}
-                      </td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", textAlign: "right", color: C.muted }}>
-                        {result.capex.capex > 0 ? `${fmt((l.amount / result.capex.capex) * 100, 1)}%` : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr style={{ borderTop: `2px solid ${C.line}` }}>
-                  <td style={{ padding: "5px 9px", font: "600 12px system-ui", color: C.text }}>Total</td>
-                  <td colSpan={3} />
-                  <td style={{ padding: "5px 9px", font: "650 13px var(--mono)", textAlign: "right", color: C.accent }}>
-                    {fmt(result?.capex.capex ?? 0, 0)}
-                  </td>
-                  <td style={{ padding: "5px 9px", font: "12px var(--mono)", textAlign: "right", color: C.muted }}>
-                    {money(result?.capex.perWp ?? 0, 3)}/Wp
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <Rows min={620} rows={result?.capex.lines || []} keyOf={(l) => l.id}
+            cols={[
+              { key: "label", label: "Line", align: "left", render: (l) => (
+                <>{l.label}{l.unit === "lump" ? <span style={{ color: C.accent }}> (lump)</span> : ""}</>
+              ) },
+              { key: "quoted", label: "Quoted", render: (l) => {
+                const orig = applied?.escalatedFrom?.lines?.[l.id];
+                const esc = orig !== undefined && Math.abs(orig - l.quoted) > 1e-12;
+                return (
+                  <span style={{ color: C.muted }}>
+                    {esc && <span style={{ textDecoration: "line-through", opacity: 0.7, marginRight: 6 }}>
+                      {fmt(orig, l.unit === "lump" ? 0 : 4)}</span>}
+                    {fmt(l.quoted, l.unit === "lump" ? 0 : 4)}
+                  </span>
+                );
+              } },
+              { key: "applied", label: "Applied", render: (l) => fmt(l.applied, l.unit === "lump" ? 0 : 4) },
+              { key: "scaling", label: "Scaling", render: (l) => (
+                <span style={{ color: C.muted }}>{l.scaling || "per Wp"}</span>) },
+              { key: "amount", label: `Amount ${sym}`, render: (l) => fmt(l.amount, 0) },
+              { key: "share", label: "% of capex", render: (l) => (result.capex.capex > 0
+                ? `${fmt((l.amount / result.capex.capex) * 100, 1)}%` : "—") },
+            ]}
+            foot={narrow ? (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ font: "600 12.5px system-ui", color: C.text }}>Total</span>
+                <span style={{ font: "650 15px var(--mono)", color: C.accent }}>
+                  {fmt(result?.capex.capex ?? 0, 0)} {sym}
+                  <span style={{ font: "11px system-ui", color: C.muted }}>
+                    {" "}· {money(result?.capex.perWp ?? 0, 3)}/Wp
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <tr style={{ borderTop: `2px solid ${C.line}` }}>
+                <td style={{ padding: "5px 9px", font: "600 12px system-ui", color: C.text }}>Total</td>
+                <td colSpan={3} />
+                <td style={{ padding: "5px 9px", font: "650 13px var(--mono)", textAlign: "right", color: C.accent }}>
+                  {fmt(result?.capex.capex ?? 0, 0)}
+                </td>
+                <td style={{ padding: "5px 9px", font: "12px var(--mono)", textAlign: "right", color: C.muted }}>
+                  {money(result?.capex.perWp ?? 0, 3)}/Wp
+                </td>
+              </tr>
+            )} />
         </Section>
 
         <Section code="K5" title="Operating cost and the money">
@@ -514,35 +499,21 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
             {comparison?.warnings.map((w, i) => (
               <div key={i} className="warn" style={{ width: "100%" }}>&#9888; {w}</div>
             ))}
-            <div style={{ width: "100%", overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 680 }}>
-                <thead><tr>
-                  {["Quote", "Region", "Priced", "Age", "Ccy", "Capex/Wp", "Discount", "LCOE"].map((h) => (
-                    <th key={h} style={{ padding: "5px 9px", borderBottom: `1px solid ${C.line}`,
-                      textAlign: "left", font: "600 9.5px system-ui", textTransform: "uppercase",
-                      letterSpacing: "0.05em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {comparison?.rows.map((r, i) => (
-                    <tr key={r.quote.id} style={{ borderTop: `1px solid ${C.line}`,
-                      background: i === 0 ? "rgba(79,176,106,0.10)" : "transparent" }}>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", color: C.text }}>{r.quote.name || "—"}</td>
-                      <td style={{ padding: "4px 9px", font: "11.5px system-ui", color: C.muted }}>{r.region.name}</td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", color: C.muted }}>{r.quote.datePriced}</td>
-                      <td style={{ padding: "4px 9px" }}><AgeChip st={r.staleness} /></td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", color: C.muted }}>{r.currency}</td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", color: C.text }}>
-                        {r.symbol}{fmt(r.perWp, 3)}</td>
-                      <td style={{ padding: "4px 9px", font: "12px var(--mono)", color: C.muted }}>{fmt(r.rate, 1)}%</td>
-                      <td style={{ padding: "4px 9px", font: "650 12px var(--mono)",
-                        color: i === 0 ? TONE.ok : C.text }}>
-                        {r.lcoe ? `${r.symbol}${fmt(r.lcoe, 4)}` : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Rows min={680} rows={comparison?.rows || []} keyOf={(r) => r.quote.id}
+              rowStyle={(r, i) => (i === 0 ? { background: "rgba(79,176,106,0.10)" } : null)}
+              cols={[
+                { key: "name", label: "Quote", align: "left", render: (r) => r.quote.name || "—" },
+                { key: "region", label: "Region", align: "left", render: (r) => r.region.name },
+                { key: "priced", label: "Priced", render: (r) => r.quote.datePriced },
+                { key: "age", label: "Age", render: (r) => <AgeChip st={r.staleness} /> },
+                { key: "ccy", label: "Currency", render: (r) => r.currency },
+                { key: "perWp", label: "Capex /Wp", render: (r) => `${r.symbol}${fmt(r.perWp, 3)}` },
+                { key: "rate", label: "Discount", render: (r) => `${fmt(r.rate, 1)}%` },
+                { key: "lcoe", label: "LCOE", render: (r, i) => (
+                  <b style={{ color: i === 0 ? TONE.ok : C.text }}>
+                    {r.lcoe ? `${r.symbol}${fmt(r.lcoe, 4)}` : "—"}
+                  </b>) },
+              ]} />
             <div className="readout" style={{ width: "100%", font: "10.5px/1.6 system-ui" }}>
               Every row is the same plant size and yield, so the differences are the quote, the
               region's physical assumptions and its discount rate — not the project. That is
@@ -572,7 +543,7 @@ export function CostingTab({ st, set, kWpHint, yieldHint }) {
                   {derive.lines.filter((l) => l.ratio !== null).map((l) => (
                     <div key={l.id} style={{ background: C.panel2, border: `1px solid ${C.line}`,
                       borderRadius: 6, padding: "6px 10px", minWidth: 120 }}>
-                      <div style={{ font: "10px system-ui", color: C.muted }}>{l.label}</div>
+                      <div style={{ font: "10.5px system-ui", color: C.muted }}>{l.label}</div>
                       <div style={{ font: "650 14px var(--mono)",
                         color: l.ratio > 1 ? TONE.warn : TONE.ok }}>
                         ×{fmt(l.ratio, 2)}

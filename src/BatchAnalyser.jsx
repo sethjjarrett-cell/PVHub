@@ -40,7 +40,7 @@ function Frame({ w, h, m, xTicks, yTicks, xLabel, yLabel, fmtX, fmtY, children }
       {yTicks.map((t) => (
         <g key={`y${t.v}`}>
           <line x1={x0} y1={t.p} x2={x1} y2={t.p} stroke={t.zero ? C.gridMajor : C.grid} strokeWidth="1" />
-          <text x={x0 - 6} y={t.p + 3} textAnchor="end" fill={C.muted} style={{ font: "9.5px var(--mono)" }}>
+          <text x={x0 - 6} y={t.p + 3} textAnchor="end" fill={C.muted} style={{ font: "10.5px var(--mono)" }}>
             {fmtY ? fmtY(t.v) : t.v}
           </text>
         </g>
@@ -48,17 +48,17 @@ function Frame({ w, h, m, xTicks, yTicks, xLabel, yLabel, fmtX, fmtY, children }
       {xTicks.map((t) => (
         <g key={`x${t.v}`}>
           <line x1={t.p} y1={y1} x2={t.p} y2={y0} stroke={C.grid} strokeWidth="1" />
-          <text x={t.p} y={y0 + 14} textAnchor="middle" fill={C.muted} style={{ font: "9.5px var(--mono)" }}>
+          <text x={t.p} y={y0 + 14} textAnchor="middle" fill={C.muted} style={{ font: "10.5px var(--mono)" }}>
             {fmtX ? fmtX(t.v) : t.v}
           </text>
         </g>
       ))}
       {children}
-      <text x={(x0 + x1) / 2} y={h - 4} textAnchor="middle" fill={C.muted} style={{ font: "10px system-ui" }}>
+      <text x={(x0 + x1) / 2} y={h - 4} textAnchor="middle" fill={C.muted} style={{ font: "10.5px system-ui" }}>
         {xLabel}
       </text>
       <text x={11} y={(y0 + y1) / 2} textAnchor="middle" fill={C.muted}
-        transform={`rotate(-90 11 ${(y0 + y1) / 2})`} style={{ font: "10px system-ui" }}>
+        transform={`rotate(-90 11 ${(y0 + y1) / 2})`} style={{ font: "10.5px system-ui" }}>
         {yLabel}
       </text>
     </>
@@ -204,11 +204,11 @@ function ChartHeatmap({ a }) {
       <rect x="0" y="0" width={w} height={h} fill={C.paper} />
       {a.pitches.map((p, j) => (
         <text key={p} x={m.l + j * cw + cw / 2} y={m.t - 9} textAnchor="middle" fill={C.muted}
-          style={{ font: "9.5px var(--mono)" }}>{p}</text>
+          style={{ font: "10.5px var(--mono)" }}>{p}</text>
       ))}
       {a.tilts.map((t, i) => (
         <text key={t} x={m.l - 8} y={m.t + i * ch + ch / 2 + 3} textAnchor="end" fill={C.muted}
-          style={{ font: "9.5px var(--mono)" }}>{t}&#176;</text>
+          style={{ font: "10.5px var(--mono)" }}>{t}&#176;</text>
       ))}
       {a.tilts.map((t, i) => a.pitches.map((p, j) => {
         const c = a.at(t, p);
@@ -218,7 +218,7 @@ function ChartHeatmap({ a }) {
             <g key={`${t}|${p}`}>
               <rect x={x} y={y} width={cw - 2} height={ch - 2} fill="#1a1d23" stroke={C.line} strokeDasharray="2 2" />
               <text x={x + cw / 2} y={y + ch / 2 + 3} textAnchor="middle" fill={C.muted}
-                style={{ font: "9.5px var(--mono)" }}>no run</text>
+                style={{ font: "10.5px var(--mono)" }}>no run</text>
             </g>
           );
         }
@@ -232,16 +232,16 @@ function ChartHeatmap({ a }) {
                 + `${isRec ? "  (recommended at the preferred tilt)" : ""}`}</title>
             </rect>
             <text x={x + cw / 2} y={y + ch / 2 + 3.5} textAnchor="middle" fill={C.text}
-              style={{ font: "10px var(--mono)", pointerEvents: "none" }}>
+              style={{ font: "10.5px var(--mono)", pointerEvents: "none" }}>
               {(c.eGridMwh / 1000).toFixed(2)}
             </text>
           </g>
         );
       }))}
       <text x={(m.l + w - m.r) / 2} y={h - 6} textAnchor="middle" fill={C.muted}
-        style={{ font: "10px system-ui" }}>Pitch (m), cells in GWh/yr</text>
+        style={{ font: "10.5px system-ui" }}>Pitch (m), cells in GWh/yr</text>
       <text x={11} y={h / 2} textAnchor="middle" fill={C.muted}
-        transform={`rotate(-90 11 ${h / 2})`} style={{ font: "10px system-ui" }}>Tilt (deg)</text>
+        transform={`rotate(-90 11 ${h / 2})`} style={{ font: "10.5px system-ui" }}>Tilt (deg)</text>
     </svg>
   );
 }
@@ -329,7 +329,7 @@ function ChartPenalty({ a }) {
         <line x1={m.l} y1={Y(a.acceptablePenaltyPct)} x2={w - m.r} y2={Y(a.acceptablePenaltyPct)}
           stroke="#59b56f" strokeWidth="1.6" strokeDasharray="5 3" />
         <text x={w - m.r - 4} y={Y(a.acceptablePenaltyPct) - 5} textAnchor="end" fill="#7fc78f"
-          style={{ font: "600 10px var(--mono)" }}>{fmt(a.acceptablePenaltyPct, 2)}% limit</text>
+          style={{ font: "600 10.5px var(--mono)" }}>{fmt(a.acceptablePenaltyPct, 2)}% limit</text>
         {line("penaltyVsMaxPct", C.accent)}
         {line("penaltyVsBestHerePct", "#4f9fe0", "5 3")}
         {a.recommended && (
@@ -337,7 +337,7 @@ function ChartPenalty({ a }) {
             <line x1={X(a.recommended.pitch)} y1={m.t} x2={X(a.recommended.pitch)} y2={h - m.b}
               stroke="#fff" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />
             <text x={X(a.recommended.pitch)} y={m.t + 11} textAnchor="middle" fill="#fff"
-              style={{ font: "600 10px var(--mono)" }}>{a.recommended.pitch} m</text>
+              style={{ font: "600 10.5px var(--mono)" }}>{a.recommended.pitch} m</text>
           </g>
         )}
       </Frame>
@@ -652,13 +652,13 @@ export function BatchAnalyserTab({ st, set }) {
             <table style={{ borderCollapse: "collapse", minWidth: 520, font: "12px var(--mono)" }}>
               <thead><tr>
                 <th style={{ padding: "6px 9px", borderBottom: `1px solid ${C.line}`, textAlign: "left",
-                  font: "600 9.5px system-ui", textTransform: "uppercase", letterSpacing: "0.07em", color: C.muted }}>
+                  font: "600 10.5px system-ui", textTransform: "uppercase", letterSpacing: "0.07em", color: C.muted }}>
                   Tilt \ pitch
                 </th>
                 {a.pitches.map((p) => (
                   <th key={p} style={{ padding: "6px 9px", borderBottom: `1px solid ${C.line}`, textAlign: "right",
-                    font: "600 9.5px system-ui", color: C.muted }}>
-                    {p} m{a.geometry ? <div style={{ font: "9px var(--mono)", fontWeight: 400 }}>
+                    font: "600 10.5px system-ui", color: C.muted }}>
+                    {p} m{a.geometry ? <div style={{ font: "10.5px var(--mono)", fontWeight: 400 }}>
                       GCR {fmt(a.geometry.byPitch.find((g) => g.pitch === p).gcr, 3)}</div> : null}
                   </th>
                 ))}

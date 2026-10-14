@@ -487,6 +487,26 @@ PVhub and should be a deliberate decision rather than a drift.
 `index.html` declares no `rel="icon"`, so browsers request `/favicon.ico` and 404. The
 brand mark already exists in the boot overlay and would inline as a data-URI SVG.
 
+### G31. The phone layout is verified at one viewport, in portrait
+
+The sweep that signed off the mobile pass runs at 390x844 in portrait, which is an
+iPhone 13. Nothing has been checked in landscape, on a tablet between 760 and 1024 px, or
+with the text size turned up in iOS accessibility settings — the last of which scales
+`rem` and leaves `px` alone, so an interface declared almost entirely in `px` ignores it.
+The 760 px breakpoint is also a single hinge: a 768 px tablet gets the desktop layout
+including twelve-column tables, which is the worst of both.
+
+What would close it: run the existing probe at 414x896, 768x1024 and both orientations,
+and move the type scale onto `rem` so the system text size does something.
+
+### G32. The checkbox target depends on `:has()`
+
+`label:has(> input[type="checkbox"])` carries the 38 px touch target. That is Safari 15.4
+and Chrome 105 and up, which is almost everything in 2026, but on anything older the box
+falls back to 22 px rather than degrading to something larger. It is not a break — it is
+the behaviour before the rule existed — but it is worth knowing it is a soft floor rather
+than a guaranteed one.
+
 ### G13. Accessibility not addressed
 
 Tabs are `<button>` elements without `role="tab"` / `aria-selected` / `aria-controls`.

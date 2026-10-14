@@ -18,7 +18,7 @@
    ===================================================================== */
 
 import React, { useMemo, useState, useRef } from "react";
-import { fmt, C, Num, Sel, Section, Page, Working } from "./ui.jsx";
+import { fmt, C, Num, Sel, Section, Page, Working, Rows } from "./ui.jsx";
 import {
   nameplateFromUsable, unitCount, loadProfile, pvProfile,
   dispatch, sweepBattery, suggestSizes, LOAD_SHAPES,
@@ -71,11 +71,11 @@ function ChartMonthly({ d, u }) {
         <g key={f}>
           <line x1={ml} x2={w - mr} y1={y(max * f)} y2={y(max * f)} stroke={C.line} strokeWidth="1" />
           <text x={ml - 7} y={y(max * f) + 4} textAnchor="end"
-            style={{ font: "10px var(--mono)", fill: C.muted }}>{fmt(max * f / u.ke, 0)}</text>
+            style={{ font: "10.5px var(--mono)", fill: C.muted }}>{fmt(max * f / u.ke, 0)}</text>
         </g>
       ))}
       <text x={13} y={mt + ih / 2} textAnchor="middle" transform={`rotate(-90 13 ${mt + ih / 2})`}
-        style={{ font: "10px system-ui", fill: C.muted }}>Load met, {u.e}</text>
+        style={{ font: "10.5px system-ui", fill: C.muted }}>Load met, {u.e}</text>
       {d.monthly.map((m, i) => {
         const x = ml + (iw / 12) * (i + 0.5) - bw / 2;
         const segs = [[m.direct, "#e8820c"], [m.fromBattery, "#4fb06a"],
@@ -89,7 +89,7 @@ function ChartMonthly({ d, u }) {
               return <rect key={j} x={x} y={yTop} width={bw} height={Math.max(0, yBot - yTop)} fill={col} />;
             })}
             <text x={x + bw / 2} y={h - 12} textAnchor="middle"
-              style={{ font: "10px system-ui", fill: C.muted }}>{MONTHS[i]}</text>
+              style={{ font: "10.5px system-ui", fill: C.muted }}>{MONTHS[i]}</text>
           </g>
         );
       })}
@@ -117,9 +117,9 @@ function ChartWeek({ d, pv, load, startHour, u }) {
         <g key={f}>
           <line x1={ml} x2={w - mr} y1={yP(maxP * f)} y2={yP(maxP * f)} stroke={C.line} />
           <text x={ml - 6} y={yP(maxP * f) + 4} textAnchor="end"
-            style={{ font: "10px var(--mono)", fill: C.muted }}>{fmt(maxP * f / u.kp, 1)}</text>
+            style={{ font: "10.5px var(--mono)", fill: C.muted }}>{fmt(maxP * f / u.kp, 1)}</text>
           <text x={w - mr + 6} y={yS(f * 100) + 4}
-            style={{ font: "10px var(--mono)", fill: "#8c6fd0" }}>{fmt(f * 100, 0)}%</text>
+            style={{ font: "10.5px var(--mono)", fill: "#8c6fd0" }}>{fmt(f * 100, 0)}%</text>
         </g>
       ))}
       {Array.from({ length: 7 }, (_, dd) => (
@@ -130,10 +130,10 @@ function ChartWeek({ d, pv, load, startHour, u }) {
       <path d={path(pvW, yP)} fill="none" stroke="#e8820c" strokeWidth="1.8" />
       <path d={path(ldW, yP)} fill="none" stroke="#3a96e0" strokeWidth="1.8" />
       <text x={13} y={mt + ih / 2} textAnchor="middle" transform={`rotate(-90 13 ${mt + ih / 2})`}
-        style={{ font: "10px system-ui", fill: C.muted }}>Power, {u.p}</text>
+        style={{ font: "10.5px system-ui", fill: C.muted }}>Power, {u.p}</text>
       {Array.from({ length: 7 }, (_, dd) => (
         <text key={dd} x={x(dd * 24 + 12)} y={h - 10} textAnchor="middle"
-          style={{ font: "10px system-ui", fill: C.muted }}>Day {dd + 1}</text>
+          style={{ font: "10.5px system-ui", fill: C.muted }}>Day {dd + 1}</text>
       ))}
     </svg>
   );
@@ -154,7 +154,7 @@ function ChartSweep({ s, u }) {
         <g key={f}>
           <line x1={ml} x2={w - mr} y1={y(f)} y2={y(f)} stroke={C.line} />
           <text x={ml - 6} y={y(f) + 4} textAnchor="end"
-            style={{ font: "10px var(--mono)", fill: C.muted }}>{f}%</text>
+            style={{ font: "10.5px var(--mono)", fill: C.muted }}>{f}%</text>
         </g>
       ))}
       {s.knee && (
@@ -173,12 +173,12 @@ function ChartSweep({ s, u }) {
           fill={s.knee && r.nameplateKWh === s.knee.nameplateKWh ? "#4fb06a" : "#e8820c"} />
       ))}
       <text x={13} y={mt + ih / 2} textAnchor="middle" transform={`rotate(-90 13 ${mt + ih / 2})`}
-        style={{ font: "10px system-ui", fill: C.muted }}>Self-sufficiency</text>
+        style={{ font: "10.5px system-ui", fill: C.muted }}>Self-sufficiency</text>
       <text x={ml + iw / 2} y={h - 8} textAnchor="middle"
-        style={{ font: "10px system-ui", fill: C.muted }}>Battery nameplate, {u.e}</text>
+        style={{ font: "10.5px system-ui", fill: C.muted }}>Battery nameplate, {u.e}</text>
       {s.rows.filter((_, i) => i % 2 === 0).map((r, i) => (
         <text key={i} x={x(r.nameplateKWh)} y={h - 24} textAnchor="middle"
-          style={{ font: "9.5px var(--mono)", fill: C.muted }}>{fmt(r.nameplateKWh / u.ke, u.dp)}</text>
+          style={{ font: "10.5px var(--mono)", fill: C.muted }}>{fmt(r.nameplateKWh / u.ke, u.dp)}</text>
       ))}
     </svg>
   );
@@ -198,17 +198,17 @@ function ChartDayShape({ a, b, u }) {
         <g key={f}>
           <line x1={ml} x2={w - mr} y1={Y(max * f)} y2={Y(max * f)} stroke={C.line} />
           <text x={ml - 6} y={Y(max * f) + 4} textAnchor="end"
-            style={{ font: "10px var(--mono)", fill: C.muted }}>{fmt(max * f / u.ke, 2)}</text>
+            style={{ font: "10.5px var(--mono)", fill: C.muted }}>{fmt(max * f / u.ke, 2)}</text>
         </g>
       ))}
       {b && <path d={path(b)} fill="none" stroke="#6b7480" strokeWidth="2" strokeDasharray="4 3" />}
       <path d={path(a)} fill="none" stroke="#3a96e0" strokeWidth="2.5" />
       {a.map((v, i) => <circle key={i} cx={X(i)} cy={Y(v)} r="2.5" fill="#3a96e0" />)}
       <text x={13} y={mt + ih / 2} textAnchor="middle" transform={`rotate(-90 13 ${mt + ih / 2})`}
-        style={{ font: "10px system-ui", fill: C.muted }}>Average {u.e}</text>
+        style={{ font: "10.5px system-ui", fill: C.muted }}>Average {u.e}</text>
       {[0, 6, 12, 18, 23].map((i) => (
         <text key={i} x={X(i)} y={h - 10} textAnchor="middle"
-          style={{ font: "10px var(--mono)", fill: C.muted }}>{String(i).padStart(2, "0")}:00</text>
+          style={{ font: "10.5px var(--mono)", fill: C.muted }}>{String(i).padStart(2, "0")}:00</text>
       ))}
     </svg>
   );
@@ -217,7 +217,7 @@ function ChartDayShape({ a, b, u }) {
 const Stat = ({ label, value, unit, tone }) => (
   <div style={{ background: C.panel2, border: `1px solid ${tone || C.line}`, borderRadius: 6,
     padding: "8px 11px", minWidth: 112 }}>
-    <div style={{ font: "10px system-ui", color: C.muted }}>{label}</div>
+    <div style={{ font: "10.5px system-ui", color: C.muted }}>{label}</div>
     <div style={{ font: "650 17px var(--mono)", color: tone || C.text }}>
       {value}<span style={{ font: "10.5px system-ui", color: C.muted }}> {unit}</span>
     </div>
@@ -481,7 +481,7 @@ export function BessTab({ st, set, scale, tmy, kWpHint, lat }) {
             <div style={{ width: "100%", display: "flex", gap: 7, flexWrap: "wrap" }}>
               {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((mn, i) => (
                 <label key={mn} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ font: "10px system-ui", color: C.muted }}>{mn}</span>
+                  <span style={{ font: "10.5px system-ui", color: C.muted }}>{mn}</span>
                   <input type="number" value={st.monthlyKWh[i]} step={10}
                     onChange={(e) => { const v = [...st.monthlyKWh];
                       v[i] = Number(e.target.value); set({ ...st, monthlyKWh: v }); }}
@@ -694,36 +694,19 @@ export function BessTab({ st, set, scale, tmy, kWpHint, lat }) {
             {" "}{fmt(st.kneeFraction, 0)}% of what the first increment delivered. That fraction is
             a judgement, which is why it is an input you can argue with.
           </div>
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
-              <thead><tr>
-                {[`Size ${u.e}`, "Self-sufficiency", "Self-consumption", "Cycles/yr",
-                  `Marginal %/${u.e}`, st.hasGrid ? `Imported ${u.e}` : `Unmet ${u.e}`].map((x) => (
-                  <th key={x} style={{ padding: "5px 9px", borderBottom: `1px solid ${C.line}`,
-                    textAlign: "right", font: "600 9.5px system-ui", textTransform: "uppercase",
-                    letterSpacing: "0.06em", color: C.muted, whiteSpace: "nowrap" }}>{x}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {sweep.rows.map((r, i) => {
-                  const isKnee = sweep.knee && r.nameplateKWh === sweep.knee.nameplateKWh;
-                  return (
-                    <tr key={i} style={{ borderTop: `1px solid ${C.line}`,
-                      background: isKnee ? "rgba(79,176,106,0.14)" : "transparent" }}>
-                      {[E(r.nameplateKWh), `${fmt(r.selfSufficiencyPct, 1)}%`,
-                        `${fmt(r.selfConsumptionPct, 1)}%`, fmt(r.cycles, 0),
-                        r.marginalPerKWh === null ? "—" : fmt(r.marginalPerKWh * u.ke, 3),
-                        E(st.hasGrid ? r.importedKWh : (r.unmetPct / 100) * sim.loadTotal)].map((v, j) => (
-                        <td key={j} style={{ padding: "4px 9px", font: "12px var(--mono)",
-                          textAlign: "right", color: isKnee ? "#8fd6a3" : C.text,
-                          fontWeight: isKnee ? 700 : 400 }}>{v}</td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Rows min={620} rows={sweep.rows} keyOf={(r, i) => i}
+            rowStyle={(r) => (sweep.knee && r.nameplateKWh === sweep.knee.nameplateKWh
+              ? { background: "rgba(79,176,106,0.14)" } : null)}
+            cols={[
+              { key: "size", label: `Size ${u.e}`, align: "left", render: (r) => E(r.nameplateKWh) },
+              { key: "ss", label: "Self-sufficiency", render: (r) => `${fmt(r.selfSufficiencyPct, 1)}%` },
+              { key: "sc", label: "Self-consumption", render: (r) => `${fmt(r.selfConsumptionPct, 1)}%` },
+              { key: "cy", label: "Cycles/yr", render: (r) => fmt(r.cycles, 0) },
+              { key: "mg", label: `Marginal %/${u.e}`, render: (r) =>
+                (r.marginalPerKWh === null ? "\u2014" : fmt(r.marginalPerKWh * u.ke, 3)) },
+              { key: "im", label: st.hasGrid ? `Imported ${u.e}` : `Unmet ${u.e}`,
+                render: (r) => E(st.hasGrid ? r.importedKWh : (r.unmetPct / 100) * sim.loadTotal) },
+            ]} />
         </Section>
       </>)}
 

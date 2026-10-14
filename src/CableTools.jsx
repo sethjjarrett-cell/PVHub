@@ -20,8 +20,8 @@
    one that actually cost the capacity, which is nearly always grouping.
    ===================================================================== */
 
-import React, { useState, useMemo } from "react";
-import { fmt, C, Num, Sel, Section, Page, Working } from "./ui.jsx";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { fmt, C, Num, Sel, Section, Page, Working, Rows } from "./ui.jsx";
 import { parseDxf, routeLengths } from "./dxfRead.js";
 import { analyseTrenches } from "./layoutDxf.js";
 import {
@@ -95,7 +95,7 @@ function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, 
       {install === "air" ? (
         <>
           <rect x="0" y="0" width={W} height={H} fill={C.paper} />
-          <text x="14" y="26" fill={C.muted} style={{ font: "10px system-ui" }}>
+          <text x="14" y="26" fill={C.muted} style={{ font: "10.5px system-ui" }}>
             Cable tray or free air, {n} circuit{n > 1 ? "s" : ""} bunched and touching
           </text>
           <rect x={W / 2 - (n - 1) * pitch / 2 - 26} y={cableY + 14}
@@ -116,7 +116,7 @@ function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, 
           <rect x="0" y={groundY} width={W} height={H - groundY} fill={C.soil} />
           <rect x="0" y={groundY} width={W} height={H - groundY} fill="url(#soilhatch)" opacity="0.5" />
           <line x1="0" y1={groundY} x2={W} y2={groundY} stroke={C.soilLine} strokeWidth="1.5" />
-          <text x="14" y="26" fill={C.muted} style={{ font: "10px system-ui" }}>
+          <text x="14" y="26" fill={C.muted} style={{ font: "10.5px system-ui" }}>
             {install === "duct" ? "Cables in buried ducts" : "Direct buried"}
             {" · "}{nT} trench{nT > 1 ? "es" : ""} of {n} circuit{n > 1 ? "s" : ""}
             {nT > 1 ? ` (${total} in total)` : ""}{" · "}{spacingLabel}
@@ -125,7 +125,7 @@ function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, 
           <line x1="9" y1={groundY} x2="19" y2={groundY} stroke={C.navyLight} strokeWidth="1" />
           <line x1="9" y1={cableY} x2="19" y2={cableY} stroke={C.navyLight} strokeWidth="1" />
           <text x="22" y={(groundY + cableY) / 2 + 3} fill={C.navyLight}
-            style={{ font: "10px var(--mono)" }}>{fmt(depth, 2)} m</text>
+            style={{ font: "10.5px var(--mono)" }}>{fmt(depth, 2)} m</text>
           {Array.from({ length: nT }, (_, t) => {
             const x0 = 12 + t * slice + (slice - (n - 1) * pitch) / 2;
             return (
@@ -144,7 +144,7 @@ function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, 
                   );
                 })}
                 <text x={x0 + ((n - 1) * pitch) / 2} y={cableY + 34} textAnchor="middle"
-                  fill={C.navyLight} style={{ font: "10px var(--mono)" }}>
+                  fill={C.navyLight} style={{ font: "10.5px var(--mono)" }}>
                   trench {t + 1}
                 </text>
               </g>
@@ -152,7 +152,7 @@ function TrenchDiagram({ install, circuits, spacingLabel, depth, parallel, own, 
           })}
         </>
       )}
-      <text x={W - 12} y={H - 9} textAnchor="end" fill={C.muted} style={{ font: "10px var(--mono)" }}>
+      <text x={W - 12} y={H - 9} textAnchor="end" fill={C.muted} style={{ font: "10.5px var(--mono)" }}>
         {own} own ({parallel}{"×"} parallel){aux ? ` + ${aux} aux` : ""}
         {nT > 1 ? ` = ${total}, ${n} per trench` : ` = ${total ?? own + aux}`}
       </text>
@@ -184,7 +184,7 @@ const Verdict = ({ pass, failText = "FAIL" }) => (
 const Th = ({ children, w }) => (
   <th style={{
     padding: "6px 9px", borderBottom: `1px solid ${C.line}`, textAlign: "left",
-    font: "600 9.5px system-ui", textTransform: "uppercase", letterSpacing: "0.07em",
+    font: "600 10.5px system-ui", textTransform: "uppercase", letterSpacing: "0.07em",
     color: C.muted, whiteSpace: "nowrap", width: w,
   }}>{children}</th>
 );
@@ -192,11 +192,47 @@ const Td = ({ children, dim, style }) => (
   <td style={{ padding: "5px 9px", font: "12px var(--mono)", color: dim ? C.muted : C.text,
     whiteSpace: "nowrap", ...style }}>{children}</td>
 );
-const Scroll = ({ children, min = 900 }) => (
-  <div style={{ overflowX: "auto", width: "100%", WebkitOverflowScrolling: "touch" }}>
-    <div style={{ minWidth: min }}>{children}</div>
-  </div>
-);
+/**
+ * A box that scrolls sideways, and says so.
+ *
+ * A table wider than the screen is tolerable; a table wider than the
+ * screen with no sign that it continues is not — the columns off the
+ * right-hand edge are invisible rather than merely out of view, and on
+ * a phone those are usually the ones carrying the verdict. The fading
+ * edge appears only while there is something still to the right, so it
+ * is an affordance rather than decoration.
+ */
+const Scroll = ({ children, min = 900 }) => {
+  const ref = useRef(null);
+  const [more, setMore] = useState(false);
+  const check = () => {
+    const e = ref.current;
+    if (e) setMore(e.scrollWidth - e.clientWidth - e.scrollLeft > 4);
+  };
+  useEffect(() => {
+    check();
+    const e = ref.current;
+    if (!e) return undefined;
+    const ro = new ResizeObserver(check);
+    ro.observe(e);
+    window.addEventListener("resize", check);
+    return () => { ro.disconnect(); window.removeEventListener("resize", check); };
+  }, []);
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      <div ref={ref} onScroll={check}
+        style={{ overflowX: "auto", width: "100%", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ minWidth: min }}>{children}</div>
+      </div>
+      {more && (<>
+        <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 34,
+          pointerEvents: "none", background: `linear-gradient(to right, transparent, ${C.panel})` }} />
+        <div style={{ position: "absolute", top: 2, right: 4, pointerEvents: "none",
+          font: "10.5px system-ui", color: C.accent }}>more &#8594;</div>
+      </>)}
+    </div>
+  );
+};
 
 /* A small inline size/number picker used inside the sizing tables. */
 function CellNum({ value, onChange, step = 1, min = 0, w = 66 }) {
@@ -272,7 +308,7 @@ function AutoField({ label, auto, value, onChange, dp = 3, unit = "", hint, disa
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 130,
       opacity: disabled ? 0.45 : 1 }}>
-      <span style={{ font: "10px system-ui", color: C.muted, letterSpacing: "0.03em" }}>
+      <span style={{ font: "10.5px system-ui", color: C.muted, letterSpacing: "0.03em" }}>
         {label}{unit ? ` ${unit}` : ""}
       </span>
       <select disabled={disabled} value={manual ? "manual" : "auto"}
@@ -293,7 +329,7 @@ function AutoField({ label, auto, value, onChange, dp = 3, unit = "", hint, disa
             borderRadius: 4, color: HL.manual.text, font: "12px var(--mono)",
             padding: "4px 6px", outline: "none" }} />
       )}
-      <span style={{ font: "9.5px system-ui", color: manual ? HL.manual.text : C.muted }}>
+      <span style={{ font: "10.5px system-ui", color: manual ? HL.manual.text : C.muted }}>
         {manual
           ? `instead of ${Number.isFinite(auto) ? fmt(auto, dp) : "no table value"}`
           : hint || (Number.isFinite(auto) ? "from the table" : "not tabulated")}
@@ -408,12 +444,12 @@ function MethodCard({ method, kind, table, st, set, designCurrent, open, onToggl
             ? <span className="wk-status bad">{fmt(short.overPct, 0)}% OVER</span>
             : <span className="wk-status ok">PASS</span>}
         {chain.extrapolated && (
-          <span style={{ font: "10px system-ui", color: HL.extrap.text }}>extrapolated rating</span>
+          <span style={{ font: "10.5px system-ui", color: HL.extrap.text }}>extrapolated rating</span>
         )}
         {chain.anyManual && (
-          <span style={{ font: "10px system-ui", color: HL.manual.text }}>has entered values</span>
+          <span style={{ font: "10.5px system-ui", color: HL.manual.text }}>has entered values</span>
         )}
-        <button className="btn" onClick={onToggle} style={{ padding: "3px 9px", font: "10px system-ui" }}>
+        <button className="btn" onClick={onToggle} style={{ padding: "3px 9px", font: "10.5px system-ui" }}>
           {open ? "▴ hide working" : "▾ show working"}
         </button>
       </div>
@@ -1599,14 +1635,14 @@ function WithstandCurve({ curves, faultKA, tClear, sizeSel }) {
         <g key={`x${v}`}>
           <line x1={lx(v)} y1={T} x2={lx(v)} y2={B} stroke={major ? C.gridMajor : C.grid} strokeWidth="1" />
           {major && <text x={lx(v)} y={B + 15} textAnchor="middle" fill={C.muted}
-            style={{ font: "9.5px var(--mono)" }}>{v < 1 ? v : fmt(v, 0)}</text>}
+            style={{ font: "10.5px var(--mono)" }}>{v < 1 ? v : fmt(v, 0)}</text>}
         </g>
       ))}
       {decades(tMin, tMax).map(({ v, major }) => (
         <g key={`y${v}`}>
           <line x1={L} y1={ly(v)} x2={R} y2={ly(v)} stroke={major ? C.gridMajor : C.grid} strokeWidth="1" />
           {major && <text x={L - 6} y={ly(v) + 3} textAnchor="end" fill={C.muted}
-            style={{ font: "9.5px var(--mono)" }}>{v < 1 ? v : fmt(v, 0)}</text>}
+            style={{ font: "10.5px var(--mono)" }}>{v < 1 ? v : fmt(v, 0)}</text>}
         </g>
       ))}
       {/* unsafe region: to the right of the selected cable's curve */}
@@ -1651,18 +1687,18 @@ function WithstandCurve({ curves, faultKA, tClear, sizeSel }) {
             stroke="#d64545" strokeWidth="1.4" strokeDasharray="5 3" />
           <circle cx={lx(faultKA)} cy={ly(tClear)} r="5.5" fill="#d64545" stroke="#fff" strokeWidth="1.2" />
           <text x={lx(faultKA) - 8} y={ly(tClear) - 10} textAnchor="end" fill="#e08a8a"
-            style={{ font: "600 10px var(--mono)" }}>
+            style={{ font: "600 10.5px var(--mono)" }}>
             {fmt(faultKA, 1)} kA / {fmt(tClear, 2)} s
           </text>
         </>
       )}
       <text x={(L + R) / 2} y={H - 6} textAnchor="middle" fill={C.muted}
-        style={{ font: "10px system-ui" }}>Prospective short-circuit current (kA)</text>
+        style={{ font: "10.5px system-ui" }}>Prospective short-circuit current (kA)</text>
       <text x="12" y={(T + B) / 2} textAnchor="middle" fill={C.muted}
-        transform={`rotate(-90 12 ${(T + B) / 2})`} style={{ font: "10px system-ui" }}>
+        transform={`rotate(-90 12 ${(T + B) / 2})`} style={{ font: "10.5px system-ui" }}>
         Clearing time (s)
       </text>
-      <text x={R - 6} y={T + 12} textAnchor="end" fill={C.muted} style={{ font: "9.5px system-ui" }}>
+      <text x={R - 6} y={T + 12} textAnchor="end" fill={C.muted} style={{ font: "10.5px system-ui" }}>
         Below/left of a curve the cable survives
       </text>
     </svg>
@@ -1688,7 +1724,7 @@ function CableSection({ size, insName, thetaI, thetaF, thetaReached, screen }) {
       <text x={cx} y={cy + 4} textAnchor="middle" fill="#181206" style={{ font: "700 12px var(--mono)" }}>
         {size}
       </text>
-      <g style={{ font: "9.5px system-ui" }}>
+      <g style={{ font: "10.5px system-ui" }}>
         <line x1={cx + rCond + 26} y1={cy - 30} x2={W - 96} y2={cy - 30} stroke={C.muted} />
         <text x={W - 92} y={cy - 27} fill={C.muted}>Oversheath</text>
         {screen && (<>
@@ -1701,18 +1737,18 @@ function CableSection({ size, insName, thetaI, thetaF, thetaReached, screen }) {
         <text x={cx - 12} y={cy + rCond + 33} fill={C.muted}>Conductor</text>
       </g>
       {/* temperature excursion */}
-      <text x="20" y={barY - 8} fill={C.muted} style={{ font: "10px system-ui" }}>
+      <text x="20" y={barY - 8} fill={C.muted} style={{ font: "10.5px system-ui" }}>
         Conductor temperature during the fault
       </text>
       <rect x="20" y={barY} width={barW} height="12" rx="3" fill={C.panel2} />
       <rect x="20" y={barY} width={Math.min(barW, barW * frac)} height="12" rx="3"
         fill={over ? "#c04a3f" : "#59b56f"} />
       <line x1={20 + barW} y1={barY - 4} x2={20 + barW} y2={barY + 16} stroke={C.warn} strokeWidth="1.5" />
-      <text x="20" y={barY + 30} fill={C.muted} style={{ font: "9.5px var(--mono)" }}>
+      <text x="20" y={barY + 30} fill={C.muted} style={{ font: "10.5px var(--mono)" }}>
         {fmt(thetaI, 0)} °C at fault inception
       </text>
       <text x={20 + barW} y={barY + 30} textAnchor="end" fill={over ? "#e08a8a" : "#7fc78f"}
-        style={{ font: "600 9.5px var(--mono)" }}>
+        style={{ font: "600 10.5px var(--mono)" }}>
         reaches {fmt(thetaReached, 0)} °C / limit {fmt(thetaF, 0)} °C
       </text>
     </svg>
@@ -1732,8 +1768,8 @@ function FaultPath({ level, gridKA, txKA, invKA, totalKA }) {
       {/* grid */}
       <g>
         {box(18, 62, 66, 40, "#232a34", C.navyLight)}
-        <text x={51} y={80} textAnchor="middle" fill={C.navyLight} style={{ font: "600 10px system-ui" }}>GRID</text>
-        <text x={51} y={94} textAnchor="middle" fill={C.muted} style={{ font: "9.5px var(--mono)" }}>
+        <text x={51} y={80} textAnchor="middle" fill={C.navyLight} style={{ font: "600 10.5px system-ui" }}>GRID</text>
+        <text x={51} y={94} textAnchor="middle" fill={C.muted} style={{ font: "10.5px var(--mono)" }}>
           {fmt(gridKA, 1)} kA
         </text>
       </g>
@@ -1742,20 +1778,20 @@ function FaultPath({ level, gridKA, txKA, invKA, totalKA }) {
       <g>
         <circle cx="158" cy="72" r="17" fill="none" stroke="#3d95ea" strokeWidth="1.6" />
         <circle cx="158" cy="92" r="17" fill="none" stroke="#3d95ea" strokeWidth="1.6" />
-        <text x="158" y="130" textAnchor="middle" fill={C.muted} style={{ font: "9.5px system-ui" }}>
+        <text x="158" y="130" textAnchor="middle" fill={C.muted} style={{ font: "10.5px system-ui" }}>
           MV/LV tx
         </text>
       </g>
       <line x1="176" y1="82" x2="240" y2="82" stroke={C.steel} strokeWidth="1.6" />
       {/* MV busbar */}
       <line x1="240" y1="40" x2="240" y2="124" stroke={C.accent} strokeWidth="3" />
-      <text x="240" y="32" textAnchor="middle" fill={C.accent} style={{ font: "600 9.5px system-ui" }}>MV ring</text>
+      <text x="240" y="32" textAnchor="middle" fill={C.accent} style={{ font: "600 10.5px system-ui" }}>MV ring</text>
       <line x1="240" y1="82" x2="372" y2="82" stroke={C.steel} strokeWidth="1.6" />
       {/* inverter transformer */}
       <g>
         <circle cx="390" cy="72" r="16" fill="none" stroke="#3d95ea" strokeWidth="1.6" />
         <circle cx="390" cy="92" r="16" fill="none" stroke="#3d95ea" strokeWidth="1.6" />
-        <text x="390" y="130" textAnchor="middle" fill={C.muted} style={{ font: "9.5px system-ui" }}>
+        <text x="390" y="130" textAnchor="middle" fill={C.muted} style={{ font: "10.5px system-ui" }}>
           {fmt(txKA, 1)} kA thro'
         </text>
       </g>
@@ -1763,15 +1799,15 @@ function FaultPath({ level, gridKA, txKA, invKA, totalKA }) {
       {/* inverter */}
       <g>
         {box(470, 62, 58, 40, "#1e2a22", "#3fb457")}
-        <text x={499} y={80} textAnchor="middle" fill="#3fb457" style={{ font: "600 10px system-ui" }}>INV</text>
-        <text x={499} y={94} textAnchor="middle" fill={C.muted} style={{ font: "9.5px var(--mono)" }}>
+        <text x={499} y={80} textAnchor="middle" fill="#3fb457" style={{ font: "600 10.5px system-ui" }}>INV</text>
+        <text x={499} y={94} textAnchor="middle" fill={C.muted} style={{ font: "10.5px var(--mono)" }}>
           {fmt(invKA, 2)} kA
         </text>
       </g>
       <line x1="528" y1="82" x2="580" y2="82" stroke={C.steel} strokeWidth="1.6" />
       <g>
         {box(580, 66, 26, 32, "#2a2118", C.moduleRed)}
-        <text x={593} y={112} textAnchor="middle" fill={C.muted} style={{ font: "9px system-ui" }}>PV</text>
+        <text x={593} y={112} textAnchor="middle" fill={C.muted} style={{ font: "10.5px system-ui" }}>PV</text>
       </g>
       {/* fault marker */}
       <g>
@@ -1779,7 +1815,7 @@ function FaultPath({ level, gridKA, txKA, invKA, totalKA }) {
         <path d={`M${at - 8} 150 L${at + 8} 150 M${at} 150 l-6 -8 M${at} 150 l6 -8`}
           stroke="#d64545" strokeWidth="2" fill="none" />
         <circle cx={at} cy="82" r="5" fill="#d64545" />
-        <text x={at} y="170" textAnchor="middle" fill="#e08a8a" style={{ font: "600 10px var(--mono)" }}>
+        <text x={at} y="170" textAnchor="middle" fill="#e08a8a" style={{ font: "600 10.5px var(--mono)" }}>
           fault — {fmt(totalKA, 1)} kA
         </text>
       </g>

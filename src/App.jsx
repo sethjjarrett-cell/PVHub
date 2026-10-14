@@ -1692,13 +1692,13 @@ function RowSpacing({ geo, pitch }) {
       <line x1={x0+w/2} x2={x0+w/2} y1={gY-26} y2={gY-16} strokeDasharray="2 2"/>
       <line x1={x0+p+w/2} x2={x0+p+w/2} y1={gY-26} y2={gY-16} strokeDasharray="2 2"/>
     </g>
-    <text x={x0+w/2+p/2} y={gY-35} textAnchor="middle" style={{font:"600 9.5px var(--mono)"}} fill={C.accent}>PITCH {fmt(pitch,2)} m (centre → centre)</text>
+    <text x={x0+w/2+p/2} y={gY-35} textAnchor="middle" style={{font:"600 10.5px var(--mono)"}} fill={C.accent}>PITCH {fmt(pitch,2)} m (centre → centre)</text>
     <g stroke="#374151" strokeWidth="1" fill="none">
       <line x1={x0+w} x2={x0+p} y1={gY+14} y2={gY+14}/>
       <path d={`M ${x0+w} ${gY+14} l 5 -3 M ${x0+w} ${gY+14} l 5 3 M ${x0+p} ${gY+14} l -5 -3 M ${x0+p} ${gY+14} l -5 3`}/>
     </g>
-    <text x={x0+w+gap/2} y={gY+30} textAnchor="middle" style={{font:"600 9.5px var(--mono)"}} fill="#374151">CLEAR GAP {fmt(Math.max(0,pitch-geo.planAcross),2)} m</text>
-    <text x={x0+w/2} y={gY-19} textAnchor="middle" style={{font:"8px var(--mono)"}} fill="#9fb4d8">{fmt(geo.planAcross,2)} m</text>
+    <text x={x0+w+gap/2} y={gY+30} textAnchor="middle" style={{font:"600 10.5px var(--mono)"}} fill="#374151">CLEAR GAP {fmt(Math.max(0,pitch-geo.planAcross),2)} m</text>
+    <text x={x0+w/2} y={gY-19} textAnchor="middle" style={{font:"10.5px var(--mono)"}} fill="#9fb4d8">{fmt(geo.planAcross,2)} m</text>
   </svg>);
 }
 
@@ -1900,7 +1900,7 @@ function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
         <path d={bdry} fill="none" stroke={C.boundary} strokeWidth="1.8" />
       </svg>
       <div style={{
-        position: "absolute", top: 10, left: 12, font: "10px var(--mono)", color: "#8f98a5",
+        position: "absolute", top: 10, left: 12, font: "10.5px var(--mono)", color: "#8f98a5",
         background: "rgba(23,26,32,0.88)", padding: "5px 10px", borderRadius: 4,
         border: "1px solid #2c313b", lineHeight: 1.55, pointerEvents: "none",
       }}>
@@ -1919,12 +1919,12 @@ function Iso3D({ variant, geo, polygon, terrain, slopes, tiltDeg }) {
           gap: 7, background: "rgba(23,26,32,0.9)", padding: "5px 10px", borderRadius: 4,
           border: "1px solid #2c313b",
         }}>
-          <span style={{ font: "600 9px system-ui", color: "#9aa3ae", letterSpacing: "0.07em" }}>SLOPE</span>
+          <span style={{ font: "600 10.5px system-ui", color: "#9aa3ae", letterSpacing: "0.07em" }}>SLOPE</span>
           <span style={{
             width: 76, height: 9, borderRadius: 2, display: "inline-block",
             background: "linear-gradient(90deg, rgb(74,150,62), rgb(234,170,62), rgb(234,50,42))",
           }} />
-          <span style={{ font: "9px var(--mono)", color: "#9aa3ae" }}>0 → 15%+</span>
+          <span style={{ font: "10.5px var(--mono)", color: "#9aa3ae" }}>0 → 15%+</span>
         </div>
       )}
     </div>
@@ -2549,17 +2549,17 @@ function SiteCanvas({
           gap: 7, background: "rgba(27,30,36,0.88)", padding: "5px 10px", borderRadius: 4,
           border: "1px solid #2c313b",
         }}>
-          <span style={{ font: "600 9px system-ui", color: "#9aa3ae", letterSpacing: "0.07em" }}>SLOPE</span>
+          <span style={{ font: "600 10.5px system-ui", color: "#9aa3ae", letterSpacing: "0.07em" }}>SLOPE</span>
           <span style={{
             width: 76, height: 9, borderRadius: 2, display: "inline-block",
             background: "linear-gradient(90deg, rgba(90,190,70,0.9), rgba(220,175,55,0.9), rgba(235,60,55,0.95))",
           }} />
-          <span style={{ font: "9px var(--mono)", color: "#9aa3ae" }}>0 → 15%+</span>
+          <span style={{ font: "10.5px var(--mono)", color: "#9aa3ae" }}>0 → 15%+</span>
         </div>
       )}
       {variant && heatCells && heatCells.length === 0 && (
         <div style={{
-          position: "absolute", bottom: 8, right: 12, font: "10px system-ui",
+          position: "absolute", bottom: 8, right: 12, font: "10.5px system-ui",
           color: "#6b7280", background: "rgba(27,30,36,0.8)", padding: "3px 9px", borderRadius: 4,
         }}>
           no terrain loaded
@@ -3307,7 +3307,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     .sec summary { display:flex; align-items:center; gap:10px; padding:11px 16px; cursor:pointer;
       list-style:none; user-select:none; }
     .sec summary::-webkit-details-marker { display:none; }
-    .sec-code { font: 600 10px var(--mono); color:${C.accent}; letter-spacing:0.1em; min-width:26px; }
+    .sec-code { font: 600 10.5px var(--mono); color:${C.accent}; letter-spacing:0.1em; min-width:26px; }
     .sec-title { font: 600 11.5px system-ui, sans-serif; color:${C.text};
       text-transform:uppercase; letter-spacing:0.09em; flex:1; }
     .sec-caret { color:${C.muted}; font-size:10px; transition: transform .15s; }
@@ -3323,7 +3323,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     .fld-box input::-webkit-outer-spin-button, .fld-box input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
     .fld-box select { appearance:none; -webkit-appearance:none; cursor:pointer; padding-right:16px; }
     .fld-box option { background:${C.panel2}; }
-    .fld-u { font: 10px var(--mono); color:${C.muted}; padding:0 8px 0 2px; }
+    .fld-u { font: 10.5px var(--mono); color:${C.muted}; padding:0 8px 0 2px; }
     .readout { width:100%; background:${C.panel2}; border:1px dashed ${C.line}; border-radius:4px;
       padding:7px 10px; font: 11.5px var(--mono); color:${C.text}; line-height:1.55; }
     .readout b { color:${C.accent}; font-weight:600; }
@@ -3336,10 +3336,23 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     .btn.primary { background:${C.accent}; border-color:${C.accent}; color:#181206; font-weight:600; }
     .btn.on { background:${C.accent}; border-color:${C.accent}; color:#181206; font-weight:600; }
     .tbcell { padding: 7px 12px 8px; border-right:1px solid ${C.line}; min-width:76px; }
-    .tbl { font: 600 8.5px system-ui, sans-serif; color:${C.muted}; text-transform:uppercase;
+    .tbl { font: 600 10.5px system-ui, sans-serif; color:${C.muted}; text-transform:uppercase;
       letter-spacing:0.1em; margin-bottom:2px; white-space:nowrap; }
     .tbv { font: 600 14.5px var(--mono); color:${C.text}; white-space:nowrap; }
     .tbv small { font-size:10px; color:${C.muted}; font-weight:500; }
+    /* Set nowrap so it reads as a strapline on a desk; on a phone that
+       sends the end of it off the right edge, so let it wrap instead.
+       Declared here rather than in the shell block because this sheet
+       loads later and would otherwise win. */
+    @media (max-width: 760px) {
+      .tbl { white-space: normal; line-height: 1.45; letter-spacing: 0.06em; }
+      .tbv small { font-size: 11px; }
+      /* The badges and unit suffixes are the smallest type in the
+         interface. 10.5 px is a caption on a monitor at arm's length and
+         a squint on a phone, so lift them a point here. */
+      .sec-code, .fld-u, .tag, .sec-caret { font-size: 11.5px; }
+      .fld-l { font-size: 11.5px; }
+    }
     .legend { display:flex; align-items:center; gap:5px; font: 10.5px system-ui, sans-serif; color:${C.muted};
       white-space:nowrap; }
     .sw { width:14px; height:9px; border-radius:2px; display:inline-block; flex:none; }
@@ -3354,7 +3367,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     .vc-name { font: 600 12px system-ui, sans-serif; color:${C.text}; flex:1; }
     .vc-score { font: 700 12.5px var(--mono); color:${C.accent}; }
     .vc-tags { display:flex; gap:5px; margin-top:5px; flex-wrap:wrap; }
-    .tag { font: 600 9px system-ui, sans-serif; text-transform:uppercase; letter-spacing:0.06em;
+    .tag { font: 600 10.5px system-ui, sans-serif; text-transform:uppercase; letter-spacing:0.06em;
       color:${C.muted}; border:1px solid ${C.line}; border-radius:3px; padding:1.5px 6px; }
     .tag.rec { color:#181206; background:${C.accent}; border-color:${C.accent}; }
     .vc-mets { font: 11px var(--mono); color:${C.muted}; margin-top:6px; line-height:1.5; }
@@ -3967,9 +3980,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                   <div key={l} style={{ background: C.panel2,
                     border: `1px solid ${hot ? C.accent : C.line}`, borderRadius: 6,
                     padding: "8px 11px", minWidth: 104 }}>
-                    <div style={{ font: "10px system-ui", color: C.muted }}>{l}</div>
+                    <div style={{ font: "10.5px system-ui", color: C.muted }}>{l}</div>
                     <div style={{ font: "650 16px var(--mono)", color: hot ? C.accent : C.text }}>
-                      {v}<span style={{ font: "10px system-ui", color: C.muted }}> {un}</span>
+                      {v}<span style={{ font: "10.5px system-ui", color: C.muted }}> {un}</span>
                     </div>
                   </div>
                 ))}
@@ -3991,7 +4004,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 360 }}>
                   <thead><tr>{["Circuits in trench", "Segments", "Length m", "% of route"].map((h) => (
                     <th key={h} style={{ padding: "5px 9px", borderBottom: `1px solid ${C.line}`,
-                      textAlign: "right", font: "600 9.5px system-ui", textTransform: "uppercase",
+                      textAlign: "right", font: "600 10.5px system-ui", textTransform: "uppercase",
                       letterSpacing: "0.06em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
                   ))}</tr></thead>
                   <tbody>
@@ -4343,14 +4356,14 @@ function ModuleIV({ mod }) {
     <path d={iv} fill="none" stroke="#7ea2d8" strokeWidth="2"/>
     <path d={pv} fill="none" stroke={C.accent} strokeWidth="1.6" strokeDasharray="5 3"/>
     <circle cx={X(mod.vmp)} cy={YI(mod.imp)} r="3.5" fill="#7ea2d8"/>
-    <text x={X(mod.vmp)-8} y={YI(mod.imp)+16} textAnchor="end" style={{font:"600 10px var(--mono)"}} fill="#ccd4de">MPP {fmt(mod.vmp,1)} V · {fmt(mod.imp,1)} A</text>
-    <text x={L+4} y={T+10} style={{font:"10px var(--mono)"}} fill="#ccd4de">Isc {mod.isc} A</text>
-    <text x={X(mod.voc)-4} y={B-4} textAnchor="end" style={{font:"10px var(--mono)"}} fill="#ccd4de">Voc {mod.voc} V</text>
-    <text x={L+8} y={B-10} style={{font:"10px var(--mono)"}} fill={C.accent}>— — P–V (peak {fmt(pmax,0)} W)</text>
-    <text x={(L+R)/2} y={H-6} textAnchor="middle" style={{font:"600 9px system-ui"}} fill="#ccd4de">VOLTAGE (V)</text>
-    <text x={12} y={(T+B)/2} textAnchor="middle" transform={`rotate(-90 12 ${(T+B)/2})`} style={{font:"600 9px system-ui"}} fill="#7ea2d8">CURRENT (A)</text>
-    <text x={W-6} y={(T+B)/2} textAnchor="middle" transform={`rotate(90 ${W-6} ${(T+B)/2})`} style={{font:"600 9px system-ui"}} fill={C.accent}>POWER (W)</text>
-    {[0,0.25,0.5,0.75,1].map(f=>(<text key={f} x={X(mod.voc*f)} y={B+11} textAnchor="middle" style={{font:"8.5px var(--mono)"}} fill="#8f98a5">{fmt(mod.voc*f,0)}</text>))}
+    <text x={X(mod.vmp)-8} y={YI(mod.imp)+16} textAnchor="end" style={{font:"600 10.5px var(--mono)"}} fill="#ccd4de">MPP {fmt(mod.vmp,1)} V · {fmt(mod.imp,1)} A</text>
+    <text x={L+4} y={T+10} style={{font:"10.5px var(--mono)"}} fill="#ccd4de">Isc {mod.isc} A</text>
+    <text x={X(mod.voc)-4} y={B-4} textAnchor="end" style={{font:"10.5px var(--mono)"}} fill="#ccd4de">Voc {mod.voc} V</text>
+    <text x={L+8} y={B-10} style={{font:"10.5px var(--mono)"}} fill={C.accent}>— — P–V (peak {fmt(pmax,0)} W)</text>
+    <text x={(L+R)/2} y={H-6} textAnchor="middle" style={{font:"600 10.5px system-ui"}} fill="#ccd4de">VOLTAGE (V)</text>
+    <text x={12} y={(T+B)/2} textAnchor="middle" transform={`rotate(-90 12 ${(T+B)/2})`} style={{font:"600 10.5px system-ui"}} fill="#7ea2d8">CURRENT (A)</text>
+    <text x={W-6} y={(T+B)/2} textAnchor="middle" transform={`rotate(90 ${W-6} ${(T+B)/2})`} style={{font:"600 10.5px system-ui"}} fill={C.accent}>POWER (W)</text>
+    {[0,0.25,0.5,0.75,1].map(f=>(<text key={f} x={X(mod.voc*f)} y={B+11} textAnchor="middle" style={{font:"10.5px var(--mono)"}} fill="#8f98a5">{fmt(mod.voc*f,0)}</text>))}
   </svg>);
 }
 function InverterWindow({ inv }) {
@@ -4363,12 +4376,12 @@ function InverterWindow({ inv }) {
     <line x1={L} y1={B} x2={R} y2={B} stroke={C.muted}/>
     <path d={d} fill="none" stroke="#7ea2d8" strokeWidth="2"/>
     <line x1={X(inv.vMax)} y1={T} x2={X(inv.vMax)} y2={B} stroke="#d64545" strokeWidth="1.5" strokeDasharray="5 3"/>
-    <text x={(X(inv.fpLo)+X(inv.fpHi))/2} y={T-5} textAnchor="middle" style={{font:"600 9px var(--mono)"}} fill="#2f9e44">FULL POWER {inv.fpLo}–{inv.fpHi} V</text>
-    <text x={X(inv.vMax)} y={H-6} textAnchor="middle" style={{font:"9px var(--mono)"}} fill="#d64545">{inv.vMax} V max</text>
-    <text x={X(lo)+4} y={B-8} style={{font:"9px var(--mono)"}} fill="#8f98a5">{fmt(lo,0)} V</text>
-    <text x={L+4} y={T+10} style={{font:"9px var(--mono)"}} fill="#ccd4de">AVAILABLE POWER →</text>
-    <text x={(L+R)/2} y={H-6} textAnchor="middle" style={{font:"600 9px system-ui"}} fill="#ccd4de">DC VOLTAGE (V)</text>
-    {[500,1000,1500].filter(v=>v<=vTop).map(v=>(<text key={v} x={X(v)} y={B+11} textAnchor="middle" style={{font:"8.5px var(--mono)"}} fill="#8f98a5">{v}</text>))}
+    <text x={(X(inv.fpLo)+X(inv.fpHi))/2} y={T-5} textAnchor="middle" style={{font:"600 10.5px var(--mono)"}} fill="#2f9e44">FULL POWER {inv.fpLo}–{inv.fpHi} V</text>
+    <text x={X(inv.vMax)} y={H-6} textAnchor="middle" style={{font:"10.5px var(--mono)"}} fill="#d64545">{inv.vMax} V max</text>
+    <text x={X(lo)+4} y={B-8} style={{font:"10.5px var(--mono)"}} fill="#8f98a5">{fmt(lo,0)} V</text>
+    <text x={L+4} y={T+10} style={{font:"10.5px var(--mono)"}} fill="#ccd4de">AVAILABLE POWER →</text>
+    <text x={(L+R)/2} y={H-6} textAnchor="middle" style={{font:"600 10.5px system-ui"}} fill="#ccd4de">DC VOLTAGE (V)</text>
+    {[500,1000,1500].filter(v=>v<=vTop).map(v=>(<text key={v} x={X(v)} y={B+11} textAnchor="middle" style={{font:"10.5px var(--mono)"}} fill="#8f98a5">{v}</text>))}
   </svg>);
 }
 function ClipCurve({ ilr, ilrCap }) {
@@ -4381,13 +4394,13 @@ function ClipCurve({ ilr, ilrCap }) {
     <line x1={L} y1={B} x2={R} y2={B} stroke={C.muted}/><line x1={L} y1={T} x2={L} y2={B} stroke={C.muted}/>
     <path d={d} fill="none" stroke={C.accent} strokeWidth="2.2"/>
     <line x1={X(ilrCap)} y1={T} x2={X(ilrCap)} y2={B} stroke="#d64545" strokeWidth="1.5" strokeDasharray="5 3"/>
-    <text x={X(ilrCap)+4} y={T+10} style={{font:"600 9px var(--mono)"}} fill="#d64545">cap {fmt(ilrCap,2)}</text>
+    <text x={X(ilrCap)+4} y={T+10} style={{font:"600 10.5px var(--mono)"}} fill="#d64545">cap {fmt(ilrCap,2)}</text>
     {ilr>0&&(<g><circle cx={X(Math.min(ilr,IM))} cy={Y(clip(Math.min(ilr,IM)))} r="4.5" fill="#7ea2d8" stroke="#fff" strokeWidth="1.5"/>
-      <text x={X(Math.min(ilr,IM))+7} y={Y(clip(Math.min(ilr,IM)))-7} style={{font:"600 10px var(--mono)"}} fill="#ccd4de">now {fmt(ilr,2)} → {fmt(clip(ilr),2)}%</text></g>)}
-    {[1,1.1,1.2,1.3,1.4,1.5].map(t=>(<text key={t} x={X(t)} y={B+12} textAnchor="middle" style={{font:"9px var(--mono)"}} fill="#ccd4de">{t}</text>))}
-    {[0,Math.round(cm/2),Math.round(cm)].map(c=>(<text key={c} x={L-5} y={Y(c)+3} textAnchor="end" style={{font:"8.5px var(--mono)"}} fill="#8f98a5">{c}</text>))}
-    <text x={12} y={(T+B)/2} textAnchor="middle" transform={`rotate(-90 12 ${(T+B)/2})`} style={{font:"600 9px system-ui"}} fill="#ccd4de">EST. CLIPPING (%)</text>
-    <text x={(L+R)/2} y={H-2} textAnchor="middle" style={{font:"9px system-ui"}} fill={C.muted}>ILR (DC/AC) — clipping grows non-linearly past 1.0; stay left of the cap</text>
+      <text x={X(Math.min(ilr,IM))+7} y={Y(clip(Math.min(ilr,IM)))-7} style={{font:"600 10.5px var(--mono)"}} fill="#ccd4de">now {fmt(ilr,2)} → {fmt(clip(ilr),2)}%</text></g>)}
+    {[1,1.1,1.2,1.3,1.4,1.5].map(t=>(<text key={t} x={X(t)} y={B+12} textAnchor="middle" style={{font:"10.5px var(--mono)"}} fill="#ccd4de">{t}</text>))}
+    {[0,Math.round(cm/2),Math.round(cm)].map(c=>(<text key={c} x={L-5} y={Y(c)+3} textAnchor="end" style={{font:"10.5px var(--mono)"}} fill="#8f98a5">{c}</text>))}
+    <text x={12} y={(T+B)/2} textAnchor="middle" transform={`rotate(-90 12 ${(T+B)/2})`} style={{font:"600 10.5px system-ui"}} fill="#ccd4de">EST. CLIPPING (%)</text>
+    <text x={(L+R)/2} y={H-2} textAnchor="middle" style={{font:"10.5px system-ui"}} fill={C.muted}>ILR (DC/AC) — clipping grows non-linearly past 1.0; stay left of the cap</text>
   </svg>);
 }
 function MpptWidget({ vocCold, vmpHot, vmpCold, ceiling, mpptLo, mpptHi, N }) {
@@ -4414,13 +4427,13 @@ function MpptWidget({ vocCold, vmpHot, vmpCold, ceiling, mpptLo, mpptHi, N }) {
       <rect x={x(mpptLo)} y={30} width={x(mpptHi) - x(mpptLo)} height={104}
         fill="rgba(47,158,68,0.10)" stroke="rgba(47,158,68,0.45)" strokeDasharray="4 3" />
       <text x={(x(mpptLo) + x(mpptHi)) / 2} y={24} textAnchor="middle" fill={C.muted}
-        style={{ font: "600 10px var(--mono)", letterSpacing: "0.06em" }}>
+        style={{ font: "600 10.5px var(--mono)", letterSpacing: "0.06em" }}>
         MPPT WINDOW {fmt(mpptLo, 0)}–{fmt(mpptHi, 0)} V
       </text>
       {/* ceiling */}
       <line x1={x(ceiling)} x2={x(ceiling)} y1={26} y2={140} stroke="#d64545" strokeWidth="2" strokeDasharray="6 3" />
       <text x={x(ceiling)} y={152} textAnchor="middle" fill="#d64545"
-        style={{ font: "600 10px var(--mono)" }}>CEILING {fmt(ceiling, 0)} V</text>
+        style={{ font: "600 10.5px var(--mono)" }}>CEILING {fmt(ceiling, 0)} V</text>
       {/* string bars for the chosen N */}
       <Bar v={vocCold} y={54} label={`N=${N} · Voc cold`} ok={okCold} col="#7ea2d8" />
       <Bar v={vmpCold} y={86} label="Vmp cold" ok={coldVmpIn} col="#8a6fd6" />
@@ -4431,11 +4444,11 @@ function MpptWidget({ vocCold, vmpHot, vmpCold, ceiling, mpptLo, mpptHi, N }) {
         <g key={t}>
           <line x1={x(t)} x2={x(t)} y1={158} y2={163} stroke={C.muted} strokeWidth="1" />
           <text x={x(t)} y={176} textAnchor="middle" fill={C.muted}
-            style={{ font: "10px var(--mono)" }}>{t}</text>
+            style={{ font: "10.5px var(--mono)" }}>{t}</text>
         </g>
       ))}
       <text x={W / 2} y={H - 2} textAnchor="middle" fill={C.muted}
-        style={{ font: "10px system-ui, sans-serif" }}>String voltage (V)</text>
+        style={{ font: "10.5px system-ui, sans-serif" }}>String voltage (V)</text>
     </svg>
   );
 }
@@ -5244,7 +5257,7 @@ const EXTRA_LABELS = {
 
 function ConfBadge({ c }) {
   const col = c === "high" ? "#59b56f" : c === "medium" ? "#d9a441" : "#d67070";
-  return <span style={{ font: "700 8.5px system-ui", letterSpacing: "0.06em", color: col,
+  return <span style={{ font: "700 10.5px system-ui", letterSpacing: "0.06em", color: col,
     border: `1px solid ${col}55`, borderRadius: 3, padding: "1px 5px", textTransform: "uppercase" }}>{c}</span>;
 }
 
@@ -5418,7 +5431,7 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
 
           {binN > 1 && (
             <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 4, padding: "7px 9px" }}>
-              <div style={{ font: "600 10px system-ui", color: C.muted, letterSpacing: "0.07em",
+              <div style={{ font: "600 10.5px system-ui", color: C.muted, letterSpacing: "0.07em",
                 textTransform: "uppercase", marginBottom: 5 }}>
                 Power bin — one choice sets every linked row
               </div>
@@ -5445,7 +5458,7 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
                     {valueOf(k, v)} {f.unit}
                   </b>
                   <ConfBadge c={v.conf || "medium"} />
-                  {linked && <span style={{ font: "9px system-ui", color: C.muted }}>bin-linked</span>}
+                  {linked && <span style={{ font: "10.5px system-ui", color: C.muted }}>bin-linked</span>}
                   {!linked && v.vals.length > 1 && (
                     <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {v.vals.map((val, i) => (
@@ -5456,8 +5469,8 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
                     </span>
                   )}
                 </div>
-                {v.note && <div style={{ font: "10px system-ui", color: C.warn, marginTop: 3 }}>⚠ {v.note}</div>}
-                <div style={{ font: "10px var(--mono)", color: C.muted, marginTop: 3 }}>“{v.line}”</div>
+                {v.note && <div style={{ font: "10.5px system-ui", color: C.warn, marginTop: 3 }}>⚠ {v.note}</div>}
+                <div style={{ font: "10.5px var(--mono)", color: C.muted, marginTop: 3 }}>“{v.line}”</div>
               </div>
             );
           })}
@@ -5765,14 +5778,14 @@ function IlrChart({ rows, ilrCap, selected, knee, actual }) {
           <g key={f}>
             <line x1={ml} x2={w - mr} y1={YN(v)} y2={YN(v)} stroke={C.line} />
             <text x={ml - 6} y={YN(v) + 4} textAnchor="end"
-              style={{ font: "10px var(--mono)", fill: "#59b56f" }}>{fmt(v, 1)}</text>
+              style={{ font: "10.5px var(--mono)", fill: "#59b56f" }}>{fmt(v, 1)}</text>
           </g>
         );
       })}
       {/* right axis — clipping */}
       {[0, 0.5, 1].map((f) => (
         <text key={f} x={w - mr + 6} y={YC(clipMax * f) + 4}
-          style={{ font: "10px var(--mono)", fill: "#d64545" }}>{fmt(clipMax * f, 1)}%</text>
+          style={{ font: "10.5px var(--mono)", fill: "#d64545" }}>{fmt(clipMax * f, 1)}%</text>
       ))}
       {/* zero line for the net series — the sign change that matters */}
       {netMin < 0 && (
@@ -5786,7 +5799,7 @@ function IlrChart({ rows, ilrCap, selected, knee, actual }) {
           <line x1={X(ilrCap)} x2={X(ilrCap)} y1={mt} y2={mt + ih}
             stroke="#d64545" strokeWidth="1.5" strokeDasharray="5 3" />
           <text x={X(ilrCap) + 5} y={mt + 11}
-            style={{ font: "600 10px var(--mono)", fill: "#d64545" }}>cap {fmt(ilrCap, 2)}</text>
+            style={{ font: "600 10.5px var(--mono)", fill: "#d64545" }}>cap {fmt(ilrCap, 2)}</text>
         </g>
       )}
       {/* the knee */}
@@ -5795,7 +5808,7 @@ function IlrChart({ rows, ilrCap, selected, knee, actual }) {
           <line x1={X(kneeRow.ilr)} x2={X(kneeRow.ilr)} y1={mt} y2={mt + ih}
             stroke="#59b56f" strokeWidth="1.5" strokeDasharray="4 3" />
           <text x={X(kneeRow.ilr) + 5} y={mt + ih - 6}
-            style={{ font: "600 10px var(--mono)", fill: "#59b56f" }}>
+            style={{ font: "600 10.5px var(--mono)", fill: "#59b56f" }}>
             knee {fmt(kneeRow.ilr, 2)}
           </text>
         </g>
@@ -5816,7 +5829,7 @@ function IlrChart({ rows, ilrCap, selected, knee, actual }) {
               stroke={sel ? "#fff" : "none"} strokeWidth={sel ? 1.5 : 0} />
             {sel && (
               <text x={X(r.ilr)} y={YN(r.net) - 11} textAnchor="middle"
-                style={{ font: "600 10px var(--mono)", fill: "#e8820c" }}>
+                style={{ font: "600 10.5px var(--mono)", fill: "#e8820c" }}>
                 {r.s} strings
               </text>
             )}
@@ -5832,16 +5845,16 @@ function IlrChart({ rows, ilrCap, selected, knee, actual }) {
         </g>
       ))}
       <text x={13} y={mt + ih / 2} textAnchor="middle" transform={`rotate(-90 13 ${mt + ih / 2})`}
-        style={{ font: "10px system-ui", fill: "#59b56f" }}>Marginal net gain, % per string</text>
+        style={{ font: "10.5px system-ui", fill: "#59b56f" }}>Marginal net gain, % per string</text>
       <text x={w - 11} y={mt + ih / 2} textAnchor="middle" transform={`rotate(90 ${w - 11} ${mt + ih / 2})`}
-        style={{ font: "10px system-ui", fill: "#d64545" }}>Clipping loss, %</text>
+        style={{ font: "10.5px system-ui", fill: "#d64545" }}>Clipping loss, %</text>
       <text x={ml + iw / 2} y={h - 7} textAnchor="middle"
-        style={{ font: "10px system-ui", fill: C.muted }}>DC/AC ratio (ILR)</text>
+        style={{ font: "10.5px system-ui", fill: C.muted }}>DC/AC ratio (ILR)</text>
       {rows.filter((_, i) => i % Math.max(1, Math.ceil(rows.length / 9)) === 0).map((r) => (
         <g key={`x${r.s}`}>
           <line x1={X(r.ilr)} x2={X(r.ilr)} y1={mt + ih} y2={mt + ih + 4} stroke={C.line} />
           <text x={X(r.ilr)} y={h - 22} textAnchor="middle"
-            style={{ font: "9.5px var(--mono)", fill: C.muted }}>{fmt(r.ilr, 2)}</text>
+            style={{ font: "10.5px var(--mono)", fill: C.muted }}>{fmt(r.ilr, 2)}</text>
         </g>
       ))}
     </svg>
@@ -5946,7 +5959,7 @@ function ClippingTab({ mod, inv, elec, setElec, ilrCap, setIlrCap }) {
         <div style={{ overflowX: "auto", width: "100%" }}><table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560, font: "12px var(--mono)" }}>
           <thead><tr style={{ color: C.muted, textAlign: "left" }}>
             {["Strings", "Modules", "DC kWp", "ILR", "Model clip %", "PVsyst clip %", "Marginal net %", ""].map((h) => (
-              <th key={h} style={{ padding: "6px 10px", borderBottom: `1px solid ${C.line}`, font: "600 10px system-ui", textTransform: "uppercase", letterSpacing: "0.07em" }}>{h}</th>
+              <th key={h} style={{ padding: "6px 10px", borderBottom: `1px solid ${C.line}`, font: "600 10.5px system-ui", textTransform: "uppercase", letterSpacing: "0.07em" }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -6261,12 +6274,12 @@ function YieldCurve({ sweep, pitch }) {
         <g key={i}>
           <line x1={L - 4} y1={py(v)} x2={L} y2={py(v)} stroke={C.line} />
           <text x={L - 7} y={py(v) + 3} textAnchor="end"
-            style={{ font: "9px var(--mono)", fill: C.muted }}>{fmt(v, 0)}</text>
+            style={{ font: "10.5px var(--mono)", fill: C.muted }}>{fmt(v, 0)}</text>
         </g>
       ))}
       {sweep.map((r) => (
         <text key={r.pitch} x={px(r.pitch)} y={H - B + 13} textAnchor="middle"
-          style={{ font: "9px var(--mono)", fill: C.muted }}>{fmt(r.pitch, 1)}</text>
+          style={{ font: "10.5px var(--mono)", fill: C.muted }}>{fmt(r.pitch, 1)}</text>
       ))}
       <path d={d} fill="none" stroke={C.accent} strokeWidth="2" />
       {sweep.map((r) => (
@@ -6277,11 +6290,11 @@ function YieldCurve({ sweep, pitch }) {
         <line x1={px(ref.pitch)} y1={T} x2={px(ref.pitch)} y2={H - B}
           stroke="#fff" strokeWidth="1" strokeDasharray="4 4" opacity="0.5" />
       )}
-      <text x={L} y={H - 4} style={{ font: "9px system-ui", fill: C.muted }}>
+      <text x={L} y={H - 4} style={{ font: "10.5px system-ui", fill: C.muted }}>
         PITCH (m) — reference {fmt(pitch, 2)} m
       </text>
       <text x={10} y={T + 6} transform={`rotate(-90 10 ${T + 6})`}
-        style={{ font: "9px system-ui", fill: C.muted }}>SPECIFIC YIELD (kWh/kWp)</text>
+        style={{ font: "10.5px system-ui", fill: C.muted }}>SPECIFIC YIELD (kWh/kWp)</text>
     </svg>
   );
 }
@@ -6333,6 +6346,7 @@ function YieldCurve({ sweep, pitch }) {
    This is still an area check, not a layout. It says so, loudly.
    ===================================================================== */
 function RoofAreaTab({ mod, inv, elec, st, set, onAdopt }) {
+  const narrowRoof = useNarrow(760);
   const modL = mod.length || 0, modW = mod.width || 0;
   const modArea = modL * modW;
   const perString = elec.modulesPerString || 0;
@@ -6434,6 +6448,58 @@ function RoofAreaTab({ mod, inv, elec, st, set, onAdopt }) {
           Setback is the clear margin at the edges; obstruction is everything the grid cannot
           see — vents, rooflights, chimneys and their shadows.
         </div>
+        {narrowRoof ? (
+          /* Seventeen columns of inputs is not a table on a phone, it is
+             a form. One card per plane, fields stacked, the computed
+             result at the foot of each — the figures that were off the
+             right-hand edge are the ones worth seeing. */
+          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
+            {planes.map((p, i) => (
+              <div key={i} style={{ background: C.panel2,
+                border: `1px solid ${p.oddTilt ? "#e0a63a" : C.line}`,
+                borderRadius: 7, padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <input value={p.name} onChange={(e) => upd(i, { name: e.target.value })}
+                    style={{ flex: 1, background: C.panel, border: `1px solid ${C.line}`,
+                      borderRadius: 4, color: C.text, font: "650 13px var(--mono)",
+                      padding: "7px 8px", outline: "none" }} />
+                  <button className="btn" style={{ padding: "5px 11px" }}
+                    onClick={() => delPlane(i)}>remove</button>
+                </div>
+                <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+                  <Num label="Length" unit="m" value={p.len} step={0.5} onChange={(v) => upd(i, { len: v })} />
+                  <Num label="Width" unit="m" value={p.wid} step={0.5} onChange={(v) => upd(i, { wid: v })} />
+                  <Num label="Roof pitch" unit="\u00b0" value={p.roofPitch} step={1} onChange={(v) => upd(i, { roofPitch: v })} />
+                  <Num label="Azimuth" unit="\u00b0" value={p.azimuth} step={5} onChange={(v) => upd(i, { azimuth: v })} />
+                  <Sel label="Mounting" value={p.mounting} onChange={(v) => upd(i, { mounting: v })}
+                    options={[{ value: "flush", label: "Flush" }, { value: "tilted", label: "Tilted up" }]} />
+                  {!p.flush && (<>
+                    <Num label="Module tilt" unit="\u00b0" value={p.moduleTilt} step={1} onChange={(v) => upd(i, { moduleTilt: v })} />
+                    <Num label="Shade limit" unit="\u00b0" value={p.shadeLimit} step={1} onChange={(v) => upd(i, { shadeLimit: v })} />
+                  </>)}
+                  <Sel label="Orientation" value={p.orient} onChange={(v) => upd(i, { orient: v })}
+                    options={[{ value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }]} />
+                  <Num label="Gap" unit="m" value={p.gap} step={0.005} onChange={(v) => upd(i, { gap: v })} />
+                  <Num label="Setback" unit="%" value={p.setbackPct} step={1} onChange={(v) => upd(i, { setbackPct: v })} />
+                  <Num label="Obstruction" unit="%" value={p.obstructPct} step={1} onChange={(v) => upd(i, { obstructPct: v })} />
+                </div>
+                <div style={{ marginTop: 9, paddingTop: 8, borderTop: `1px solid ${C.line}`,
+                  display: "flex", gap: 14, flexWrap: "wrap", font: "12px var(--mono)", color: C.muted }}>
+                  <span>row pitch <b style={{ color: p.flush ? C.text : C.accent }}>{fmt(p.rowPitch, 2)} m</b></span>
+                  <span>grid <b style={{ color: C.text }}>{p.across} \u00d7 {p.up}</b></span>
+                  <span>modules <b style={{ color: C.text }}>{p.modules}</b></span>
+                  <span><b style={{ color: C.accent }}>{fmt(p.kWp, 2)} kWp</b></span>
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px",
+              background: C.panel2, border: `2px solid ${C.line}`, borderRadius: 7,
+              font: "650 14px var(--mono)", color: C.text }}>
+              <span>Total</span>
+              <span>{totalModules} modules \u00b7 <span style={{ color: C.accent }}>{fmt(totalKWp, 2)} kWp</span></span>
+            </div>
+          </div>
+        ) : (
         <div style={{ width: "100%", overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1180 }}>
             <thead><tr>
@@ -6441,7 +6507,7 @@ function RoofAreaTab({ mod, inv, elec, st, set, onAdopt }) {
                 "Module tilt °", "Shade limit °", "Orientation", "Gap m", "Setback %",
                 "Obstr %", "Row pitch m", "Grid", "Modules", "kWp", ""].map((hh) => (
                 <th key={hh} style={{ padding: "5px 7px", borderBottom: `1px solid ${C.line}`,
-                  textAlign: "right", font: "600 9px system-ui", textTransform: "uppercase",
+                  textAlign: "right", font: "600 10.5px system-ui", textTransform: "uppercase",
                   letterSpacing: "0.04em", color: C.muted, whiteSpace: "nowrap" }}>{hh}</th>
               ))}
             </tr></thead>
@@ -6499,6 +6565,7 @@ function RoofAreaTab({ mod, inv, elec, st, set, onAdopt }) {
             </tbody>
           </table>
         </div>
+        )}
         <button className="btn" onClick={addPlane}>+ Add plane</button>
       </Section>
 
@@ -6787,7 +6854,7 @@ function ShadeTab({ frame, mod, elec, reg, loc, onTmy }) {
         <thead><tr>
           {["Run", "Pitch m", "GCR", "kWh/kWp", "Shading %", "Note", ""].map((hd) => (
             <th key={hd} style={{ padding: "6px 8px", borderBottom: `1px solid ${C.line}`,
-              font: "600 10px system-ui", color: C.muted, textAlign: "left",
+              font: "600 10.5px system-ui", color: C.muted, textAlign: "left",
               textTransform: "uppercase", letterSpacing: "0.07em" }}>{hd}</th>
           ))}
         </tr></thead>
@@ -7414,7 +7481,8 @@ export default function App() {
     ["engineer", "Engineer", "Every parameter, every derivation, every knob. For preliminary design proper."],
   ];
   const landing = !entered && (
-    <div style={{ position: "fixed", inset: 0, zIndex: 999, background: "#14171c",
+    <div className="pvhub-root" style={{ position: "fixed", inset: 0, zIndex: 999, background: "#14171c",
+      overflowY: "auto",
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 26, padding: 20 }}>
       <div style={{ display: "flex", alignItems: "baseline", userSelect: "none" }}>
         <span style={{ font: "800 34px system-ui", color: "#fff", letterSpacing: "-1px" }}>PV</span>
@@ -7439,7 +7507,7 @@ export default function App() {
                 {w.name}
               </div>
               <div style={{ font: "11px/1.55 system-ui", color: "#9aa3ae", flex: 1 }}>{w.blurb}</div>
-              <div style={{ font: "10px system-ui", color: "#5c6572", borderTop: "1px solid #2c313b",
+              <div style={{ font: "10.5px system-ui", color: "#5c6572", borderTop: "1px solid #2c313b",
                 paddingTop: 6 }}>{w.note}</div>
             </button>
           ))}
@@ -7451,10 +7519,10 @@ export default function App() {
                 border: "1px dashed #2c313b", borderRadius: 8, padding: "15px 15px 13px",
                 display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ font: "700 14.5px system-ui", color: "#7b8695" }}>
-                {w.name} <span style={{ font: "10px system-ui", color: "#5c6572" }}>— planned</span>
+                {w.name} <span style={{ font: "10.5px system-ui", color: "#5c6572" }}>— planned</span>
               </div>
               <div style={{ font: "11px/1.55 system-ui", color: "#6b7480", flex: 1 }}>{w.blurb}</div>
-              <div style={{ font: "10px system-ui", color: "#4e5663", borderTop: "1px solid #242933",
+              <div style={{ font: "10.5px system-ui", color: "#4e5663", borderTop: "1px solid #242933",
                 paddingTop: 6 }}>{w.note}</div>
             </div>
           ))}
@@ -7518,6 +7586,56 @@ export default function App() {
       cursor: pointer; white-space: nowrap; }
     .pvhub-subtab:hover { color: #dde3ea; border-color: #3a4150; }
     .pvhub-subtab.on { background: #e8820c; border-color: #e8820c; color: #181206; }
+
+    /* ---- the phone ----------------------------------------------------
+       Two things make a dense engineering interface unusable on a touch
+       screen, and neither is layout: targets too small to hit and text
+       too small to read. The floors below are applied once, here, rather
+       than chased through two hundred inline styles — anything that set
+       8.5 px because it was a caption on a desktop becomes legible, and
+       anything with a 3 px vertical pad becomes tappable.
+
+       44 px is Apple's figure and 48 is Google's; 40 is the compromise
+       that keeps a row of controls from eating the screen. Hit area is
+       padded rather than the box grown, so the layout barely moves. */
+    @media (max-width: 760px) {
+      .pvhub-sub { height: auto; flex-wrap: wrap; padding: 7px 10px; gap: 7px; }
+      .pvhub-subtab { padding: 9px 14px; font-size: 13px; min-height: 40px; }
+      .pvhub-tab { padding: 0 13px; font-size: 13.5px; }
+      .btn, button, label.btn { min-height: 38px; font-size: 12.5px; }
+      /* :not() rather than [type="text"] — an <input> written without a
+         type attribute IS a text box, but the attribute selector does not
+         match it, which left a row of them at 31 px. */
+      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+      select, textarea {
+        min-height: 38px; font-size: 16px;   /* 16 stops iOS zooming on focus */
+      }
+      input[type="checkbox"], input[type="radio"] { min-width: 22px; min-height: 22px; }
+      /* A checkbox is hit by its label, not by the box, so the label is
+         what has to be 38 px tall — the box stays a box. :has() is
+         Safari 15.4 and up; where it is missing the box is still 22 px,
+         which is the behaviour without this rule rather than a break. */
+      label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) {
+        min-height: 38px; align-items: center;
+      }
+      .wk { padding: 11px 12px; }
+      .readout { line-height: 1.6; }
+      /* No blanket font floor here. The obvious rule —
+         font-size: max(1em, 11px) on every descendant — does not work:
+         1em resolves against the *parent*, so a 9 px caption inside a
+         14 px panel becomes 14 px rather than 11, and an inline
+         font: shorthand beats the rule anyway. The floor is applied at
+         source instead: nothing in src/ declares below 10.5 px. */
+    }
+    @media (max-width: 760px) {
+      .wk-status { font-size: 11.5px; }
+    }
+    @media (pointer: coarse) {
+      .btn, button, label.btn { min-height: 38px; }
+      /* A 2 px-padded ✕ in a table row is a real control with a real
+         job; give it something to hit without changing how it looks. */
+      button { touch-action: manipulation; }
+    }
     .pvhub-tab.on { color: #fff; border-bottom-color: ${C.accent}; }
     .wk { background: ${C.panel}; border: 1px solid ${C.line}; border-radius: 6px;
       padding: 12px 14px; margin-bottom: 10px; }
@@ -7525,7 +7643,7 @@ export default function App() {
     .wk-n { font: 700 11px var(--mono); color: ${C.accent}; background: rgba(232,130,12,0.12);
       border: 1px solid rgba(232,130,12,0.35); border-radius: 3px; padding: 1px 7px; }
     .wk-title { font: 600 12.5px system-ui, sans-serif; color: ${C.text}; flex: 1; }
-    .wk-status { font: 700 10px system-ui, sans-serif; letter-spacing: 0.06em;
+    .wk-status { font: 700 10.5px system-ui, sans-serif; letter-spacing: 0.06em;
       border-radius: 3px; padding: 2px 8px; text-transform: uppercase; }
     .wk-status.ok { color: #59b56f; background: rgba(47,158,68,0.12); border: 1px solid rgba(47,158,68,0.4); }
     .wk-status.bad { color: #d67070; background: rgba(214,69,69,0.12); border: 1px solid rgba(214,69,69,0.4); }
@@ -7596,7 +7714,7 @@ export default function App() {
       background: C.chrome, color: C.text, overflow: "hidden",
       fontFamily: "system-ui, sans-serif",
       "--mono": 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace',
-    }}>
+    }} className="pvhub-root">
       {landing}
       <style>{shellCss}</style>
       <div style={{
@@ -7691,7 +7809,7 @@ export default function App() {
       )}
       {activeGroup[1].length > 1 && (
         <div className="pvhub-sub">
-          <span style={{ font: "600 10px system-ui", letterSpacing: "0.09em", color: "#5c6572",
+          <span style={{ font: "600 10.5px system-ui", letterSpacing: "0.09em", color: "#5c6572",
             textTransform: "uppercase", marginRight: 4 }}>{activeGroup[0]}</span>
           {activeGroup[1].map((id) => (
             <button key={id} className={`pvhub-subtab ${tool === id ? "on" : ""}`}

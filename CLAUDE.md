@@ -12,7 +12,8 @@ two do not: how to work on the code without breaking it.
 
 ```
 src/App.jsx            the shell and most of the application — ~6,300 lines
-src/ui.jsx             shared atoms: palette C, formatters, Num/Sel/Section/Working/Page
+src/ui.jsx             shared atoms: palette C, formatters, Num/Sel/Section/Working/Page,
+                       and Rows — the table-or-cards primitive the phone layout rests on
 src/cableData.js       IEC reference tables and the adiabatic k physics — data, no React
 src/CableTools.jsx     the four Cables tabs (DC, AC, MV, short circuit)
 src/CableRefTables.jsx the reference-table display layer — RefCard, the three
@@ -134,6 +135,20 @@ the Layout tool lands on the map with an `☰ Inputs` button rather than on a sp
 and a two-finger pinch on the site canvas must change its `viewBox` width. Drawing is the
 case that broke before: four *finger* taps (a tap carries ~10 px of wobble, so simulate it
 with a touchmove between down and up) must place four corners, not zero.
+
+Two traps in writing that probe, both of which produce a confident false negative:
+
+- **The canvas pinches on pointer events, not touch events.** `onPointerDown` /
+  `ptrsRef` / `pinchRef` are what the gesture runs through, so a probe that dispatches
+  `TouchEvent` watches the `viewBox` sit still and reports a dead pinch on working code.
+  Send `PointerEvent` with `pointerType: "touch"` and two distinct `pointerId`s.
+- **Every tab renders in the DOM at once**, so an unscoped `querySelectorAll` returns
+  hidden panes. Filter on `getClientRects().length` or the probe measures a tab nobody
+  is looking at — a zero-width element reads as 0 px wide and passes everything.
+
+Sweeping it properly means walking the tab *groups* as well as the sub-tabs; only the
+current group's `.pvhub-subtab`s are in the DOM visible, so iterating sub-tabs alone covers
+about a fifth of the preliminary workspace.
 
 The PVsyst readers have a trap worth knowing: the format nests blocks, and a counted
 sub-block (`Remarks, Count=7`) closes with `End of Remarks`. Treating any `End of …` line as
@@ -369,6 +384,22 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **Currency is never converted.** There is no exchange rate in the tool. Quotes in different
   currencies sit side by side, and `compareQuotes` says they are not comparable on money
   rather than quietly applying a rate that would be stale by the time it is read.
+- **A dense table becomes cards on a phone, it does not gain a scrollbar.** `Rows` in
+  `src/ui.jsx` renders a `<table>` above 760 px and one card per row below it, from one
+  column definition, so the two cannot drift. A twelve-column table does not become usable
+  at 390 px by scrolling sideways — the costing quote table cut off at Region, which put
+  the pricing date and its age, the entire point of that tool, off-screen. Use `Rows` for
+  anything wider than about six columns rather than wrapping it in a scroller.
+- **The font floor is applied at source, never as a CSS rule.** The obvious rule,
+  `font-size: max(1em, 11px)` on every descendant, does not work twice over: `1em`
+  resolves against the *parent*, so a 9 px caption inside a 14 px panel comes out at 14 px
+  rather than 11, and an inline `font:` shorthand beats the rule anyway. Nothing in `src/`
+  declares below 10.5 px; keep it that way rather than reintroducing a blanket floor.
+  `<sub>` and SVG `<text>` legitimately measure smaller — a subscript is a subscript, and
+  SVG text scales with its `viewBox`, which is what pinch zoom is for.
+- **A checkbox is hit by its label.** The box stays a box; `label:has(> input[type=
+  "checkbox"])` carries the 38 px minimum height. Growing the box instead gives a 38 px
+  checkbox, which looks broken and still misses the text beside it.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.
