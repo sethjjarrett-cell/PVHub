@@ -91,7 +91,13 @@ calls.
 
 **Workspaces.** The landing asks which tool you came for before anything else, because that
 decides how much of the application is relevant. `WORKSPACES` in `src/App.jsx` defines them
-and `switchWorkspace` moves between them:
+and `switchWorkspace` moves between them. They are presented through `LANDING_GROUPS`, three
+sections in the order the work happens — design a plant, size the equipment, check the
+numbers — because eight cards in one row read as a wall rather than a menu. Each card names
+its tools when closed, so the hover only adds the description rather than hiding anything;
+it opens on hover on a mouse and on tap on a touch screen, and `landNarrow` switches the
+panel between an absolute dropdown and an in-flow accordion. Adding a workspace means adding
+it to a group as well, or it is unreachable.
 
 | Workspace | Tabs |
 |---|---|
@@ -148,7 +154,16 @@ Two traps in writing that probe, both of which produce a confident false negativ
 
 Sweeping it properly means walking the tab *groups* as well as the sub-tabs; only the
 current group's `.pvhub-subtab`s are in the DOM visible, so iterating sub-tabs alone covers
-about a fifth of the preliminary workspace.
+about a fifth of the preliminary workspace. Reaching a workspace at all now means opening
+its landing section first, so a probe that clicked a card by name needs updating when the
+grouping changes.
+
+A third trap, this one in the application rather than the probe: **a tap fires `focus` and
+then `click` as two separate events**, and React re-renders between them. A disclosure that
+opened `onFocus` therefore handed the following click a handler that saw it already open and
+shut it again — working perfectly under a synthetic `hover()` and not at all on a phone. Put
+the toggle on click alone; Enter and Space on a `<button>` fire click, so the keyboard still
+works.
 
 The PVsyst readers have a trap worth knowing: the format nests blocks, and a counted
 sub-block (`Remarks, Count=7`) closes with `End of Remarks`. Treating any `End of …` line as

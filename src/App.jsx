@@ -7249,6 +7249,26 @@ export default function App() {
   const [sharedTmy, setSharedTmy] = useState(null);
   const [entered, setEntered] = useState(false);
   const [landStep, setLandStep] = useState(0);
+  /* Which landing section is open. Hover on a mouse, tap on a touch
+     screen; null means all three are closed. */
+  const [openGroup, setOpenGroup] = useState(null);
+  const landNarrow = useNarrow(860);
+  /* How tall the open panel may be. A vh fraction will not do it: the
+     panel hangs below the card row, so what is left is the window
+     height minus wherever that row ends, and CSS cannot see that
+     offset. Measured when a section opens and on resize. */
+  const landRowRef = useRef(null);
+  const [panelMax, setPanelMax] = useState(420);
+  useEffect(() => {
+    if (!openGroup || landNarrow) return undefined;
+    const calc = () => {
+      const el = landRowRef.current;
+      if (el) setPanelMax(Math.max(170, window.innerHeight - el.getBoundingClientRect().bottom - 26));
+    };
+    calc();
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, [openGroup, landNarrow]);
   const [pvMod, setPvMod] = useState({
     length: 2.278, width: 1.134, power: 650,
     voc: 49.97, vmp: 41.67, isc: 16.3, imp: 15.6,
@@ -7448,6 +7468,30 @@ export default function App() {
         + "most of the way built.",
       note: "Not built yet — see the note below." },
   ];
+  /* Eight cards in one row read as a wall rather than a menu, and the
+     one that matters most — the preliminary tool — did not stand out
+     among them. Three sections instead, in the order the work actually
+     happens: lay the plant out, size what goes in it, then find out
+     what it yields and costs. Each card names its tools when closed,
+     so nothing is hidden behind the hover; the hover only adds the
+     description. */
+  const LANDING_GROUPS = [
+    { id: "design", name: "Design a plant",
+      blurb: "Start from a site and finish with a layout you can take into CAD.",
+      tools: ["prelim", "layout"] },
+    { id: "size", name: "Size the equipment",
+      blurb: "Strings, cables and batteries worked out against the standards.",
+      tools: ["string", "cable", "bess"] },
+    { id: "assess", name: "Check the numbers",
+      blurb: "What it generates, what it costs, and what the network does with it.",
+      tools: ["yield", "cost"], planned: ["loadflow"] },
+  ];
+  const wsById = (id) => WORKSPACES.find((w) => w.id === id);
+  const plannedById = (id) => PLANNED.find((w) => w.id === id);
+  const enterWs = (id) => {
+    switchWorkspace(id);
+    if (id === "prelim") setLandStep(1); else setEntered(true);
+  };
   const ws = WORKSPACES.find((w) => w.id === workspace) || WORKSPACES[0];
   const isPrelim = ws.id === "prelim";
 
@@ -7483,7 +7527,12 @@ export default function App() {
   const landing = !entered && (
     <div className="pvhub-root" style={{ position: "fixed", inset: 0, zIndex: 999, background: "#14171c",
       overflowY: "auto",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 26, padding: 20 }}>
+      /* Top-aligned rather than centred: the open section panel is
+         positioned absolutely, so it does not extend the scroll height
+         and a centred row leaves it hanging off the bottom of a short
+         window. */
+      display: "flex", flexDirection: "column", alignItems: "center",
+      justifyContent: "flex-start", gap: 22, padding: "clamp(22px, 6vh, 64px) 20px 20px" }}>
       <div style={{ display: "flex", alignItems: "baseline", userSelect: "none" }}>
         <span style={{ font: "800 34px system-ui", color: "#fff", letterSpacing: "-1px" }}>PV</span>
         <span style={{ font: "800 34px system-ui", color: "#000", background: "#f90",
@@ -7495,43 +7544,98 @@ export default function App() {
           the standalone tools have nothing to configure. */}
       {landStep === 0 ? (<>
         <div style={{ font: "13px system-ui", color: "#8b95a3" }}>What are you here to do?</div>
-        <div style={{ display: "flex", gap: 13, flexWrap: "wrap", justifyContent: "center", maxWidth: 1000 }}>
-          {WORKSPACES.map((w) => (
-            <button key={w.id}
-              onClick={() => { switchWorkspace(w.id); if (w.id === "prelim") setLandStep(1); else setEntered(true); }}
-              style={{ width: 232, textAlign: "left", background: "#1c2128", color: "#e8eaed",
-                border: `1px solid ${w.id === "prelim" ? "#e8820c" : "#2c313b"}`, borderRadius: 8,
-                padding: "15px 15px 13px", cursor: "pointer", display: "flex",
-                flexDirection: "column", gap: 6 }}>
-              <div style={{ font: "700 14.5px system-ui", color: w.id === "prelim" ? "#e8820c" : "#cfd6de" }}>
-                {w.name}
+        <div ref={landRowRef} style={{ display: "flex", gap: 14, flexWrap: "wrap",
+          justifyContent: "center", alignItems: "stretch", maxWidth: 840 }}>
+          {LANDING_GROUPS.map((g) => {
+            const open = openGroup === g.id;
+            const tools = g.tools.map(wsById).filter(Boolean);
+            const planned = (g.planned || []).map(plannedById).filter(Boolean);
+            const names = [...tools, ...planned].map((w) => w.short).join(" · ");
+            /* The panel sits in normal flow on a phone, where an
+               absolute one would cover the next card, and hangs below
+               the card on a desktop, where reflowing the row on hover
+               would make the whole menu jump. */
+            const panel = (
+              <div style={landNarrow
+                ? { display: "flex", flexDirection: "column", gap: 7, marginTop: 8,
+                    marginLeft: 14, paddingLeft: 11, borderLeft: "2px solid #e8820c" }
+                : { position: "absolute", top: "calc(100% + 7px)", left: "50%",
+                    transform: "translateX(-50%)", width: "min(348px, 92vw)", zIndex: 5,
+                    background: "#14171c", border: "1px solid #2c313b", borderRadius: 9,
+                    padding: 9, boxShadow: "0 14px 34px rgba(0,0,0,0.6)",
+                    maxHeight: panelMax, overflowY: "auto",
+                    display: "flex", flexDirection: "column", gap: 7 }}>
+                {tools.map((w) => (
+                  <button key={w.id} className="land-tool" onClick={() => enterWs(w.id)}>
+                    <div style={{ font: "700 13px system-ui",
+                      color: w.id === "prelim" ? "#e8820c" : "#dde3ea" }}>
+                      {w.name}
+                      {w.id === "prelim" && <span style={{ font: "10.5px system-ui",
+                        color: "#5c6572" }}>  — the comprehensive one</span>}
+                    </div>
+                    <div style={{ font: "11px/1.5 system-ui", color: "#9aa3ae", marginTop: 3 }}>
+                      {w.blurb}
+                    </div>
+                    <div style={{ font: "10.5px system-ui", color: "#5c6572", marginTop: 5 }}>
+                      {w.note}
+                    </div>
+                  </button>
+                ))}
+                {planned.map((w) => (
+                  <div key={w.id} className="land-tool land-tool-off">
+                    <div style={{ font: "700 13px system-ui", color: "#7b8695" }}>
+                      {w.name} <span style={{ font: "10.5px system-ui", color: "#5c6572" }}>— planned</span>
+                    </div>
+                    <div style={{ font: "11px/1.5 system-ui", color: "#6b7480", marginTop: 3 }}>
+                      {w.blurb}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div style={{ font: "11px/1.55 system-ui", color: "#9aa3ae", flex: 1 }}>{w.blurb}</div>
-              <div style={{ font: "10.5px system-ui", color: "#5c6572", borderTop: "1px solid #2c313b",
-                paddingTop: 6 }}>{w.note}</div>
-            </button>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 13, flexWrap: "wrap", justifyContent: "center", maxWidth: 1000 }}>
-          {PLANNED.map((w) => (
-            <div key={w.id}
-              style={{ width: 232, textAlign: "left", background: "#171a1f", color: "#6b7480",
-                border: "1px dashed #2c313b", borderRadius: 8, padding: "15px 15px 13px",
-                display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ font: "700 14.5px system-ui", color: "#7b8695" }}>
-                {w.name} <span style={{ font: "10.5px system-ui", color: "#5c6572" }}>— planned</span>
+            );
+            return (
+              <div key={g.id} style={{ position: "relative", width: landNarrow ? "100%" : 252,
+                maxWidth: 420 }}
+                onMouseEnter={COARSE ? undefined : () => setOpenGroup(g.id)}
+                onMouseLeave={COARSE ? undefined : () => setOpenGroup((c) => (c === g.id ? null : c))}>
+                {/* Click toggles; there is deliberately no onFocus here.
+                    A tap fires focus and then click as two separate
+                    events, React re-renders between them, so an onFocus
+                    that opened the panel handed the click a handler that
+                    saw it already open and shut it again — the section
+                    simply would not open on a phone. */}
+                <button className={`land-card${open ? " on" : ""}`} aria-expanded={open}
+                  onClick={() => setOpenGroup((c) => (c === g.id ? null : g.id))}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ font: "700 15px system-ui", color: open ? "#e8820c" : "#cfd6de" }}>
+                      {g.name}
+                    </span>
+                    <span style={{ font: "10.5px system-ui", color: "#5c6572", marginLeft: "auto" }}>
+                      {open ? "▾" : "▸"}
+                    </span>
+                  </div>
+                  <div style={{ font: "11px/1.55 system-ui", color: "#9aa3ae", marginTop: 6 }}>
+                    {g.blurb}
+                  </div>
+                  <div style={{ font: "10.5px system-ui", color: "#6b7480", marginTop: 9,
+                    borderTop: "1px solid #2c313b", paddingTop: 7 }}>
+                    {names}
+                  </div>
+                </button>
+                {open && panel}
               </div>
-              <div style={{ font: "11px/1.55 system-ui", color: "#6b7480", flex: 1 }}>{w.blurb}</div>
-              <div style={{ font: "10.5px system-ui", color: "#4e5663", borderTop: "1px solid #242933",
-                paddingTop: 6 }}>{w.note}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <div style={{ font: "10.5px system-ui", color: "#5c6572", maxWidth: 680, textAlign: "center" }}>
-          They share one project, so anything typed in one is still there in another, and you can
-          switch from the header at any time. The preliminary tool is the comprehensive one; the
-          rest are the same engines with only their own inputs on screen, so you do not have to
-          walk the whole workflow to size one cable.
+        <div style={{ font: "10.5px system-ui", color: "#5c6572", maxWidth: 680, textAlign: "center",
+          /* An open panel hangs over this on a desktop; fading it keeps
+             the two from reading as one block of text. */
+          opacity: openGroup && !landNarrow ? 0.2 : 1, transition: "opacity 0.12s" }}>
+          {landNarrow ? "Tap a section" : "Hover a section"} to see what is in it. They share one
+          project, so anything typed in one tool is still there in another and you can switch from
+          the header at any time — the preliminary tool is the whole workflow, the rest are the same
+          engines with only their own inputs on screen, so you do not have to walk all of it to size
+          one cable.
         </div>
       </>) : (<>
         <div style={{ font: "13px system-ui", color: "#8b95a3" }}>What are you designing?</div>
@@ -7586,6 +7690,18 @@ export default function App() {
       cursor: pointer; white-space: nowrap; }
     .pvhub-subtab:hover { color: #dde3ea; border-color: #3a4150; }
     .pvhub-subtab.on { background: #e8820c; border-color: #e8820c; color: #181206; }
+
+    /* ---- the landing menu --------------------------------------- */
+    .land-card { width: 100%; text-align: left; background: #1c2128; color: #e8eaed;
+      border: 1px solid #2c313b; border-radius: 8px; padding: 15px 15px 13px;
+      cursor: pointer; display: block; transition: border-color 0.12s, background 0.12s; }
+    .land-card:hover, .land-card.on { border-color: #e8820c; background: #20262e; }
+    .land-card:focus-visible { outline: 2px solid #e8820c; outline-offset: 2px; }
+    .land-tool { width: 100%; text-align: left; background: #1a1f26; color: #e8eaed;
+      border: 1px solid #2c313b; border-radius: 7px; padding: 11px 13px; cursor: pointer;
+      display: block; transition: border-color 0.12s, background 0.12s; }
+    .land-tool:hover { border-color: #e8820c; background: #1f252d; }
+    .land-tool-off { background: #171a1f; border-style: dashed; cursor: default; }
 
     /* ---- the phone ----------------------------------------------------
        Two things make a dense engineering interface unusable on a touch
