@@ -7476,15 +7476,15 @@ export default function App() {
      so nothing is hidden behind the hover; the hover only adds the
      description. */
   const LANDING_GROUPS = [
-    { id: "design", name: "Design a plant",
-      blurb: "Start from a site and finish with a layout you can take into CAD.",
-      tools: ["prelim", "layout"] },
-    { id: "size", name: "Size the equipment",
+    { id: "design", name: "Plant design",
+      blurb: "Lay the site out, and find out what it generates.",
+      tools: ["prelim", "layout", "yield"] },
+    { id: "size", name: "Sizing tools",
       blurb: "Strings, cables and batteries worked out against the standards.",
-      tools: ["string", "cable", "bess"] },
-    { id: "assess", name: "Check the numbers",
-      blurb: "What it generates, what it costs, and what the network does with it.",
-      tools: ["yield", "cost"], planned: ["loadflow"] },
+      tools: ["string", "cable", "bess"], planned: ["loadflow"] },
+    { id: "cost", name: "Costing",
+      blurb: "The quotes you have received, how old they are, and what they do to LCOE.",
+      tools: ["cost"] },
   ];
   const wsById = (id) => WORKSPACES.find((w) => w.id === id);
   const plannedById = (id) => PLANNED.find((w) => w.id === id);
@@ -7551,6 +7551,11 @@ export default function App() {
             const tools = g.tools.map(wsById).filter(Boolean);
             const planned = (g.planned || []).map(plannedById).filter(Boolean);
             const names = [...tools, ...planned].map((w) => w.short).join(" · ");
+            /* One tool and nothing planned means the panel would hold a
+               single card restating the section — so that card opens the
+               tool directly rather than charging a click for a menu of
+               one. */
+            const direct = tools.length === 1 && !planned.length ? tools[0] : null;
             /* The panel sits in normal flow on a phone, where an
                absolute one would cover the next card, and hangs below
                the card on a desktop, where reflowing the row on hover
@@ -7604,14 +7609,16 @@ export default function App() {
                     that opened the panel handed the click a handler that
                     saw it already open and shut it again — the section
                     simply would not open on a phone. */}
-                <button className={`land-card${open ? " on" : ""}`} aria-expanded={open}
-                  onClick={() => setOpenGroup((c) => (c === g.id ? null : g.id))}>
+                <button className={`land-card${open ? " on" : ""}`}
+                  aria-expanded={direct ? undefined : open}
+                  onClick={() => (direct ? enterWs(direct.id)
+                    : setOpenGroup((c) => (c === g.id ? null : g.id)))}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                     <span style={{ font: "700 15px system-ui", color: open ? "#e8820c" : "#cfd6de" }}>
                       {g.name}
                     </span>
                     <span style={{ font: "10.5px system-ui", color: "#5c6572", marginLeft: "auto" }}>
-                      {open ? "▾" : "▸"}
+                      {direct ? "→" : open ? "▾" : "▸"}
                     </span>
                   </div>
                   <div style={{ font: "11px/1.55 system-ui", color: "#9aa3ae", marginTop: 6 }}>
@@ -7622,7 +7629,7 @@ export default function App() {
                     {names}
                   </div>
                 </button>
-                {open && panel}
+                {open && !direct && panel}
               </div>
             );
           })}
@@ -7631,7 +7638,8 @@ export default function App() {
           /* An open panel hangs over this on a desktop; fading it keeps
              the two from reading as one block of text. */
           opacity: openGroup && !landNarrow ? 0.2 : 1, transition: "opacity 0.12s" }}>
-          {landNarrow ? "Tap a section" : "Hover a section"} to see what is in it. They share one
+          {landNarrow ? "Tap a section" : "Hover a section"} to see what is in it — a section
+          holding one tool opens it straight away. They share one
           project, so anything typed in one tool is still there in another and you can switch from
           the header at any time — the preliminary tool is the whole workflow, the rest are the same
           engines with only their own inputs on screen, so you do not have to walk all of it to size

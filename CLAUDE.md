@@ -92,12 +92,13 @@ calls.
 **Workspaces.** The landing asks which tool you came for before anything else, because that
 decides how much of the application is relevant. `WORKSPACES` in `src/App.jsx` defines them
 and `switchWorkspace` moves between them. They are presented through `LANDING_GROUPS`, three
-sections in the order the work happens — design a plant, size the equipment, check the
-numbers — because eight cards in one row read as a wall rather than a menu. Each card names
-its tools when closed, so the hover only adds the description rather than hiding anything;
-it opens on hover on a mouse and on tap on a touch screen, and `landNarrow` switches the
-panel between an absolute dropdown and an in-flow accordion. Adding a workspace means adding
-it to a group as well, or it is unreachable.
+sections — **Plant design**, **Sizing tools**, **Costing** — because eight cards in one row
+read as a wall rather than a menu. Each card names its tools when closed, so the hover only
+adds the description rather than hiding anything; it opens on hover on a mouse and on tap on
+a touch screen, and `landNarrow` switches the panel between an absolute dropdown and an
+in-flow accordion. A section holding exactly one tool and nothing planned skips the
+disclosure and enters that tool directly, because a menu of one is a click for nothing.
+Adding a workspace means adding it to a group as well, or it is unreachable.
 
 | Workspace | Tabs |
 |---|---|
