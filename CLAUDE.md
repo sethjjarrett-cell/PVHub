@@ -164,6 +164,13 @@ about a fifth of the preliminary workspace. Reaching a workspace at all now mean
 its landing section first, so a probe that clicked a card by name needs updating when the
 grouping changes.
 
+**The shell must keep its height.** `.pv-root` carries `height: 100dvh` and the scrollbar
+styling, and the root element also needs `pvhub-root`. Put both on **one** `className` — React
+keeps only the last of two `className` props and drops the other silently. When `.pv-root` went
+missing the shell sized to its own content inside a body with `overflow: hidden`, so any tab
+taller than the window had everything below the fold unreachable, with no scrollbar to reach it
+either. Short tabs hid it for weeks. Check a long tab at a short window, not just a long window.
+
 A third trap, this one in the application rather than the probe: **a tap fires `focus` and
 then `click` as two separate events**, and React re-renders between them. A disclosure that
 opened `onFocus` therefore handed the following click a handler that saw it already open and

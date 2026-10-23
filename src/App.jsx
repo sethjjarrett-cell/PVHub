@@ -7219,11 +7219,23 @@ export default function App() {
      offset. Measured when a section opens and on resize. */
   const landRowRef = useRef(null);
   const [panelMax, setPanelMax] = useState(420);
+  /* Closing on a delay rather than instantly. Travelling diagonally from
+     one card to another crosses the gap between them, and an instant
+     close there makes the menu flicker and feel like it is fighting you. */
+  const landCloseTimer = useRef(null);
+  const landOpen = (id) => {
+    if (landCloseTimer.current) clearTimeout(landCloseTimer.current);
+    setOpenGroup(id);
+  };
+  const landCloseSoon = () => {
+    if (landCloseTimer.current) clearTimeout(landCloseTimer.current);
+    landCloseTimer.current = setTimeout(() => setOpenGroup(null), 160);
+  };
   useEffect(() => {
     if (!openGroup || landNarrow) return undefined;
     const calc = () => {
       const el = landRowRef.current;
-      if (el) setPanelMax(Math.max(170, window.innerHeight - el.getBoundingClientRect().bottom - 26));
+      if (el) setPanelMax(Math.max(170, window.innerHeight - el.getBoundingClientRect().bottom - 34));
     };
     calc();
     window.addEventListener("resize", calc);
@@ -7528,14 +7540,30 @@ export default function App() {
                the card on a desktop, where reflowing the row on hover
                would make the whole menu jump. */
             const panel = (
+              /* The outer box starts flush against the card (top: 100%)
+                 and holds the visual gap as its own padding. With
+                 "top: calc(100% + 7px)" those 7 pixels belonged to
+                 nobody, so moving the pointer from the card down to the
+                 panel left the wrapper, fired mouseleave and shut the
+                 panel before the pointer arrived — the menu kept
+                 vanishing on the way to it. */
               <div style={landNarrow
                 ? { display: "flex", flexDirection: "column", gap: 7, marginTop: 8,
                     marginLeft: 14, paddingLeft: 11, borderLeft: "2px solid #e8820c" }
-                : { position: "absolute", top: "calc(100% + 7px)", left: "50%",
+                : { position: "absolute", top: "100%", left: "50%",
                     transform: "translateX(-50%)", width: "min(348px, 92vw)", zIndex: 5,
-                    background: "#14171c", border: "1px solid #2c313b", borderRadius: 9,
+                    paddingTop: 8 }}>
+              <div style={landNarrow
+                ? { display: "flex", flexDirection: "column", gap: 7 }
+                : { background: "#14171c", border: "1px solid #2c313b", borderRadius: 9,
                     padding: 9, boxShadow: "0 14px 34px rgba(0,0,0,0.6)",
                     maxHeight: panelMax, overflowY: "auto",
+                    /* overflow-x must be said explicitly: setting only
+                       overflow-y makes the other axis compute to auto,
+                       and the panel grew a horizontal scrollbar along
+                       its bottom edge for the few pixels the vertical
+                       one took. */
+                    overflowX: "hidden",
                     display: "flex", flexDirection: "column", gap: 7 }}>
                 {tools.map((w) => (
                   <button key={w.id} className="land-tool" onClick={() => enterWs(w.id)}>
@@ -7564,22 +7592,30 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              </div>
             );
             return (
               <div key={g.id} style={{ position: "relative", width: landNarrow ? "100%" : 252,
                 maxWidth: 420 }}
-                onMouseEnter={COARSE ? undefined : () => setOpenGroup(g.id)}
-                onMouseLeave={COARSE ? undefined : () => setOpenGroup((c) => (c === g.id ? null : c))}>
+                onMouseEnter={COARSE ? undefined : () => landOpen(g.id)}
+                onMouseLeave={COARSE ? undefined : landCloseSoon}
+                onKeyDown={(e) => { if (e.key === "Escape") setOpenGroup(null); }}>
                 {/* Click toggles; there is deliberately no onFocus here.
                     A tap fires focus and then click as two separate
                     events, React re-renders between them, so an onFocus
                     that opened the panel handed the click a handler that
                     saw it already open and shut it again — the section
                     simply would not open on a phone. */}
+                {/* With a mouse the click opens but never closes: the
+                    pointer is still over the card, so a toggle would shut
+                    a panel that hover is about to reopen and the section
+                    would look stuck. Moving away closes it. On a touch
+                    screen there is no hover, so there it must toggle. */}
                 <button className={`land-card${open ? " on" : ""}`}
                   aria-expanded={direct ? undefined : open}
                   onClick={() => (direct ? enterWs(direct.id)
-                    : setOpenGroup((c) => (c === g.id ? null : g.id)))}>
+                    : COARSE ? setOpenGroup((c) => (c === g.id ? null : g.id))
+                      : landOpen(g.id))}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                     <span style={{ font: "700 15px system-ui", color: open ? "#e8820c" : "#cfd6de" }}>
                       {g.name}
@@ -7667,6 +7703,11 @@ export default function App() {
     .pvhub-subtab.on { background: #e8820c; border-color: #e8820c; color: #181206; }
 
     /* ---- the landing menu --------------------------------------- */
+    /* box-sizing stated, because these rules are shared by a <button>
+       and a <div>: a button is border-box by default and a div is not,
+       so the planned-tool card took width:100% PLUS its padding and
+       overflowed the panel by exactly its horizontal padding. */
+    .land-card, .land-tool { box-sizing: border-box; }
     .land-card { width: 100%; text-align: left; background: #1c2128; color: #e8eaed;
       border: 1px solid #2c313b; border-radius: 8px; padding: 15px 15px 13px;
       cursor: pointer; display: block; transition: border-color 0.12s, background 0.12s; }
@@ -7799,13 +7840,19 @@ export default function App() {
       table { font-size: 12px; }
     }
   `;
+  /* Both classes go on ONE prop. React keeps only the last className it
+     is given, so writing them as two props silently dropped .pv-root —
+     which carries "height: 100dvh" and the scrollbar styling. The shell
+     then sized to its own content inside a body with overflow hidden,
+     and on any tab taller than the window everything below the fold was
+     unreachable, with no scrollbar to reach it either. */
   return (
-    <div className="pv-root" style={{
-      display: "flex", flexDirection: "column", width: "100%",
+    <div className="pv-root pvhub-root" style={{
+      display: "flex", flexDirection: "column", width: "100%", minHeight: 0,
       background: C.chrome, color: C.text, overflow: "hidden",
       fontFamily: "system-ui, sans-serif",
       "--mono": 'ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace',
-    }} className="pvhub-root">
+    }}>
       {landing}
       <style>{shellCss}</style>
       <div style={{
