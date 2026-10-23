@@ -541,13 +541,24 @@ the geometry half is built; what is missing is attaching a drawing to a tracked 
 storing it. Note that a DXF is far larger than the parameter record, so the browser-storage
 limit below becomes a real constraint rather than a theoretical one.
 
-### G36. The tracker stores in the browser
+### G36. The tracker's file mode is unverified end to end
 
-Same limitation as the costing quote library (§G30), and the same mitigation: the JSON
-export is the archive. A tracker is a long-lived record by definition, so this matters more
-here than it does for a quote library — a cleared cache loses the lot. `localStorage` also
-caps at roughly 5 MB per origin, which the parameter records will not trouble but an
-attached drawing would.
+`src/trackerStore.js` writes the records to a file the user picks, and clears browser storage
+when it does. Connecting a file, writing to it and clearing the browser copy are all verified
+against a stubbed File System Access API. Two paths are **not**: reconnecting to a remembered
+file after a reload, and re-granting permission in a new session. Neither can be driven by a
+test — a stubbed handle is not structured-cloneable so it never reaches IndexedDB, and a real
+permission prompt needs a human. The branching around them is pulled into the pure
+`startupPlan` and tested there (`tests/trackerStore.test.mjs`), but the browser halves are
+verified by reading only.
+
+What would close it: confirm by hand in Chrome that choosing a file, reloading, and
+reconnecting in a fresh session all behave — then write down what happened.
+
+Browser storage remains the fallback on Firefox and Safari, which have no such API, with the
+same limitation as the costing quote library (§G30): a cleared cache loses the lot, and the
+JSON export is the archive. `localStorage` also caps at roughly 5 MB per origin, which the
+parameter records will not trouble but an attached drawing (§G35) would.
 
 ### G13. Accessibility not addressed
 

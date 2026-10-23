@@ -18,9 +18,14 @@
      judgement, and the change between them is usually the information.
    ===================================================================== */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { fmt, C, Sel, Section, Page, Working, Rows, WarnList, useNarrow } from "./ui.jsx";
 import { extractPdfText } from "./pdfText.js";
+import {
+  supportsFileStore, savedHandle, forgetHandle, handleState, grantHandle, startupPlan,
+  chooseNewFile, chooseExistingFile, readHandle, writeHandle,
+  readLocal, writeLocal, clearLocal, hasLocal, describeStore,
+} from "./trackerStore.js";
 import {
   parsePvsystReport, recordFromReport, recordTitle, findDuplicates,
   lossMatrix, fieldSpread, projectsToCsv, projectsToJson, projectsFromJson,
@@ -28,23 +33,6 @@ import {
 } from "./pvsystReport.js";
 
 const TONE = { ok: "#4fb06a", warn: "#e0a63a", bad: "#d64545" };
-
-/* A tracker is worth nothing if it empties on refresh, so the records
-   live in localStorage. That is a browser, not a filing cabinet — the
-   JSON export is the real archive, and the interface says so rather
-   than letting the user find out when they change machine. */
-const KEY = "pvhub.tracker.v1";
-export function loadTracked() {
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    const v = raw ? JSON.parse(raw) : null;
-    return Array.isArray(v) ? v : [];
-  } catch (e) { return []; }
-}
-function saveTracked(records) {
-  try { window.localStorage.setItem(KEY, JSON.stringify(records)); return true; }
-  catch (e) { return false; }
-}
 
 const val = (rec, key) => {
   const f = FIELD_BY_KEY[key];
@@ -165,7 +153,7 @@ function SiteMap({ records, selectedId, onPick }) {
 /* ---------- the tab ------------------------------------------------- */
 
 export function ProjectTrackerTab() {
-  const [records, setRecords] = useState(() => loadTracked());
+  const [records, setRecords] = useState([]);
   const [busy, setBusy] = useState(null);
   const [problems, setProblems] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -174,12 +162,165 @@ export function ProjectTrackerTab() {
   const fileRef = useRef(null);
   const narrow = useNarrow(760);
 
-  const commit = (next) => {
-    setRecords(next);
-    if (!saveTracked(next)) {
-      setProblems((p) => [...p, "The browser refused to save — the list is in this tab only. "
-        + "Export it before you close the page."]);
+  /* Where the records are kept: "file" once a file is connected,
+     "local" in browser storage, "memory" when neither is available.
+     The handle lives in a ref because writing must not wait for a
+     render, and the file name in state because the interface shows it. */
+  const canFile = supportsFileStore();
+  const handleRef = useRef(null);
+  const [mode, setMode] = useState("local");
+  const [fileName, setFileName] = useState("");
+  const [needsGrant, setNeedsGrant] = useState(null);
+  const [saveState, setSaveState] = useState("");
+  const writeTimer = useRef(null);
+
+  /* On load: reconnect to a previously chosen file if the browser still
+     holds the permission, otherwise offer the button. The browser will
+     not re-grant without a gesture, which is the correct behaviour and
+     not something to work around. */
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      if (canFile) {
+        const h = await savedHandle();
+        if (h) {
+          const plan = startupPlan(canFile, await handleState(h));
+          if (plan === "file") {
+            try {
+              const text = await readHandle(h);
+              if (dead) return;
+              handleRef.current = h;
+              setMode("file");
+              setFileName(h.name || "");
+              if (text) {
+                const res = projectsFromJson(text);
+                if (res.ok) setRecords(res.records);
+                else setProblems((q) => [...q, `${h.name}: ${res.error}`]);
+              }
+              return;
+            } catch (e) { /* fall through to local */ }
+          } else if (plan === "grant") {
+            if (!dead) setNeedsGrant(h);
+          } else if (plan === "forget") {
+            await forgetHandle();
+          }
+        }
+      }
+      if (dead) return;
+      const raw = readLocal();
+      if (raw) {
+        const res = projectsFromJson(raw);
+        if (res.ok) setRecords(res.records);
+      }
+      setMode("local");
+    })();
+    return () => { dead = true; };
+  }, [canFile]);
+
+  /* One write path for both stores. A file write is asynchronous and
+     debounced, because the note field would otherwise write on every
+     keystroke; browser storage is synchronous and cheap. */
+  const persist = (next) => {
+    const text = projectsToJson(next);
+    if (mode === "file" && handleRef.current) {
+      setSaveState("saving");
+      if (writeTimer.current) clearTimeout(writeTimer.current);
+      writeTimer.current = setTimeout(async () => {
+        try {
+          await writeHandle(handleRef.current, text);
+          setSaveState("saved");
+          setTimeout(() => setSaveState(""), 1800);
+        } catch (e) {
+          setSaveState("failed");
+          setProblems((q) => [...q,
+            `Could not write to ${fileName || "the tracker file"} (${e && e.message ? e.message : "unknown error"}). `
+            + "Nothing has been lost from this tab — export the JSON, or reconnect the file."]);
+        }
+      }, 500);
+      return;
     }
+    if (mode === "local") {
+      if (!writeLocal(text)) {
+        setProblems((q) => [...q, "The browser refused to save — the list is in this tab only. "
+          + "Export it before you close the page."]);
+      }
+    }
+  };
+
+  const commit = (next) => { setRecords(next); persist(next); };
+
+  /* --- moving between stores --- */
+  const connectFile = async (existing) => {
+    try {
+      const { handle: h, remembered } = existing ? await chooseExistingFile() : await chooseNewFile();
+      handleRef.current = h;
+      if (!remembered) {
+        setProblems((q) => [...q, "This browser would not remember which file you chose, so the "
+          + "tracker cannot reconnect to it automatically next time — you will be asked again. "
+          + "Saving to it now works normally."]);
+      }
+      setFileName(h.name || "");
+      setNeedsGrant(null);
+      let next = records;
+      if (existing) {
+        const text = await readHandle(h);
+        if (text) {
+          const res = projectsFromJson(text);
+          if (!res.ok) { setProblems((q) => [...q, `${h.name}: ${res.error}`]); return; }
+          /* Opening an existing file replaces the list rather than
+             merging: a merge with no key to merge on would duplicate
+             every record, and the drop zone already merges a JSON. */
+          next = res.records;
+          setRecords(next);
+        }
+      }
+      setMode("file");
+      await writeHandle(h, projectsToJson(next));
+      /* The records are in the file now, so the browser copy goes. That
+         is the whole reason for choosing a file. */
+      clearLocal();
+      setSaveState("saved");
+      setTimeout(() => setSaveState(""), 1800);
+    } catch (e) {
+      /* The user cancelling the picker is not an error. */
+      if (e && e.name === "AbortError") return;
+      setProblems((q) => [...q, `Could not use that file (${e && e.message ? e.message : "unknown error"}).`]);
+    }
+  };
+
+  const reconnect = async () => {
+    const h = needsGrant;
+    if (!h) return;
+    if (!await grantHandle(h)) {
+      setProblems((q) => [...q, "Permission to the tracker file was refused, so the records are "
+        + "in browser storage for now. Choose the file again to reconnect."]);
+      setNeedsGrant(null);
+      return;
+    }
+    try {
+      const text = await readHandle(h);
+      handleRef.current = h;
+      setFileName(h.name || "");
+      setMode("file");
+      setNeedsGrant(null);
+      if (text) {
+        const res = projectsFromJson(text);
+        if (res.ok) setRecords(res.records); else setProblems((q) => [...q, `${h.name}: ${res.error}`]);
+      }
+      clearLocal();
+    } catch (e) {
+      setProblems((q) => [...q, "That file could not be reopened — it may have been moved or deleted."]);
+      setNeedsGrant(null);
+      await forgetHandle();
+    }
+  };
+
+  const disconnectFile = async () => {
+    handleRef.current = null;
+    await forgetHandle();
+    setFileName("");
+    setMode("local");
+    writeLocal(projectsToJson(records));
   };
 
   const ingest = async (files) => {
@@ -284,10 +425,8 @@ export function ProjectTrackerTab() {
             Export CSV
           </button>
           <span style={{ font: "10.5px system-ui", color: C.muted, flex: 1, minWidth: 220 }}>
-            The list is held in this browser, so it survives a refresh but not a new machine or a
-            cleared cache. The JSON is the archive — keep it in version control beside the
-            reports. The CSV flattens to one row per project for a spreadsheet, and drops the
-            monthly tables and the source lines.
+            The CSV flattens to one row per project for a spreadsheet, and drops the monthly
+            tables and the source lines. The JSON keeps everything and reads back in.
           </span>
         </div>
 
@@ -299,8 +438,70 @@ export function ProjectTrackerTab() {
         )}
       </Section>
 
+      <Section code="T2" title="Where this is saved">
+        <div style={{ display: "flex", gap: 9, flexWrap: "wrap", alignItems: "center",
+          marginBottom: 9 }}>
+          <span style={{ font: "650 12px system-ui",
+            color: mode === "file" ? TONE.ok : mode === "memory" ? TONE.bad : TONE.warn }}>
+            {mode === "file" ? `● File — ${fileName}`
+              : mode === "memory" ? "● This tab only"
+              : "● Browser storage"}
+          </span>
+          {saveState && (
+            <span style={{ font: "10.5px system-ui",
+              color: saveState === "failed" ? TONE.bad : C.muted }}>
+              {saveState === "saving" ? "saving…" : saveState === "saved" ? "saved" : "save failed"}
+            </span>
+          )}
+          <span style={{ flex: 1 }} />
+          {canFile && mode !== "file" && (
+            <>
+              <button className="btn" onClick={() => connectFile(false)}>Save to a file…</button>
+              <button className="btn" onClick={() => connectFile(true)}>Open a tracker file…</button>
+            </>
+          )}
+          {canFile && mode === "file" && (
+            <>
+              <button className="btn" onClick={() => connectFile(true)}>Open a different file…</button>
+              <button className="btn" onClick={disconnectFile}>Disconnect</button>
+            </>
+          )}
+        </div>
+
+        {needsGrant && (
+          <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap",
+            background: "rgba(232,130,12,0.08)", border: `1px solid ${C.accent}`,
+            borderRadius: 7, padding: "9px 11px", marginBottom: 9 }}>
+            <span style={{ font: "11px/1.5 system-ui", color: C.text, flex: 1, minWidth: 200 }}>
+              Previously saved to <strong>{needsGrant.name}</strong>. The browser needs your
+              permission again before it will reopen a file in a new session — it will not do
+              that without you asking.
+            </span>
+            <button className="btn" onClick={reconnect}
+              style={{ borderColor: C.accent, color: C.accent }}>Reconnect</button>
+            <button className="btn" onClick={async () => { setNeedsGrant(null); await forgetHandle(); }}>
+              Forget it
+            </button>
+          </div>
+        )}
+
+        <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui" }}>
+          <p>{describeStore(mode, fileName, canFile)}</p>
+          <p><strong style={{ color: C.accent }}>Nothing is ever sent anywhere.</strong> There is
+          no server behind this tool and no account. The report PDF is parsed in the page, by a
+          worker bundled into it, and the tracker makes no network call at all — you can read
+          these reports with the machine offline.</p>
+          {mode === "file" && (
+            <p>The only thing in browser storage now is a reference to the file, so the tracker
+            can reconnect to it after a reload. It carries no project data. Point it at a folder
+            that is backed up — the tool does not keep a second copy anywhere.</p>
+          )}
+
+        </div>
+      </Section>
+
       {records.length === 0 ? (
-        <Section code="T2" title="Nothing tracked yet">
+        <Section code="T3" title="Nothing tracked yet">
           <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui" }}>
             Drop a report above and this fills in. Until then every panel below is empty, which
             is the correct state rather than a broken one.
@@ -308,7 +509,7 @@ export function ProjectTrackerTab() {
         </Section>
       ) : (
         <>
-          <Section code="T2" title={`The projects (${records.length})`}>
+          <Section code="T3" title={`The projects (${records.length})`}>
             <Rows
               min={980}
               keyOf={(r) => r.id}
@@ -348,11 +549,11 @@ export function ProjectTrackerTab() {
             </div>
           </Section>
 
-          <Section code="T3" title="Where they are">
+          <Section code="T4" title="Where they are">
             <SiteMap records={records} selectedId={selected} onPick={setSelected} />
           </Section>
 
-          <Section code="T4" title="Compare one parameter across the set">
+          <Section code="T5" title="Compare one parameter across the set">
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end",
               marginBottom: 10 }}>
               <Sel label="Parameter" value={compareKey} onChange={setCompareKey} width={260}
@@ -388,7 +589,7 @@ export function ProjectTrackerTab() {
             )}
           </Section>
 
-          <Section code="T5" title="The loss diagrams side by side">
+          <Section code="T6" title="The loss diagrams side by side">
             {losses.length === 0 ? (
               <div className="readout" style={{ width: "100%", font: "10.5px/1.6 system-ui" }}>
                 No loss diagrams were read from these reports.
@@ -422,7 +623,7 @@ export function ProjectTrackerTab() {
           </Section>
 
           {current && (
-            <Section code="T6" title={`Everything in: ${recordTitle(current)}`}>
+            <Section code="T7" title={`Everything in: ${recordTitle(current)}`}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                 <input value={current.note} placeholder="A note to your future self about this run"
                   onChange={(e) => setNote(current.id, e.target.value)}
@@ -517,7 +718,7 @@ export function ProjectTrackerTab() {
         </>
       )}
 
-      <Section code="T7" title="What this tool does not do">
+      <Section code="T8" title="What this tool does not do">
         <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui" }}>
           <p><strong style={{ color: C.accent }}>It reads the report, it does not check it.</strong>{" "}
           Everything here is PVsyst's own output taken at face value. If the simulation used the
@@ -532,8 +733,11 @@ export function ProjectTrackerTab() {
           to show the plan beside the numbers is the obvious next step and is not built. The
           layout tools already read DXF, so the geometry side exists; what is missing is tying a
           drawing to a tracked project.</p>
-          <p><strong style={{ color: C.accent }}>It stores in the browser.</strong> Same limitation
-          as the costing quote library. Export the JSON and keep it with the reports.</p>
+          <p><strong style={{ color: C.accent }}>It keeps one copy, where you put it.</strong>{" "}
+          Saving to a file means the file is the record — there is no second copy in the browser
+          to fall back on, which is the point but also means the folder wants backing up. In
+          browser storage the opposite applies: it survives a refresh but not a cleared cache or
+          a different machine. Either way the JSON export is the archive.</p>
         </div>
       </Section>
     </Page>

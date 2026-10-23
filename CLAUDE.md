@@ -34,6 +34,7 @@ src/batchAnalyser.js   PVsyst batch CSV parsing and tilt/pitch analysis, no Reac
 src/BatchAnalyser.jsx  Batch analyser tab: six hand-rolled charts, recommendation, exports
 src/pvsystReport.js    PVsyst simulation-report PDF reader — text in, project record out
 src/ProjectTracker.jsx Tracker tab: drop reports in, compare yields and loss diagrams
+src/trackerStore.js    where tracked projects live: a file on disk, or browser storage
 src/pdfText.js         pdf.js plumbing: worker setup and text extraction, shared
 src/main.jsx           mount + boot-overlay teardown
 src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
@@ -204,6 +205,8 @@ node tests/pvsystReport.test.mjs    # 127 assertions against a real report: ever
                                     # monthly table, the loss diagram, and the rows that
                                     # must NOT be read as losses
 node tests/pdfWorker.test.mjs       # 1 assertion: the inlined worker matches pdfjs-dist
+node tests/trackerStore.test.mjs    # 26 assertions: which store is chosen at startup, and
+                                    # that the interface never misstates where data is
 ```
 
 **The inlined pdf.js worker rots silently.** `src/pdfWorkerText.js` holds the worker source as
@@ -466,6 +469,14 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **Re-importing a report adds a record, it never overwrites one.** Two runs of the same
   project and variant are flagged as duplicates and left alone, because the difference
   between them is usually the thing worth seeing.
+- **The tracker's records belong in a file the user chose, not in the browser.** This
+  application is served from a public origin, and `localStorage` there is plain text readable
+  by anything on that origin and by anyone with the machine. `src/trackerStore.js` writes to a
+  file picked through the File System Access API and clears the browser copy when it does.
+  Firefox and Safari have no such API; there it falls back to `localStorage` and
+  `describeStore` says which store is in use — never the stronger guarantee than is true.
+  Only the file *handle* is kept in IndexedDB, so the file can be reconnected; it carries no
+  records, and failing to store it costs reconnection, not the session.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.
