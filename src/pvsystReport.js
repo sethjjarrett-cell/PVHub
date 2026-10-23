@@ -33,6 +33,20 @@ const num = (s) => {
   return Number.isFinite(v) ? v : null;
 };
 
+/* Power is not always quoted in the same unit. A 600 kWp roof prints
+   "Pnom total 600 kWp"; a 78 MWp field prints "Pnom total 77.75 MWp",
+   and its inverters are quoted in kVA rather than kWac because the
+   limit is apparent power. Everything is normalised to kW here, and
+   the unit actually found is kept so the interface can say "kVA" where
+   that is what the report said — they are not the same quantity and
+   relabelling one as the other would be a quiet lie. */
+const POWER_TO_KW = { w: 0.001, kw: 1, mw: 1000, gw: 1e6 };
+function scalePower(value, unit) {
+  const u = String(unit || "").toLowerCase().replace(/(p|ac|a)$/, "").replace("v", "w");
+  const k = POWER_TO_KW[u];
+  return k === undefined ? null : value * k;
+}
+
 /** PVsyst writes dates as dd/mm/yy. Parsed to ISO so records sort, with
     the window pinned: a two-digit year is 2000-2099 here, because these
     are simulation reports and none of them predate PVsyst itself. */
@@ -85,6 +99,7 @@ export const REPORT_FIELDS = [
   { key: "inverterKwac", label: "Inverter rating", group: "size", unit: "kWac", dp: 0 },
   { key: "modulesInSeries", label: "Modules in series", group: "size", unit: "", dp: 0 },
   { key: "stringCount", label: "Strings", group: "size", unit: "", dp: 0 },
+  { key: "subArrayCount", label: "Sub-arrays", group: "size", unit: "", dp: 0 },
 
   { key: "tilt", label: "Tilt", group: "geom", unit: "°", dp: 1, headline: true },
   { key: "azimuth", label: "Azimuth", group: "geom", unit: "°", dp: 1 },
@@ -178,12 +193,51 @@ export function parsePvsystReport(text) {
     return null;
   };
   const grabNum = (key, re, pick = 1) => grab(key, re, pick, num);
+  /* Capture a number and its unit together, normalise to kW, and record
+     the unit that was printed. */
+  const grabPower = (key, re) => {
+    for (const l of lines) {
+      const m = re.exec(l);
+      if (!m) continue;
+      const v = num(m[1]);
+      const kw = v === null ? null : scalePower(v, m[2]);
+      if (kw === null) continue;
+      fields[key] = Math.round(kw * 1000) / 1000;
+      /* The KIND of unit, not the scale. Scale is already normalised to
+         kW, so recording "MWp" beside a kWp value would just mislead.
+         Apparent power is a different quantity from real power though,
+         and a plant whose inverters are limited in kVA must not have
+         that silently relabelled kWac. */
+      fields[`${key}Unit`] = /va\b/i.test(m[2]) ? "kVA"
+        : /p\b/i.test(m[2]) ? "kWp" : "kWac";
+      src[key] = l;
+      return kw;
+    }
+    missing.push(key);
+    return null;
+  };
 
+  /* A PDF with no text in it is a different failure from a PDF of the
+     wrong kind, and the two need different advice. "Print to PDF" on
+     Windows rasterises the whole document: nine pages, one image each,
+     not a character of text anywhere. No amount of pattern-widening
+     reads that — it needs the report exporting from PVsyst again, or
+     OCR, which this tool does not have. Say which it is. */
+  if (lines.length < 25) {
+    return { ok: false, fields, src, losses: [], monthly: [], orientations: [],
+      missing, warnings,
+      error: "There is no text in this PDF — only images. That usually means it was made with "
+        + "\u201cPrint to PDF\u201d or scanned, which turns every page into a picture. Export "
+        + "the report straight out of PVsyst instead (its own PDF export keeps the text) and "
+        + "this will read it." };
+  }
   const isReport = /PVsyst/i.test(raw) && /Simulation report|Project:/i.test(raw);
   if (!isReport) {
     return { ok: false, fields, src, losses: [], monthly: [], orientations: [],
       missing, warnings,
-      error: "This does not look like a PVsyst simulation report — no PVsyst header found." };
+      error: "This has text in it but does not look like a PVsyst simulation report — no PVsyst "
+        + "header found. The tracker wants the exported Simulation report, not a parameter "
+        + "sheet or a datasheet." };
   }
 
   /* --- identity --- */
@@ -208,22 +262,83 @@ export function parsePvsystReport(text) {
      the Longitude line — a quirk of the two-column summary block. */
   grab("siteName", /^(.+?)\s+Latitude\s+-?[\d.]+/);
   grab("country", /^(.+?)\s+Longitude\s+-?[\d.]+/);
-  grab("weatherSource", /^((?:Solargis|Meteonorm|PVGIS|NASA|TMY|SolarAnywhere|Custom)\b.*)$/i);
+  /* Not anchored to the start of the line: on a one-column summary the
+     weather source sits on its own line, on a two-column one it shares
+     the line with the longitude. */
+  grab("weatherSource", /((?:Solargis|Meteonorm|PVGIS|NASA|TMY|SolarAnywhere|Custom)\b[^|]*)$/i);
 
   /* --- size and equipment --- */
   grabNum("moduleCount", /Nb\. of modules\s+([\d\s]+)\s*units/);
-  grabNum("pnomDc", /Pnom total\s+([\d\s.]+)\s*kWp/);
+  grabPower("pnomDc", /Pnom total\s+([\d\s.]+)\s*(kWp|MWp|GWp|Wp)\b/);
   grabNum("inverterCount", /Nb\. of units\s+([\d\s]+)\s*units/);
-  grabNum("pnomAc", /Total power\s+([\d\s.]+)\s*kWac/);
-  grabNum("pnomRatio", /Pnom ratio\s+([\d.]+)\s*$/);
+  grabPower("pnomAc", /Total power\s+([\d\s.]+)\s*(kWac|MWac|kVA|MVA|kW|MW)\b/);
+  /* "Pnom ratio" is printed against three different things and the label
+     does not say which: against the inverters, against the GRID limit
+     ("Grid lim. Pnom ratio" — 1.558 on a curtailed plant whose DC:AC is
+     1.48), and once per sub-array ("Pnom ratio (DC:AC) 1.70" for the
+     first block of a plant whose whole-site figure is 1.69). Picking one
+     by pattern gets a different wrong answer on each report.
+
+     So it is derived from the plant's own DC and AC capacities, which
+     are unambiguous, and the arithmetic is shown. Any stated value that
+     disagrees is reported rather than silently preferred or discarded. */
+  if (typeof fields.pnomDc === "number" && typeof fields.pnomAc === "number" && fields.pnomAc > 0) {
+    fields.pnomRatio = Math.round((fields.pnomDc / fields.pnomAc) * 1000) / 1000;
+    src.pnomRatio = `derived: ${fields.pnomDc} kWp / ${fields.pnomAc} `
+      + `${fields.pnomAcUnit || "kWac"} = ${fields.pnomRatio}`;
+    const stated = [...new Set(lines.flatMap((l) => {
+      const m = /(?:^|\s)Pnom ratio(?: \(DC:AC\))?\s+([\d.]+)\s*$/.exec(l);
+      return m && !/Grid lim\./.test(l) ? [num(m[1])] : [];
+    }))].filter((v) => v !== null);
+    const agrees = stated.some((v) => Math.abs(v - fields.pnomRatio) <= 0.02);
+    if (stated.length && !agrees) {
+      warnings.push(`The report states a Pnom ratio of ${stated.join(" and ")}, but the plant's `
+        + `own figures give ${fields.pnomDc} / ${fields.pnomAc} = ${fields.pnomRatio}. `
+        + "The stated value is usually against the grid limit or one sub-array; the derived "
+        + "one is the whole plant.");
+    }
+  } else {
+    missing.push("pnomRatio");
+  }
   grabNum("moduleArea", /Module area\s+([\d\s.]+)\s*m²/);
   grabNum("moduleWp", /Unit Nom\. Power\s+([\d\s.]+)\s*Wp\b/);
-  grabNum("inverterKwac", /Unit Nom\. Power\s+([\d\s.]+)\s*kWac\b/);
-  /* "Modules 56 units x 18 In series" — strings first, then the series
-     count. Both matter: the series count is what the string-sizing tool
-     would have produced, so a disagreement is worth seeing. */
-  grabNum("stringCount", /Modules\s+([\d\s]+)\s*units\s*x\s*[\d\s]+\s*In series/);
-  grabNum("modulesInSeries", /Modules\s+[\d\s]+\s*units\s*x\s*([\d\s]+)\s*In series/);
+  grabPower("inverterKwac", /Unit Nom\. Power\s+([\d\s.]+)\s*(kWac|MWac|kVA|MVA|kW|MW)\b/);
+  /* "Modules 390 units x 27 In series" — strings first, then the series
+     count. A plant with one array prints this once; a plant with several
+     sub-arrays prints it once PER sub-array, and taking the first match
+     describes one sub-array as though it were the plant. Bluefield's
+     first block is 390 x 27 = 10,530 against a stated 11,300 modules,
+     and nothing downstream would have noticed. Collect them all. */
+  const subArrays = [];
+  for (const l of lines) {
+    const m = /Modules\s+([\d\s]+)\s*units\s*x\s*([\d\s]+)\s*In series/.exec(l);
+    if (!m) continue;
+    const strings = num(m[1]), series = num(m[2]);
+    if (strings === null || series === null) continue;
+    subArrays.push({ strings, series, line: l });
+  }
+  if (subArrays.length) {
+    const total = subArrays.reduce((a, x) => a + x.strings, 0);
+    fields.stringCount = total;
+    src.stringCount = subArrays.length === 1 ? subArrays[0].line
+      : `${subArrays.length} sub-arrays: ${subArrays.map((x) => `${x.strings}x${x.series}`).join(", ")}`;
+    fields.subArrayCount = subArrays.length;
+    src.subArrayCount = src.stringCount;
+    const lengths = [...new Set(subArrays.map((x) => x.series))];
+    if (lengths.length === 1) {
+      fields.modulesInSeries = lengths[0];
+      src.modulesInSeries = subArrays[0].line;
+    } else {
+      /* No single string length exists, so none is reported. Printing
+         one of them would make the modules-per-string figure wrong for
+         most of the plant. */
+      missing.push("modulesInSeries");
+      warnings.push(`String length varies across ${subArrays.length} sub-arrays `
+        + `(${lengths.join(", ")} modules in series), so there is no single figure to report.`);
+    }
+  } else {
+    missing.push("stringCount", "modulesInSeries");
+  }
 
   /* Manufacturer and Model appear twice on one physical line, PV array
      column first and inverter column second, because the report sets
@@ -277,8 +392,12 @@ export function parsePvsystReport(text) {
 
   grabNum("gcr", /GCR Shading\s+([\d.]+)\s*%/);
   grabNum("pitch", /Sheds spacing\s+([\d.]+)\s*m\b/);
-  grab("nearShadingModel", /^Near Shadings\s+(.+)$|Linear shadings\s*:\s*(.+)$/,
-    0, (s) => s.replace(/^Near Shadings\s+/, "").trim());
+  /* "Linear shadings : Fast (table)" on a fixed roof, "According to
+     strings : Fast (table)" where the electrical effect is modelled,
+     "No shadings" where it is not. Match the phrase rather than one
+     spelling of it. */
+  grab("nearShadingModel",
+    /((?:Linear shadings|According to strings|No shadings|Detailed, electrical)\b.*)$/i);
 
   /* --- results --- */
   grabNum("producedKwh", /Produced Energy\s+([\d\s.]+)\s*kWh\/year/);
@@ -448,8 +567,36 @@ export function recordTitle(r) {
   return v ? `${p} — ${v}` : p;
 }
 
-/** Two records of the same project and variant are a re-import. Flagged,
-    never merged: which one is current is the user's call. */
+/** The same report imported twice: same project, same variant, and the
+    same simulation timestamp. That is the file arriving again, not a new
+    run, so there is nothing to learn from keeping both. A re-run of the
+    same variant carries a different timestamp and is NOT this. */
+export function isSameRun(a, b) {
+  const f = (r) => [
+    (r.fields.project || "").trim().toLowerCase(),
+    (r.fields.variant || "").trim().toLowerCase(),
+    (r.fields.simulatedAt || "").trim(),
+  ].join("|");
+  return f(a) === f(b);
+}
+
+/** Split incoming records into the ones to keep and the ones already
+    held. Pure, so the rule is testable without a browser. */
+export function dedupeAgainst(existing, incoming) {
+  const kept = [];
+  const duplicates = [];
+  for (const rec of incoming) {
+    const clash = existing.find((e) => isSameRun(e, rec))
+      || kept.find((e) => isSameRun(e, rec));
+    if (clash) duplicates.push({ rec, clash });
+    else kept.push(rec);
+  }
+  return { kept, duplicates };
+}
+
+/** Two records of the same project and variant but DIFFERENT simulation
+    dates are re-runs. Flagged, never merged: which one is current is the
+    user's call, and the change between them is usually the point. */
 export function findDuplicates(records) {
   const byKey = new Map();
   for (const r of records) {

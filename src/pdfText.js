@@ -16,8 +16,10 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import PDF_WORKER_TEXT, { PDF_WORKER_VERSION } from "./pdfWorkerText.js";
 
+/* Exported because App.jsx renders a PDF page to a canvas for the site-
+   plan underlay — it needs the worker configured but not the text. */
 let _workerReady = false;
-function ensurePdfWorker() {
+export function ensurePdfWorker() {
   if (_workerReady) return;
   /* pdf.js refuses to run a worker whose version does not match the API,
      and because every PDF path here is an optional convenience the

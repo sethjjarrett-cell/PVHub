@@ -1,0 +1,297 @@
+PVsyst V8.1.7
+PVsyst - Simulation report
+Grid-Connected System
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+Ground system (tables) on a terrain
+System power: 77.75 MWp
+Exampleton - Testland
+Author
+Example Engineering Ltd (Testland)
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+Project summary
+Geographical Site Situation Weather data
+Exampleton Latitude 52.1000 °(N) Example Field Thornton Testland
+Testland Longitude -0.1000 °(W) Solargis Monthly aver. , period not spec. - Synthetic
+Altitude 12 m
+Time zone UTC
+Monthly albedo values
+Jan. Feb. Mar. Apr. May June July Aug. Sep. Oct. Nov. Dec.
+Albedo 0.16 0.16 0.16 0.17 0.20 0.20 0.20 0.18 0.16 0.13 0.13 0.16
+System summary
+Grid-Connected System Ground system (tables) on a terrain
+Orientation #1 Near Shadings User's needs
+Fixed plane According to strings : Fast (table) Unlimited load (grid)
+Tilt/Azimuth 15 / 0 ° Electrical effect 100 %
+System information
+PV Array Inverters
+Nb. of modules 119610 units Nb. of units 164 units
+Pnom total 77.75 MWp Total power 52480 kVA
+Grid power limit 49.90 MWac
+Grid lim. Pnom ratio 1.558
+Results summary
+Simulation step Hourly
+Produced Energy 73166288 kWh/year Specific production 941 kWh/kWp/year Perf. Ratio PR 85.34 %
+Apparent energy 77142904 kVAh/year Bifacial perf. ratio 83.39 %
+Table of contents
+Project and results summary 2
+General parameters, PV Array Characteristics, System losses 3
+Near shading definition - Iso-shadings diagram 6
+Main results 7
+Loss diagram 8
+Predef. graphs 9
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 2/9
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+General parameters
+Grid-Connected System Ground system (tables) on a terrain
+Simulation step
+Hourly
+Orientation #1
+Fixed plane Sheds configuration Sizes
+Tilt/Azimuth 15 / 0 ° Nb. of sheds 1591 units Sheds spacing 10.9 m
+Set of tables Sensitive width 7.19 m
+Shading limit angle GCR Shading 65.6 %
+Limit profile angle 24.9 °
+Models used Horizon Near Shadings
+Transposition Perez Free Horizon According to strings : Fast (table)
+Diffuse Perez, Meteonorm Electrical effect 100 %
+Circumsolar separate
+Bifacial system definition User's needs
+Orientation #1 Unlimited load (grid)
+Bifacial system
+Model Unlimited Sheds 2D Model
+Bifacial model geometry
+Sheds spacing 10.95 m
+Sheds width 7.19 m
+Limit profile angle 24.9 °
+GCR Bifacial 65.6 %
+Height above ground 0.80 m
+Nb. of sheds 221 units
+Bifacial model definitions
+Ground albedo average 0.17
+Bifaciality factor 85 %
+Rear shading factor 5.0 %
+Rear mismatch loss 10.0 %
+Shed transparent fraction 0.0 %
+Monthly ground albedo values
+Jan. Feb. Mar. Apr. May June July Aug. Sep. Oct. Nov. Dec. Year
+0.16 0.16 0.16 0.17 0.20 0.20 0.20 0.18 0.16 0.13 0.13 0.16 0.17
+Grid injection point
+Grid power limitation Power factor
+Active power 49.90 MWac Cos(phi) (lagging) 0.950
+Pnom ratio 1.558
+Limit applied at the injection point
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 3/9
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+PV Array Characteristics
+PV module Inverter
+Manufacturer JA Solar Manufacturer Sungrow
+Model JAM66D50-650/GB Model SG350HX-20
+(Custom parameters definition) (Custom parameters definition)
+JAM66D50_650_GB.PAN Unit Nom. Power 320 kVA
+Unit Nom. Power 650 Wp Number of inverters 164 units
+Number of PV modules 119610 units Total power 52480 kVA
+Nominal (STC) 77.75 MWp Operating voltage 500-1500 V
+Modules 4430 units x 27 In series Max. power (=>30°C) 352 kVA
+At operating cond. (50°C) Pnom ratio (DC:AC) 1.48
+Pmpp 72.77 MWp Leading limit Cos(phi) min 0.800
+U mpp 1045 V Lagging limit Cos(phi) min 0.800
+I mpp 69633 A Power sharing within this inverter
+Total PV power Total inverter power
+Nominal (STC) 77747 kWp Inverter PNom limit defined as apparent power
+Total 119610 modules Total power 52480 kVA
+Module area 323089 m² Max. power 57728 kWac
+Cell area 301719 m² Number of inverters 164 units
+Pnom ratio 1.48
+Array losses
+Array Soiling Losses Thermal Loss factor DC wiring losses
+Loss Fraction 1.0 % Module temperature according to irradiance Global array res. 0.15 mΩ
+Uc (const) 29.0 W/m²K Loss Fraction 0.90 % at STC
+Uv (wind) 0.0 W/m²K/m/s
+LID - Light Induced Degradation Module Quality Loss Module mismatch losses
+Loss Fraction 1.00 % Loss Fraction -0.75 % Loss Fraction 1.00 % at MPP
+Strings Mismatch loss
+Loss Fraction 0.10 %
+IAM loss factor
+Incidence effect (IAM): User defined profile
+0° 40° 50° 60° 70° 75° 80° 85° 90°
+1.000 1.000 1.000 1.000 0.969 0.938 0.875 0.711 0.000
+System losses
+Unavailability of the system Auxiliary losses
+Time fraction 0.0 % constant (fans) 14.00 kW
+0.0 days, 0.0 kW from Power thresh.
+1 periods
+AC wiring losses
+Inv. output line up to MV transfo
+Inverter voltage 800 Vac tri
+Loss Fraction 1.27 % at STC
+Inverter: SG350HX-20
+Wire section (164 Inv.) Alu 164 x 3 x 400 mm²
+Average wires length 200 m
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 4/9
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+AC wiring losses
+MV line up to Injection
+MV Voltage 33 kV
+Average each transformer
+Wires Alu 3 x 300 mm²
+Length 1250 m
+Loss Fraction 0.10 % at STC
+AC losses in transformers
+MV transfo
+Medium voltage 33 kV
+Transformer from Datasheets Operating losses at STC (full system)
+Nominal power 6400 kVA Nb. identical MV transfos 10
+Iron Loss 3.50 kVA Nominal power at STC 76.44 MVA
+Iron loss fraction 0.05 % of PNom Iron loss 35.00 kVA
+Copper loss 52.00 kVA Iron loss fraction 0.05 % at STC
+Copper loss fraction 0.81 % at PNom Copper loss 741.87 kVA
+Coils equivalent resistance 3 x 0.81 mΩ Copper loss fraction 0.97 % at STC
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 5/9
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+Near shadings parameter
+Perspective of the PV-field and surrounding shading scene
+Iso-shadings diagram
+Orientation #1 - Fixed plane, Tilts/azimuths: 15°/ 0°
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 6/9
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+Main results
+Simulation step
+Hourly
+System Production
+Produced Energy 73166288 kWh/year Specific production 941 kWh/kWp/year
+Apparent energy 77142904 kVAh/year Perf. Ratio PR 85.34 %
+Bifacial perf. ratio 83.39 %
+Normalized productions (per installed kWp) Performance Ratio PR
+Balances and main results
+GlobHor DiffHor T_Amb GlobInc GlobEff EArray E_Grid PR PRBifi
+kWh/m² kWh/m² °C kWh/m² kWh/m² kWh kWh ratio ratio
+January 22.0 14.10 4.40 32.0 25.6 1782624 1708229 0.686 0.678
+February 38.7 23.00 5.00 50.0 45.8 3380404 3274106 0.842 0.832
+March 75.9 44.30 6.50 89.6 85.6 6524204 6335190 0.909 0.892
+April 113.8 63.29 8.60 124.6 119.9 8929335 8674700 0.896 0.876
+May 144.6 78.40 11.90 151.5 146.0 10503059 10197220 0.866 0.842
+June 145.5 81.89 15.00 147.9 142.4 10160211 9871335 0.859 0.833
+July 146.3 82.90 17.20 151.0 145.4 10386536 10085403 0.859 0.834
+August 123.3 71.10 16.90 130.5 125.4 9008549 8749959 0.862 0.841
+September 85.5 49.90 14.40 96.7 92.8 6885964 6683878 0.889 0.870
+October 51.8 31.00 11.30 65.6 60.5 4399679 4266794 0.837 0.828
+November 26.1 16.00 7.40 37.2 30.8 2128493 2050970 0.709 0.703
+December 17.2 11.20 5.00 26.1 19.6 1334933 1268504 0.624 0.617
+Year 990.6 567.06 10.33 1102.8 1039.9 75423993 73166288 0.853 0.834
+Legends
+GlobHor Global horizontal irradiation EArray Effective energy at the output of the array
+DiffHor Horizontal diffuse irradiation E_Grid Energy injected into grid
+T_Amb Ambient Temperature PR Performance Ratio
+GlobInc Global incident in coll. plane PRBifi Bifacial Performance Ratio
+GlobEff Effective Global, corr. for IAM and shadings
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 7/9
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+Loss diagram
+991 kWh/m² Global horizontal irradiation
++11.3% Global incident in coll. plane
+-4.1% Near Shadings: irradiance loss
+-1.0% Soiling loss factor
+-0.7% IAM factor on global
++0.0% Ground reflection on front side
+Bifacial
+Global incident on ground
+285 kWh/m² on 492279 m²
+-81.8% (0.18 Gnd. albedo)
+Ground reflection loss
+-62.9% View Factor for rear side
++2.2% Sky diffuse on the rear side
++0.6% Beam effective on the rear side
+-5.0% Shadings loss on rear side
+( 1040 + 0.85 * 28.8 ) kWh/m² 2.8% Global Irradiance on rear side (29 kWh/m²)
+* 323089 m² coll. Effective irradiation on collectors
+efficiency at STC = 24.09% PV conversion, Bifaciality factor = 0.85
+82845234 kWh Array nominal energy (at STC effic.)
+-1.6% PV loss due to irradiance level
+-0.3% PV loss due to temperature
+-1.5% Shadings: Electrical Loss acc. to strings
++0.7% Module quality loss
+-1.0% LID - Light induced degradation
+-1.1% Mismatch loss, modules and strings
+-0.2% Mismatch for back irradiance
+-0.4% Ohmic wiring loss
+78445597 kWh Array virtual energy at MPP
+-1.4% Inverter Loss during operation (efficiency)
+-2.5% Inverter Loss over nominal inv. power
+0.0% Inverter Loss due to max. input current
+0.0% Inverter Loss over nominal inv. voltage
+0.0% Inverter Loss due to power threshold
+0.0% Inverter Loss due to voltage threshold
+0.0% Night consumption
+75433991 kWh Available Energy at Inverter Output
+-0.1% Auxiliaries (fans, other)
+-0.5% AC ohmic loss
+-0.9% Medium voltage transfo loss
+0.0% MV line ohmic loss
++0.0% System unavailability
+-1.5% Unused energy (grid limitation)
+73166288 kWh Active Energy injected into grid
+24448355 kVARh Reactive energy, Yearly effective cos(Phi) = 0.950
+77142904 kVAh Apparent energy
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 8/9
+
+Project: Example Field, Exampleshire
+Variant: Example Field PVsyst Report - 0B
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VCE, Simulation date:
+19/10/26 13:41
+with V8.1.7
+Predef. graphs
+Daily Input/Output diagram
+System Output Power Distribution
+19/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 9/9

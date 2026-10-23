@@ -1,0 +1,333 @@
+PVsyst V8.1.7
+PVsyst - Simulation report
+Grid-Connected System
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+Sheds on ground
+System power: 7571 kWp
+Examplefield Floating - Northampton - Testland
+Author
+Example Engineering Ltd (Testland)
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+Project summary
+Geographical Site Situation Project settings
+Examplefield Floating - Northampton Latitude 52.1000 °(N) Albedo 0.20
+Testland Longitude -1.1000 °(W)
+Altitude 176 m
+Time zone UTC
+Weather data
+Examplefield Floating - Northampton
+Solargis Monthly aver. , period not spec. - Synthetic
+System summary
+Grid-Connected System Sheds on ground
+Orientation #1 Orientation #2 Near Shadings
+Fixed plane Fixed plane Linear shadings : Fast (table)
+Tilt/Azimuth 12 / 90 ° Tilt/Azimuth 12 / -90 °
+System information
+PV Array Inverters
+Nb. of modules 11300 units Nb. of units 14 units
+Pnom total 7571 kWp Total power 4480 kWac
+Pnom ratio 1.69
+User's needs
+Unlimited load (grid)
+Results summary
+Simulation step Hourly
+Produced Energy 6465365 kWh/year Specific production 854 kWh/kWp/year Perf. Ratio PR 85.27 %
+Table of contents
+Project and results summary 2
+General parameters, PV Array Characteristics, System losses 3
+Horizon definition 6
+Near shading definition - Iso-shadings diagram 7
+Main results 9
+Loss diagram 10
+Predef. graphs 11
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 2/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+General parameters
+Grid-Connected System Sheds on ground
+Simulation step
+Hourly
+Orientation #1
+Fixed plane Sheds configuration Sizes
+Tilt/Azimuth 12 / 90 ° Nb. of sheds 630 units Sheds spacing 5.34 m
+Set of tables Sensitive width 2.38 m
+Shading limit angle GCR Shading 44.6 %
+Limit profile angle 9.3 °
+Orientation #2
+Fixed plane Sheds configuration Sizes
+Tilt/Azimuth 12 / -90 ° Nb. of sheds 630 units Sheds spacing 5.34 m
+Set of tables Sensitive width 2.38 m
+Shading limit angle GCR Shading 44.6 %
+Limit profile angle 9.3 °
+Models used Horizon Near Shadings
+Transposition Perez Average Height 1.7 ° Linear shadings : Fast (table)
+Diffuse Perez, Meteonorm
+Circumsolar separate
+User's needs
+Unlimited load (grid)
+PV Array Characteristics
+PV module Inverter
+Manufacturer Longi Solar Manufacturer Sungrow
+Model LR8-66HYD-670M Model SG350HX-20
+(Original PVsyst database) (Custom parameters definition)
+Unit Nom. Power 670 Wp Unit Nom. Power 320 kWac
+Array #1 - Main Plant
+Mixed orient.
+1/#2: 195/195 strings
+Tilt/Azimuth 12/90 °
+12/-90 °
+Number of PV modules 10530 units Number of inverters 13 units
+Nominal (STC) 7055 kWp Total power 4160 kWac
+Modules 390 units x 27 In series
+At operating cond. (50°C) Operating voltage 500-1500 V
+Pmpp 6603 kWp Max. power (=>30°C) 352 kWac
+U mpp 1048 V Pnom ratio (DC:AC) 1.70
+I mpp 6299 A Power sharing within this inverter
+Array #2 - 22 Modules per String
+Mixed orient.
+1/#2: 4/4 strings
+Tilt/Azimuth 12/90 °
+12/-90 °
+Number of PV modules 176 units Number of inverters 2 * MPPT 11% 0.2 unit
+Nominal (STC) 118 kWp Total power 73.1 kWac
+Modules 8 units x 22 In series
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 3/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+PV Array Characteristics
+At operating cond. (50°C) Operating voltage 500-1500 V
+Pmpp 110 kWp Max. power (=>30°C) 352 kWac
+U mpp 854 V Pnom ratio (DC:AC) 1.61
+I mpp 129 A
+Array #3 - 27 Modules Per String
+Mixed orient.
+1/#2: 11/11 strings
+Tilt/Azimuth 12/90 °
+12/-90 °
+Number of PV modules 594 units Number of inverters 4 * MPPT 19% 0.8 unit
+Nominal (STC) 398 kWp Total power 247 kWac
+Modules 22 units x 27 In series
+At operating cond. (50°C) Operating voltage 500-1500 V
+Pmpp 372 kWp Max. power (=>30°C) 352 kWac
+U mpp 1048 V Pnom ratio (DC:AC) 1.61
+I mpp 355 A
+Total PV power Total inverter power
+Nominal (STC) 7571 kWp Total power 4480 kWac
+Total 11300 modules Number of inverters 14 units
+Module area 30523 m² Pnom ratio 1.69
+Cell area 28504 m² Power sharing defined
+Array losses
+Array Soiling Losses Thermal Loss factor LID - Light Induced Degradation
+Loss Fraction 2.0 % Module temperature according to irradiance Loss Fraction 1.00 %
+Uc (const) 27.0 W/m²K
+Uv (wind) 0.0 W/m²K/m/s
+Module Quality Loss Module mismatch losses Strings Mismatch loss
+Loss Fraction -0.75 % Loss Fraction 1.00 % at MPP Loss Fraction 0.35 %
+IAM loss factor
+Incidence effect (IAM): Fresnel, AR coating, n(glass)=1.526, n(AR)=1.290
+0° 30° 50° 60° 70° 75° 80° 85° 90°
+1.000 0.999 0.987 0.963 0.892 0.814 0.679 0.438 0.000
+DC wiring losses
+Global wiring resistance 1.7 mΩ
+Loss Fraction 1.00 % at STC
+Array #1 - Main Plant Array #2 - 22 Modules per String
+Global array res. 1.8 mΩ Global array res. 72 mΩ
+Loss Fraction 1.00 % at STC Loss Fraction 1.00 % at STC
+Array #3 - 27 Modules Per String
+Global array res. 32 mΩ
+Loss Fraction 1.00 % at STC
+System losses
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 4/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+System losses
+Auxiliary losses
+constant (fans) 2.00 kW
+0.0 kW from Power thresh.
+Night aux. cons. 2.00 kW
+AC wiring losses
+Inv. output line up to MV transfo
+Inverter voltage 800 Vac tri
+Loss Fraction 0.30 % at STC
+Inverter: SG350HX-20
+Wire section (14 Inv.) Alu 14 x 3 x 400 mm²
+Average wires length 46 m
+MV line up to Injection
+MV Voltage 33 kV
+Average each transformer
+Wires Alu 3 x 240 mm²
+Length 600 m
+Loss Fraction 0.03 % at STC
+AC losses in transformers
+MV transfo
+Medium voltage 33 kV
+One transfo parameters Operating losses at STC (full system)
+Nominal power at STC 3.72 MVA Nb. identical MV transfos 2
+Iron Loss (24/24 Connexion) 3.72 kVA Nominal power at STC 7.44 MVA
+Iron loss fraction 0.10 % at STC Iron loss (24/24 Connexion) 7.44 kVA
+Copper loss 37.20 kVA Copper loss 74.40 kVA
+Copper loss fraction 1.00 % at STC
+Coils equivalent resistance 3 x 1.72 mΩ
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 5/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+Horizon definition
+CSV horizon file, lat:52.270239, lng:-1.151631, exported by solargis.info at 202
+Average Height 1.7 ° Albedo Factor 0.90
+Diffuse Factor 0.99 Albedo Fraction 100 %
+Horizon profile
+Azimuth [°] -180 -173 -165 -128 -120 -113 -105 -98 -90 -75 -68 -60 -53
+Height [°] 0.7 0.7 0.4 0.4 0.7 1.1 1.4 1.4 1.8 1.8 2.8 3.5 3.2
+Azimuth [°] -38 -30 -23 -15 -8 0 8 15 23 30 38 45 53
+Height [°] 3.2 2.8 2.5 2.1 1.4 1.1 1.4 1.1 1.1 1.4 1.8 2.1 2.1
+Azimuth [°] 60 68 75 90 98 105 135 143 150 158 165 173
+Height [°] 1.8 2.1 2.5 2.5 2.1 1.8 1.8 1.4 1.4 1.1 1.1 0.7
+Sun Paths (Height / Azimuth diagram)
+Orientation #1 Orientation #2
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 6/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+Near shadings parameter
+Perspective of the PV-field and surrounding shading scene
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 7/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+Iso-shadings diagram
+Orientation #1 - Fixed plane, Tilts/azimuths: 12°/ 90°
+Orientation #2 - Fixed plane, Tilts/azimuths: 12°/ -90°
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 8/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+Main results
+Simulation step
+Hourly
+System Production
+Produced Energy 6465365 kWh/year Specific production 854 kWh/kWp/year
+Perf. Ratio PR 85.27 %
+Normalized productions (per installed kWp) Performance Ratio PR
+Balances and main results
+GlobHor DiffHor T_Amb GlobInc GlobEff EArray E_Grid PR
+kWh/m² kWh/m² °C kWh/m² kWh/m² kWh kWh ratio
+January 23.1 14.80 4.10 22.8 19.7 144253 133937 0.775
+February 39.5 23.30 4.60 39.0 35.1 260463 249321 0.843
+March 76.8 44.70 6.10 76.0 70.2 520791 504327 0.876
+April 115.2 63.19 8.40 113.9 106.6 780262 758846 0.880
+May 145.3 78.29 11.60 143.6 135.3 959359 933418 0.859
+June 151.1 82.90 14.70 149.7 140.8 997606 971849 0.858
+July 150.6 83.39 16.80 149.1 140.4 986130 959705 0.850
+August 124.6 71.00 16.60 123.1 115.3 817595 795028 0.853
+September 87.3 50.40 14.10 86.5 80.3 583035 565471 0.864
+October 53.5 31.80 10.90 53.1 47.7 348582 335294 0.834
+November 27.1 16.60 7.10 26.9 23.3 170433 160128 0.787
+December 18.0 11.80 4.80 17.8 14.9 107935 98042 0.727
+Year 1012.1 572.17 10.02 1001.5 929.6 6676447 6465365 0.853
+Legends
+GlobHor Global horizontal irradiation EArray Effective energy at the output of the array
+DiffHor Horizontal diffuse irradiation E_Grid Energy injected into grid
+T_Amb Ambient Temperature PR Performance Ratio
+GlobInc Global incident in coll. plane
+GlobEff Effective Global, corr. for IAM and shadings
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 9/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+Loss diagram
+1012 kWh/m² Global horizontal irradiation
+-1.04% Global incident in coll. plane
+-0.38% Far Shadings / Horizon
+-0.99% Near Shadings: irradiance loss
+-2.00% Soiling loss factor
+-3.97% IAM factor on global
+930 kWh/m²
+* 30523 m² coll. Effective irradiation on collectors
+efficiency at STC = 24.83% PV conversion
+7046369 kWh Array nominal energy (at STC effic.)
+-1.92% PV loss due to irradiance level
+-0.02% PV loss due to temperature
++0.75% Module quality loss
+-1.00% LID - Light induced degradation
+-1.35% Mismatch loss, modules and strings
+-0.42% Ohmic wiring loss
+0.00% Mixed orientation mismatch loss
+6770439 kWh Array virtual energy at MPP
+-1.40% Inverter Loss during operation (efficiency)
+-1.41% Inverter Loss over nominal inv. power
+0.00% Inverter Loss due to max. input current
+0.00% Inverter Loss over nominal inv. voltage
+-0.01% Inverter Loss due to power threshold
+0.00% Inverter Loss due to voltage threshold
+-0.01% Night consumption
+6580566 kWh Available Energy at Inverter Output
+-0.27% Auxiliaries (fans, other)
+-0.11% AC ohmic loss
+-1.37% Medium voltage transfo loss
+-0.01% MV line ohmic loss
+6465365 kWh Energy injected into grid
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 10/11
+
+Project: Example Floating Project
+Variant: 5MW Floating Solar Site
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+VC2, Simulation date:
+22/10/26 16:34
+with V8.1.7
+Predef. graphs
+Daily Input/Output diagram
+System Output Power Distribution
+22/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 11/11

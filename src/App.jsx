@@ -15,7 +15,7 @@ import { analyseTrenches, layoutToDxf } from "./layoutDxf.js";
 import { parseDxf as readDxf, pickOutline, routeLengths } from "./dxfRead.js";
 import { YieldReportTab } from "./YieldReport.jsx";
 import { parsePvsystFile } from "./pvsystFiles.js";
-import { extractPdfText } from "./pdfText.js";
+import { extractPdfText, ensurePdfWorker } from "./pdfText.js";
 import { BatchAnalyserTab, BATCH_DEFAULTS } from "./BatchAnalyser.jsx";
 import { ProjectTrackerTab } from "./ProjectTracker.jsx";
 
@@ -3494,8 +3494,8 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
             )}
             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
               <label className="btn" style={{ textAlign: "center", cursor: "pointer" }}>
-                Import KMZ / KML / DXF / XYZ / CSV (boundary + terrain)
-                <input type="file" accept=".kmz,.kml,.dxf,.csv,.xyz,.txt" style={{ display: "none" }}
+                Import KMZ / KML / DXF / XYZ / CSV / PDF (boundary + terrain)
+                <input type="file" accept=".kmz,.kml,.dxf,.csv,.xyz,.txt,.pdf" style={{ display: "none" }}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
               </label>
               {importMsg && <div className="readout">{importMsg}

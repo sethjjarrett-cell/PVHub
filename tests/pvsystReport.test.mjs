@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import {
   parsePvsystReport, parsePvsystDate, recordFromReport, recordTitle,
   findDuplicates, lossMatrix, fieldSpread, projectsToCsv, projectsToJson,
-  projectsFromJson, REPORT_FIELDS,
+  projectsFromJson, REPORT_FIELDS, isSameRun, dedupeAgainst,
 } from "../src/pvsystReport.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +59,12 @@ eq(f.moduleCount, 1008, "module count");
 eq(f.pnomDc, 600, "DC capacity kWp");
 eq(f.inverterCount, 3, "inverter count");
 eq(f.pnomAc, 450, "AC capacity kWac");
-near(f.pnomRatio, 1.33, 1e-9, "DC/AC ratio");
+/* Derived from 600 / 450, so 1.333 — the report rounds its own printed
+   figure to 1.33. The derived one is used because the printed label is
+   ambiguous across reports; it must still agree with what was printed. */
+near(f.pnomRatio, 1.3333, 0.001, "DC/AC ratio derived from the plant totals");
+near(f.pnomRatio, 1.33, 0.005, "and agrees with the figure the report prints");
+ok(/derived/.test(r.src.pnomRatio), "and says it was derived");
 eq(f.moduleArea, 2604, "module area");
 eq(f.moduleWp, 595, "module rating Wp");
 eq(f.inverterKwac, 150, "inverter unit rating kWac");
@@ -70,9 +75,7 @@ eq(f.inverterMfr, "Sungrow", "inverter manufacturer");
 eq(f.moduleModel, "STP595S-C72/Nsh+_1500V", "module model");
 eq(f.inverterModel, "SG150CX", "inverter model");
 
-/* the DC/AC ratio is stated and also derivable — they must agree, or
-   one of the two readings is wrong */
-near(f.pnomDc / f.pnomAc, f.pnomRatio, 0.005, "stated DC/AC ratio matches kWp/kWac");
+near(f.pnomDc / f.pnomAc, f.pnomRatio, 0.005, "the ratio is that division");
 /* likewise the module count against modules-in-series x strings */
 eq(f.stringCount * f.modulesInSeries, f.moduleCount, "strings x series = module count");
 /* and the nameplate against count x unit rating */
@@ -178,7 +181,10 @@ ok(mile("Array nominal energy").kwh > mile("Array virtual energy").kwh
 console.log("\n--- honesty about what was not found ---");
 ok(Array.isArray(r.missing), "missing list present");
 ok(!r.missing.includes("producedKwh"), "a field that was found is not listed missing");
-const partial = parsePvsystReport("PVsyst V8.1.7\nProject: Half A Report\nSimulation report");
+/* Long enough to clear the "no text at all" guard — this is a report
+   that WAS read, just one with no yield in it. */
+const partial = parsePvsystReport(["PVsyst V8.1.7", "Project: Half A Report", "Simulation report",
+  ...Array.from({ length: 30 }, (_, i) => `some other line ${i}`)].join("\n"));
 ok(!partial.ok, "a report with no yield is not reported as understood");
 ok(partial.warnings.length > 0, "and says why");
 const notReport = parsePvsystReport("Some other PDF entirely\nwith no header");
@@ -248,6 +254,116 @@ ok(REPORT_FIELDS.every((x) => x.label && x.group), "every field has a label and 
 ok(REPORT_FIELDS.filter((x) => x.headline).length >= 6, "there are headline fields for the table");
 ok(REPORT_FIELDS.every((x) => x.kind === "text" || typeof x.dp === "number"),
   "every numeric field states its decimal count rather than guessing at render time");
+
+
+/* =====================================================================
+   THE OTHER REPORT SHAPES
+   Three real reports, not one. Each broke something the first did not:
+   a plant quoted in MWp with inverters in kVA, a plant built from
+   several sub-arrays with different string lengths, and a bifacial
+   ground mount whose loss diagram carries rear-side rows.
+   ================================================================== */
+const SUB = readFileSync(join(here, "fixtures", "pvsyst-report-subarrays.txt"), "utf8");
+const BIF = readFileSync(join(here, "fixtures", "pvsyst-report-bifacial-mw.txt"), "utf8");
+
+console.log("\n--- a plant built from several sub-arrays ---");
+const rs = parsePvsystReport(SUB);
+const fs2 = rs.fields;
+ok(rs.ok, "sub-array report recognised");
+eq(fs2.moduleCount, 11300, "module count is the plant's, from the summary");
+eq(fs2.subArrayCount, 3, "three sub-array blocks found");
+/* The bug this fixture exists for: taking the first "Modules N x M In
+   series" described sub-array one (390 x 27 = 10,530) as though it were
+   the plant (11,300). Nothing downstream would have caught it. */
+eq(fs2.stringCount, 420, "strings are summed across sub-arrays, not taken from the first");
+ok(fs2.stringCount !== 390, "and are not sub-array one's figure");
+eq(fs2.modulesInSeries, undefined, "no single string length is reported when they differ");
+ok(rs.warnings.some((w) => /String length varies/.test(w)), "and the report says why");
+ok(rs.warnings.some((w) => /27/.test(w) && /22/.test(w)), "naming the lengths found");
+eq(fs2.pnomDc, 7571, "DC capacity");
+eq(fs2.pnomAc, 4480, "AC capacity");
+near(fs2.pnomRatio, 1.69, 0.005, "DC/AC derived from the plant totals");
+near(fs2.pnomDc / fs2.pnomAc, fs2.pnomRatio, 0.001, "and it is genuinely that division");
+eq(fs2.producedKwh, 6465365, "produced energy");
+eq(fs2.specificYield, 854, "specific yield");
+near(fs2.producedKwh / fs2.pnomDc, fs2.specificYield, 2, "produced / kWp = specific yield");
+eq(rs.monthly.length, 12, "twelve months");
+ok(rs.losses.length >= 20, `loss rows (${rs.losses.length})`);
+eq(fs2.orientationCount, 2, "east and west orientations");
+
+console.log("\n--- a plant quoted in MWp with inverters in kVA ---");
+const rb = parsePvsystReport(BIF);
+const fb = rb.fields;
+ok(rb.ok, "bifacial report recognised");
+/* "Pnom total 77.75 MWp" — a kWp-only pattern read nothing at all. */
+eq(fb.pnomDc, 77750, "MWp is normalised to kWp");
+eq(fb.pnomDcUnit, "kWp", "and recorded as a real-power unit");
+/* "Total power 52480 kVA" — apparent power, which is NOT kWac. */
+eq(fb.pnomAc, 52480, "kVA is read");
+eq(fb.pnomAcUnit, "kVA", "and kept as kVA rather than relabelled kWac");
+eq(fb.inverterKwac, 320, "inverter unit rating in kVA");
+eq(fb.moduleCount, 119610, "module count");
+eq(fb.stringCount, 4430, "strings");
+eq(fb.modulesInSeries, 27, "a uniform string length is reported");
+eq(fb.stringCount * fb.modulesInSeries, fb.moduleCount, "strings x series = modules");
+/* The ratio trap: this plant is curtailed, so the report prints
+   "Grid lim. Pnom ratio 1.558" as well as a DC:AC of 1.48. Taking a
+   "Pnom ratio" by pattern returns the grid figure and overstates the
+   array against its inverters by 5%. */
+near(fb.pnomRatio, 1.482, 0.005, "DC/AC is the plant's own division, not the grid limit");
+ok(fb.pnomRatio < 1.5, "and is not the 1.558 grid-limited figure");
+ok(/derived/.test(rb.src.pnomRatio), "the ratio shows that it was derived");
+ok(rb.src.pnomRatio.includes("kVA"), "and names the unit it divided by");
+eq(fb.producedKwh, 73166288, "produced energy");
+eq(fb.specificYield, 941, "specific yield");
+near(fb.producedKwh / fb.pnomDc, fb.specificYield, 2, "produced / kWp = specific yield");
+ok(/Solargis/.test(fb.weatherSource || ""), "weather source read although it shares a line");
+ok(/strings/i.test(fb.nearShadingModel || ""), "the 'According to strings' shading model is read");
+near(fb.gcr, 65.6, 1e-9, "GCR");
+near(fb.pitch, 10.9, 1e-9, "row pitch");
+/* A bifacial diagram carries rear-side rows the first report has no
+   concept of. They must survive under PVsyst's own wording. */
+ok(rb.losses.some((l) => /rear side/i.test(l.label)), "rear-side loss rows are kept");
+ok(rb.losses.some((l) => /Medium voltage transfo/i.test(l.label)), "MV transformer loss kept");
+ok(rb.losses.length >= 28, `a fuller diagram than the roof report (${rb.losses.length} rows)`);
+
+console.log("\n--- reports that cannot be read say why ---");
+const noText = parsePvsystReport("\n\n   \n\n");
+ok(!noText.ok, "an empty extraction is not ok");
+ok(/no text in this PDF/i.test(noText.error), "and is called out as a PDF with no text");
+ok(/Print to PDF/i.test(noText.error), "naming the usual cause");
+ok(/Export the report/i.test(noText.error), "and the fix");
+const wrongKind = parsePvsystReport(Array.from({ length: 40 }, (_, i) => `line ${i} of some other document`).join("\n"));
+ok(!wrongKind.ok, "a text PDF that is not a PVsyst report is not ok");
+ok(/does not look like a PVsyst/i.test(wrongKind.error), "and says so");
+ok(!/no text/i.test(wrongKind.error), "without blaming the extraction");
+
+console.log("\n--- the same report twice is not two projects ---");
+const base = recordFromReport(r, { fileName: "a.pdf" });
+const same = recordFromReport(parsePvsystReport(TEXT), { fileName: "a-copy.pdf" });
+ok(isSameRun(base, same), "same project, variant and timestamp is the same run");
+const other = recordFromReport(rs, { fileName: "b.pdf" });
+ok(!isSameRun(base, other), "a different project is not");
+
+/* A re-run of the same variant carries a different simulation time, and
+   that one must come in — the change between two runs is the point. */
+const rerun = recordFromReport(parsePvsystReport(TEXT), { fileName: "a-rerun.pdf" });
+rerun.fields = { ...rerun.fields, simulatedAt: "20/10/26 09:15" };
+ok(!isSameRun(base, rerun), "a re-run at a different time is a different run");
+
+const d1 = dedupeAgainst([base], [same, other, rerun]);
+eq(d1.kept.length, 2, "the duplicate is dropped, the new project and the re-run are kept");
+eq(d1.duplicates.length, 1, "one duplicate reported");
+eq(d1.duplicates[0].rec.fileName, "a-copy.pdf", "and it is named");
+eq(d1.kept.map((x) => x.fileName).sort().join(","), "a-rerun.pdf,b.pdf", "the right two survive");
+
+/* Two copies in the SAME drop must also collapse, not just against what
+   is already tracked. */
+const d2 = dedupeAgainst([], [base, same]);
+eq(d2.kept.length, 1, "duplicates within one import are caught too");
+eq(d2.duplicates.length, 1, "and counted");
+const d3 = dedupeAgainst([], []);
+eq(d3.kept.length, 0, "nothing in, nothing out");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

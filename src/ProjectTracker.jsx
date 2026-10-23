@@ -27,7 +27,7 @@ import {
   readLocal, writeLocal, clearLocal, hasLocal, describeStore,
 } from "./trackerStore.js";
 import {
-  parsePvsystReport, recordFromReport, recordTitle, findDuplicates,
+  parsePvsystReport, recordFromReport, recordTitle, findDuplicates, dedupeAgainst,
   lossMatrix, fieldSpread, projectsToCsv, projectsToJson, projectsFromJson,
   REPORT_FIELDS, FIELD_GROUPS, FIELD_BY_KEY,
 } from "./pvsystReport.js";
@@ -353,11 +353,20 @@ export function ProjectTrackerTab() {
       }
     }
     setBusy(null);
+    /* The same report dropped twice is the file arriving again, not a
+       new run, so it is skipped rather than added and flagged. A re-run
+       of the same variant has a different simulation timestamp and does
+       come in — that difference is the thing worth seeing. */
+    const { kept, duplicates } = dedupeAgainst(records, added);
+    for (const d of duplicates) {
+      bad.push(`${d.rec.fileName || recordTitle(d.rec)} is already tracked — same project, `
+        + `variant and simulation time (${d.rec.fields.simulatedAt || "no timestamp"}). Skipped.`);
+    }
     setProblems(bad);
-    if (added.length) {
-      const next = [...records, ...added];
+    if (kept.length) {
+      const next = [...records, ...kept];
       commit(next);
-      setSelected(added[added.length - 1].id);
+      setSelected(kept[kept.length - 1].id);
     }
   };
 

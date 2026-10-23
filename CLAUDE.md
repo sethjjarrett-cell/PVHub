@@ -201,9 +201,9 @@ node tests/layoutDxf.test.mjs       # 51 assertions: trench occupancy, the layou
 node tests/costing.test.mjs         # 79 assertions: the finance against closed forms, and
                                     # the quote handling against the cases that corrupt a
                                     # comparison silently
-node tests/pvsystReport.test.mjs    # 127 assertions against a real report: every field, the
-                                    # monthly table, the loss diagram, and the rows that
-                                    # must NOT be read as losses
+node tests/pvsystReport.test.mjs    # 188 assertions against three real reports: a fixed-tilt
+                                    # roof, a plant of several sub-arrays, and a bifacial
+                                    # field quoted in MWp and kVA
 node tests/pdfWorker.test.mjs       # 1 assertion: the inlined worker matches pdfjs-dist
 node tests/trackerStore.test.mjs    # 26 assertions: which store is chosen at startup, and
                                     # that the interface never misstates where data is
@@ -462,6 +462,32 @@ Deliberate engineering decisions, each stated in the UI's own text:
   soiling loss. They are deliberately absent from the record, because the loss diagram
   carries the realised value of each of them correctly and one right number beats two
   plausible ones.
+- **Power is normalised to kW, but kVA stays kVA.** A roof prints "Pnom total 600 kWp"; a
+  78 MW field prints "77.75 MWp" and its inverters "52480 kVA", because the limit there is
+  apparent power. `scalePower` normalises the scale so the numbers are comparable, and the
+  unit *kind* is kept — relabelling kVA as kWac would quietly equate two different
+  quantities. A kWp-only pattern read the MW plant as nothing at all.
+- **The DC/AC ratio is derived, never scraped.** "Pnom ratio" is printed against three
+  different things and the label does not say which: the inverters, the *grid* limit
+  ("Grid lim. Pnom ratio 1.558" on a curtailed plant whose DC:AC is 1.48), and once per
+  sub-array ("1.70" for the first block of a plant whose whole-site figure is 1.69). Every
+  pattern picks a different wrong answer on some report. It is computed from the plant's own
+  DC and AC capacities, shows the arithmetic in `src`, and warns when a stated value
+  disagrees.
+- **Several sub-arrays mean several "Modules N x M In series" lines.** Taking the first
+  describes one sub-array as the whole plant — 390 × 27 = 10,530 against a stated 11,300.
+  Strings are summed across the blocks; the string length is reported only when every block
+  agrees, and otherwise withheld with the differing lengths named, because no single figure
+  exists.
+- **A PDF with no text is a different failure from a PDF of the wrong kind.** Windows
+  "Print to PDF" rasterises the whole document — nine pages, one image each, not a character
+  of text. No pattern-widening reads that, so it is detected before parsing and the message
+  names the cause and the fix (re-export from PVsyst). There is no OCR here (GAPS §G37).
+- **The same report imported twice is skipped; a re-run is kept.** `isSameRun` compares
+  project, variant *and* simulation timestamp. Identical on all three is the file arriving
+  again and there is nothing to learn from a second copy. A different timestamp is a re-run
+  of that variant, and the change between the two is usually the point — `dedupeAgainst`
+  keeps those and `findDuplicates` flags them.
 - **A tracked field that was not found is listed as missing, never shown as zero.** Across a
   comparison table a silent zero moves every average taken down the column. `fieldSpread`
   excludes absent records and reports how many it excluded; `lossMatrix` returns `null`, not

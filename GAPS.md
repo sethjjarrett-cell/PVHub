@@ -507,18 +507,31 @@ falls back to 22 px rather than degrading to something larger. It is not a break
 the behaviour before the rule existed — but it is worth knowing it is a soft floor rather
 than a guaranteed one.
 
-### G33. The report reader is proven against one report layout
+### G37. A rasterised report cannot be read at all
 
-`parsePvsystReport` reads a grid-connected, fixed-tilt, self-consumption run from PVsyst
-8.1 completely — 127 assertions, every field, the monthly table and the whole loss diagram.
-That is one layout. A tracker plant prints a tracking section this reader does not look for;
-a stand-alone system has no grid rows at all; older PVsyst versions word their headings
-differently. Those will read partially, and the tracker says which fields it could not find
+Windows "Print to PDF" turns each page into a single image — nine pages, one image each, no
+text anywhere. `parsePvsystReport` detects it before parsing and says to export from PVsyst
+directly instead of printing, which is the right advice and costs nothing. But if the
+original is gone and only the printed copy survives, the tracker cannot read it.
+
+What would close it: OCR. That means tesseract.js or similar, which is several megabytes on
+top of a bundle already carrying 1.3 MB of pdf.js worker (§G14), for a case that has a
+better fix upstream. Not obviously worth it.
+
+### G33. The report reader is proven against three report layouts
+
+Three real reports parse completely, as fixtures with 188 assertions between them: a
+fixed-tilt roof in self-consumption, a floating plant built from three sub-arrays with
+differing string lengths, and a curtailed bifacial field quoted in MWp with inverters in
+kVA. Each broke something the previous one did not — the first-match string read, the
+unit assumptions, and the ambiguous "Pnom ratio" label.
+
+Still unproven: trackers (a tracking section this reader does not look for), stand-alone
+systems with no grid rows, and PVsyst versions older than 8.1, which word headings
+differently. Those will read partially, and the tracker lists the fields it could not find
 rather than inventing them, so the failure is visible rather than silent — but "visible" is
-not "handled".
-
-What would close it: a second and third real report, of different system types, added as
-fixtures with the same assertion density.
+not "handled". The pattern for closing it is established: add the report as an anonymised
+fixture and assert against it.
 
 ### G34. The tracker has no basemap
 
