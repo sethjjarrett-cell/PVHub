@@ -1,0 +1,252 @@
+PVsyst V8.1.7
+PVsyst - Simulation report
+Grid-Connected System
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+Tables on a building
+System power: 600 kWp
+Example Solar Project - Testland
+Author
+Example Engineering Ltd (Testland)
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+Project summary
+Geographical Site Situation Project settings
+Example Solar Project Latitude -15.1000 °(S) Albedo 0.20
+Testland Longitude 28.1000 °(E)
+Altitude 1246 m
+Time zone UTC+2
+Weather data
+Example Solar Project
+Solargis Monthly aver. , period not spec. - Synthetic
+System summary
+Grid-Connected System Tables on a building
+Orientation #1 Orientation #2 Near Shadings
+Fixed plane Fixed plane Linear shadings : Fast (table)
+Tilt/Azimuth 3 / 2 ° Tilt/Azimuth 3 / -178.1 °
+System information
+PV Array Inverters
+Nb. of modules 1008 units Nb. of units 3 units
+Pnom total 600 kWp Total power 450 kWac
+Pnom ratio 1.33
+User's needs
+Ext. defined as file
+Example_Site_Load.csv
+No grid reinjection
+Results summary
+Simulation step Hourly
+Produced Energy 1035984 kWh/year Specific production 1727 kWh/kWp/year Perf. Ratio PR 80.48 %
+Used Energy 3059070 kWh/year Solar Fraction SF 33.87 %
+Table of contents
+Project and results summary 2
+General parameters, PV Array Characteristics, System losses 3
+Near shading definition - Iso-shadings diagram 5
+Main results 7
+Loss diagram 8
+Predef. graphs 9
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 2/9
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+General parameters
+Grid-Connected System Tables on a building
+Simulation step
+Hourly
+Orientation #1
+Fixed plane Sheds configuration Sizes
+Tilt/Azimuth 3 / 2 ° Nb. of sheds 576 units Sheds spacing 1.18 m
+Set of tables Sensitive width 1.13 m
+Shading limit angle GCR Shading 95.9 %
+Limit profile angle 49.9 °
+Orientation #2
+Fixed plane Sheds configuration Sizes
+Tilt/Azimuth 3 / -178.1 ° Nb. of sheds 432 units Sheds spacing 1.18 m
+Set of tables Sensitive width 1.13 m
+Shading limit angle GCR Shading 95.9 %
+Limit profile angle 49.8 °
+Models used Horizon Near Shadings
+Transposition Perez Free Horizon Linear shadings : Fast (table)
+Diffuse Perez, Meteonorm
+Circumsolar separate
+User's needs
+Ext. defined as file
+Example_Site_Load.csv
+No grid reinjection
+Jan. Feb. Mar. Apr. May June July Aug. Sep. Oct. Nov. Dec. Year
+272924 275867 265175 240988 201910 212420 251352 231853 260357 245737 315493 284994 3059070 kWh
+PV Array Characteristics
+PV module Inverter
+Manufacturer Suntech Manufacturer Sungrow
+Model STP595S-C72/Nsh+_1500V Model SG150CX
+(Custom parameters definition) (Original PVsyst database)
+Suntech_STP_595S_C72_Nsh+_1500V_23V01.PAN Unit Nom. Power 150 kWac
+Unit Nom. Power 595 Wp Number of inverters 3 units
+Number of PV modules 1008 units Total power 450 kWac
+Nominal (STC) 600 kWp Operating voltage 180-1000 V
+Modules 56 units x 18 In series Max. power (=>40°C) 165 kWac
+At operating cond. (50°C) Pnom ratio (DC:AC) 1.33
+Pmpp 556 kWp Power sharing within this inverter
+U mpp 713 V
+I mpp 780 A
+Total PV power Total inverter power
+Nominal (STC) 600 kWp Total power 450 kWac
+Total 1008 modules Max. power 495 kWac
+Module area 2604 m² Number of inverters 3 units
+Cell area 2404 m² Pnom ratio 1.33
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 3/9
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+Array losses
+Array Soiling Losses Thermal Loss factor DC wiring losses
+Loss Fraction 3.0 % Module temperature according to irradiance Global array res. 20 mΩ
+Uc (const) 18.0 W/m²K Loss Fraction 2.00 % at STC
+Uv (wind) 0.0 W/m²K/m/s
+LID - Light Induced Degradation Module Quality Loss Module mismatch losses
+Loss Fraction 1.00 % Loss Fraction -0.60 % Loss Fraction 2.00 % at MPP
+Strings Mismatch loss
+Loss Fraction 0.10 %
+IAM loss factor
+Incidence effect (IAM): Fresnel, AR coating, n(glass)=1.526, n(AR)=1.290
+0° 30° 50° 60° 70° 75° 80° 85° 90°
+1.000 0.999 0.987 0.963 0.892 0.814 0.679 0.438 0.000
+AC wiring losses
+Inv. output line up to injection point
+Inverter voltage 400 Vac tri
+Loss Fraction 0.24 % at STC
+Inverter: SG150CX
+Wire section (3 Inv.) Alu 3 x 3 x 240 mm²
+Average wires length 15 m
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 4/9
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+Near shadings parameter
+Perspective of the PV-field and surrounding shading scene
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 5/9
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+Iso-shadings diagram
+Orientation #1 - Fixed plane, Tilts/azimuths: 3°/ 2°
+Orientation #2 - Fixed plane, Tilts/azimuths: 3°/ -178.1°
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 6/9
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+Main results
+Simulation step
+Hourly
+System Production
+Produced Energy 1035984 kWh/year Specific production 1727 kWh/kWp/year
+Used Energy 3059070 kWh/year Perf. Ratio PR 80.48 %
+Solar Fraction SF 33.87 %
+Normalized productions (per installed kWp) Performance Ratio PR
+Balances and main results
+GlobHor DiffHor T_Amb GlobInc GlobEff EArray E_Grid PR EFrGrid EFrGrid
+kWh/m² kWh/m² °C kWh/m² kWh/m² kWh kWh ratio kWh kWh
+January 170.6 83.39 21.20 170.3 160.1 84043 0 0.805 190702 190702
+February 156.6 71.49 21.20 156.5 147.9 77466 0 0.810 199847 199847
+March 175.7 72.10 21.00 175.9 165.9 87588 0 0.813 179418 179418
+April 168.3 53.10 20.00 168.9 159.3 84572 0 0.809 158997 158997
+May 169.4 39.00 18.50 170.4 160.0 86105 0 0.782 121965 121965
+June 150.2 38.50 16.60 151.2 141.5 76979 0 0.824 137663 137663
+July 161.2 42.60 16.10 162.2 152.0 82748 0 0.835 170098 170098
+August 188.8 52.00 19.00 189.7 179.2 95597 0 0.811 139571 139571
+September 205.3 63.99 22.70 205.8 195.2 101455 0 0.806 160792 160792
+October 219.3 71.59 24.90 219.4 207.4 106271 0 0.767 144749 144749
+November 192.5 73.10 24.10 192.2 181.4 94059 0 0.801 223119 223119
+December 184.0 79.50 22.00 183.6 173.1 90617 0 0.807 196164 196164
+Year 2141.9 740.37 20.60 2146.3 2023.0 1067499 0 0.805 2023086 2023086
+Legends
+GlobHor Global horizontal irradiation EArray Effective energy at the output of the array
+DiffHor Horizontal diffuse irradiation E_Grid Energy injected into grid
+T_Amb Ambient Temperature PR Performance Ratio
+GlobInc Global incident in coll. plane EFrGrid Energy from the grid
+GlobEff Effective Global, corr. for IAM and shadings EFrGrid Energy from the grid
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 7/9
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+Loss diagram
+2142 kWh/m² Global horizontal irradiation
++0.2% Global incident in coll. plane
+-0.37% Near Shadings: irradiance loss
+-3.00% Soiling loss factor
+-2.47% IAM factor on global
+2023 kWh/m²
+* 2604 m² coll. Effective irradiation on collectors
+efficiency at STC = 23.03% PV conversion
+1213299 kWh Array nominal energy (at STC effic.)
+-0.01% PV loss due to irradiance level
+-7.94% PV loss due to temperature
++0.60% Module quality loss
+-1.00% LID - Light induced degradation
+-2.10% Mismatch loss, modules and strings
+-1.49% Ohmic wiring loss
+-0.05% Mixed orientation mismatch loss
+1072159 kWh Array virtual energy at MPP
+-1.64% Inverter Loss during operation (efficiency)
+-0.44% Inverter Loss over nominal inv. power
+0.00% Inverter Loss due to max. input current
+0.00% Inverter Loss over nominal inv. voltage
+0.00% Inverter Loss due to power threshold
+Grid
+consumption 0.00% Inverter Loss due to voltage threshold
+66.13%
+-0.01% Night consumption
+1049747 kWh Available Energy at Inverter Output
+-0.14% AC ohmic loss
+-1.17% Unused energy (no grid injection)
+2023086 1035984 kWh User: from solar and from Grid
+To user To user
+from grid from solar
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 8/9
+
+Project: Example Solar Project Testland
+Variant: Preliminary Design EX - Self Consumption - N S
+PVsyst V8.1.7
+Example Engineering Ltd (Testland)
+ABC, Simulation date:
+16/10/26 14:00
+with V8.1.7
+Predef. graphs
+Daily Input/Output diagram
+System Output Power Distribution
+16/10/26 PVsyst Licensed to Example Engineering Ltd (Testland) Page 9/9

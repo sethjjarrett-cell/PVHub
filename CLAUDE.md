@@ -32,8 +32,12 @@ src/bess.js            battery capacity chain and the 8,760-hour dispatch — no
 src/BessTool.jsx       Battery tab: capacity chain, dispatch, sweep, the walkthrough
 src/batchAnalyser.js   PVsyst batch CSV parsing and tilt/pitch analysis, no React
 src/BatchAnalyser.jsx  Batch analyser tab: six hand-rolled charts, recommendation, exports
+src/pvsystReport.js    PVsyst simulation-report PDF reader — text in, project record out
+src/ProjectTracker.jsx Tracker tab: drop reports in, compare yields and loss diagrams
+src/pdfText.js         pdf.js plumbing: worker setup and text extraction, shared
 src/main.jsx           mount + boot-overlay teardown
 src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
+scripts/genPdfWorker.mjs regenerates the above from the installed pdfjs-dist
 index.html             Vite entry shell
 vite.config.js         base:"./" so the build works from a subpath on Pages
 .github/workflows/     builds and publishes to Pages on push to main
@@ -109,6 +113,7 @@ Adding a workspace means adding it to a group as well, or it is unreachable.
 | `yield` | `shade`, `report`, `batch` |
 | `cost` | `cost` alone |
 | `bess` | `bess` alone |
+| `track` | `track` alone; reads exported PVsyst report PDFs |
 
 They are **one app with one state tree**, not separate apps — a value typed in any workspace
 is still there in the others. Do not fork them; duplicated inputs would drift apart within a
@@ -188,7 +193,19 @@ node tests/layoutDxf.test.mjs       # 51 assertions: trench occupancy, the layou
 node tests/costing.test.mjs         # 79 assertions: the finance against closed forms, and
                                     # the quote handling against the cases that corrupt a
                                     # comparison silently
+node tests/pvsystReport.test.mjs    # 127 assertions against a real report: every field, the
+                                    # monthly table, the loss diagram, and the rows that
+                                    # must NOT be read as losses
+node tests/pdfWorker.test.mjs       # 1 assertion: the inlined worker matches pdfjs-dist
 ```
+
+**The inlined pdf.js worker rots silently.** `src/pdfWorkerText.js` holds the worker source as
+a string so the application makes no CDN call, and pdf.js refuses to run a worker whose
+version does not match the API. Because every PDF path here is an optional convenience, that
+mismatch surfaces as one file that will not read — not as a broken build — which is how a
+6.1.200 worker sat against a 6.2.108 API unnoticed. `npm run gen:pdf-worker` regenerates it,
+`ensurePdfWorker` throws with that instruction if they diverge, and `tests/pdfWorker.test.mjs`
+catches it before a user does. Run it after any `npm install` that moves `pdfjs-dist`.
 
 **Known pre-existing noise:** ~270 console errors of the form
 `<line> attribute y1: Expected length, "-Infinity"` fire on load, plus a favicon 404. That
@@ -416,6 +433,32 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **A checkbox is hit by its label.** The box stays a box; `label:has(> input[type=
   "checkbox"])` carries the 38 px minimum height. Growing the box instead gives a 38 px
   checkbox, which looks broken and still misses the text beside it.
+- **A PVsyst report is read generically where it varies, strictly where it does not.**
+  `parsePvsystReport` reads the monthly balance table off its own header row, because the
+  column set changes with the system type — a self-consumption run carries `EFrGrid` columns
+  a grid-feed run does not, and reading `E_Grid` from a fixed slot reports such a plant as
+  generating nothing. The loss diagram is read the same way: any signed-percentage row
+  becomes an entry under PVsyst's own wording, so a row this reader has never seen is
+  captured rather than dropped.
+- **The loss diagram is read from the loss-diagram page only, and only signed rows.** The
+  array-loss *parameters* page carries lines of the identical shape — "Loss Fraction 2.00 %
+  at STC" — and an unscoped scan turned those into loss rows called "at STC" and "at MPP".
+  The module efficiency ("efficiency at STC = 23.03% PV conversion") sits on the diagram page
+  itself and arrived as a +23% gain until the reader required an explicit `+`/`-` or a zero.
+  Both would then have appeared as columns in every comparison.
+- **Fields whose column cannot be identified are not read at all.** The soiling, LID, quality
+  and mismatch fractions share one line in a three-column block, and flattened PDF text has
+  lost which is which — taking the first match returned the 0.10% strings mismatch as the
+  soiling loss. They are deliberately absent from the record, because the loss diagram
+  carries the realised value of each of them correctly and one right number beats two
+  plausible ones.
+- **A tracked field that was not found is listed as missing, never shown as zero.** Across a
+  comparison table a silent zero moves every average taken down the column. `fieldSpread`
+  excludes absent records and reports how many it excluded; `lossMatrix` returns `null`, not
+  `0`, for a row a report does not have.
+- **Re-importing a report adds a record, it never overwrites one.** Two runs of the same
+  project and variant are flagged as duplicates and left alone, because the difference
+  between them is usually the thing worth seeing.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.

@@ -507,6 +507,48 @@ falls back to 22 px rather than degrading to something larger. It is not a break
 the behaviour before the rule existed — but it is worth knowing it is a soft floor rather
 than a guaranteed one.
 
+### G33. The report reader is proven against one report layout
+
+`parsePvsystReport` reads a grid-connected, fixed-tilt, self-consumption run from PVsyst
+8.1 completely — 127 assertions, every field, the monthly table and the whole loss diagram.
+That is one layout. A tracker plant prints a tracking section this reader does not look for;
+a stand-alone system has no grid rows at all; older PVsyst versions word their headings
+differently. Those will read partially, and the tracker says which fields it could not find
+rather than inventing them, so the failure is visible rather than silent — but "visible" is
+not "handled".
+
+What would close it: a second and third real report, of different system types, added as
+fixtures with the same assertion density.
+
+### G34. The tracker has no basemap
+
+`SiteMap` plots latitude and longitude on a labelled graticule with the tropics marked, and
+deliberately draws no coastlines: a tile service would be the only part of the application
+that needs the network, and an outline sketched from memory looks authoritative and is
+wrong — the first attempt at one was unrecognisable. The degrees are exact, so a project is
+locatable, but you cannot see at a glance that a pin is in Zambia rather than the Indian
+Ocean.
+
+What would close it: embed a real low-resolution coastline (Natural Earth 1:110m is public
+domain and compresses to tens of kilobytes as a simplified path set), still with no network
+call.
+
+### G35. A tracked project cannot carry its layout
+
+The stated intent for the tracker is a drawing beside the numbers. The DXF readers already
+exist (`src/dxfRead.js`, and `parseDxf` in App.jsx) and the layout tools render plans, so
+the geometry half is built; what is missing is attaching a drawing to a tracked record and
+storing it. Note that a DXF is far larger than the parameter record, so the browser-storage
+limit below becomes a real constraint rather than a theoretical one.
+
+### G36. The tracker stores in the browser
+
+Same limitation as the costing quote library (§G30), and the same mitigation: the JSON
+export is the archive. A tracker is a long-lived record by definition, so this matters more
+here than it does for a quote library — a cleared cache loses the lot. `localStorage` also
+caps at roughly 5 MB per origin, which the parameter records will not trouble but an
+attached drawing would.
+
 ### G13. Accessibility not addressed
 
 Tabs are `<button>` elements without `role="tab"` / `aria-selected` / `aria-controls`.

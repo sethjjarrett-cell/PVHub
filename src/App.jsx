@@ -15,7 +15,9 @@ import { analyseTrenches, layoutToDxf } from "./layoutDxf.js";
 import { parseDxf as readDxf, pickOutline, routeLengths } from "./dxfRead.js";
 import { YieldReportTab } from "./YieldReport.jsx";
 import { parsePvsystFile } from "./pvsystFiles.js";
+import { extractPdfText } from "./pdfText.js";
 import { BatchAnalyserTab, BATCH_DEFAULTS } from "./BatchAnalyser.jsx";
+import { ProjectTrackerTab } from "./ProjectTracker.jsx";
 
 /* =====================================================================
    LAYOUT GENERATOR — Phase 2
@@ -5184,48 +5186,6 @@ function parseSheet(raw, kind /* "module" | "inverter" */) {
 }
 
 
-let _workerReady = false;
-function ensurePdfWorker() {
-  if (_workerReady) return;
-  const blob = new Blob([PDF_WORKER_TEXT], { type: "text/javascript" });
-  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-  _workerReady = true;
-}
-
-/** Browser-side text extraction, identical to the tested Node path:
-    group items into visual lines by y, order by x, space on gaps. */
-async function extractPdfText(data) {
-  ensurePdfWorker();
-  const doc = await pdfjsLib.getDocument({ data, useSystemFonts: true, verbosity: 0 }).promise;
-  const out = [];
-  for (let p = 1; p <= doc.numPages; p++) {
-    const page = await doc.getPage(p);
-    const tc = await page.getTextContent();
-    const items = tc.items.filter((i) => i.str && i.str.trim().length);
-    const rows = [];
-    for (const it of items) {
-      const y = it.transform[5], x = it.transform[4];
-      let r = rows.find((q) => Math.abs(q.y - y) < 3);
-      if (!r) { r = { y, parts: [] }; rows.push(r); }
-      r.parts.push({ x, s: it.str, w: it.width || 0 });
-    }
-    rows.sort((a, b) => b.y - a.y);
-    for (const r of rows) {
-      r.parts.sort((a, b) => a.x - b.x);
-      let line = "", lastEnd = null;
-      for (const pt of r.parts) {
-        if (lastEnd !== null && pt.x - lastEnd > 1.5) line += " ";
-        line += pt.s;
-        lastEnd = pt.x + pt.w;
-      }
-      out.push(line.trim());
-    }
-    out.push("");
-  }
-  try { doc.destroy(); } catch (e) { /* noop */ }
-  return out.join("\n");
-}
-
 const LIB_KEY = "pvhub.library.v1";
 let memLib = null;
 function loadLib() {
@@ -7390,6 +7350,7 @@ export default function App() {
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
     ["report", "Yield report"], ["batch", "Batch analyser"], ["bess", "Battery"],
     ["roof", "Roof area"], ["rdesign", "Roof designer"], ["cost", "Costing"],
+    ["track", "Tracker"],
   ];
   /* Ground mount is the full tool. Roof mount drops what a roof does not
      have — an MV collector ring, a field to tile, a row-pitch sweep — and
@@ -7402,14 +7363,14 @@ export default function App() {
     ["Calculations", ["string", "clip"]],
     ["Layout", ["layout"]],
     ["Cables", ["cdc", "cac", "cmv", "csc"]],
-    ["Yield & Summary", ["shade", "report", "batch", "bess", "cost", "summary"]],
+    ["Yield & Summary", ["shade", "report", "batch", "bess", "cost", "track", "summary"]],
   ];
   const GROUPS_ROOF = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Roof", ["roof", "rdesign"]],
     ["Cables", ["cdc", "cac", "csc"]],
-    ["Yield & Summary", ["shade", "report", "bess", "cost", "summary"]],
+    ["Yield & Summary", ["shade", "report", "bess", "cost", "track", "summary"]],
   ];
   /* The workspaces. Each is the same engines with a different amount of
      the application on screen — not a separate app, because duplicating
@@ -7444,6 +7405,12 @@ export default function App() {
         + "The PVsyst batch analyser sits here too.",
       note: "Three tabs. No cables, no layout.",
       groups: [["Yield", ["shade", "report", "batch"]]] },
+    { id: "track", name: "Project tracker", short: "Tracker",
+      blurb: "Drop the PVsyst simulation reports from your preliminary designs in and the "
+        + "parameters come out: yield, specific yield, DC and AC capacity, the whole loss "
+        + "diagram. Then compare them against each other and see where they sit on a map.",
+      note: "One tab. Reads exported PVsyst report PDFs.",
+      groups: [["Tracker", ["track"]]] },
     { id: "cost", name: "Costing", short: "Costing",
       blurb: "A library of the quotes you have actually received, with the date each was "
         + "priced, and what they do to LCOE. Ships with no prices in it on purpose — the "
@@ -7482,9 +7449,9 @@ export default function App() {
     { id: "size", name: "Sizing tools",
       blurb: "Strings, cables and batteries worked out against the standards.",
       tools: ["string", "cable", "bess"], planned: ["loadflow"] },
-    { id: "cost", name: "Costing",
-      blurb: "The quotes you have received, how old they are, and what they do to LCOE.",
-      tools: ["cost"] },
+    { id: "cost", name: "Costing and tracking",
+      blurb: "What your quotes say, and what your finished designs actually yielded.",
+      tools: ["cost", "track"] },
   ];
   const wsById = (id) => WORKSPACES.find((w) => w.id === id);
   const plannedById = (id) => PLANNED.find((w) => w.id === id);
@@ -7989,6 +7956,9 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
         <BatchAnalyserTab st={batch} set={setBatch} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "track" ? "flex" : "none" }}>
+        <ProjectTrackerTab />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cost" ? "flex" : "none" }}>
         <CostingTab st={costing} set={setCosting}
