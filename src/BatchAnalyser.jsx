@@ -17,6 +17,9 @@
 import React, { useState, useMemo, useRef } from "react";
 import { fmt, C, Num, Section, Page } from "./ui.jsx";
 import {
+  BATCH_PARAMS, paramById, range, sweepRows, buildBatchParamsCsv, runInstructions,
+} from "./pvsystBatch.js";
+import {
   parseBatchCsv, analyseBatch, buildRecommendation, toCsv, fmtEnergy,
   ANALYSIS_DEFAULTS,
 } from "./batchAnalyser.js";
@@ -424,6 +427,157 @@ function ChartLossDriver({ a, field, label, unit }) {
    The tab
    --------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------
+   B0 — writing the batch parameter file
+   PVsyst has no API and cannot be driven from a browser, so the loop
+   is: decide the sweep here, run it there, bring the results back.
+   This is the first leg. See src/pvsystBatch.js for why a parameter
+   file rather than a generated variant.
+   --------------------------------------------------------------- */
+/* ui.jsx has no text field — Num is numeric by design — and these three
+   are free text that goes into the file's preamble. */
+function Txt({ label, value, onChange, placeholder, width = 210 }) {
+  return (
+    <label className="fld" style={{ width }}>
+      <span className="fld-l">{label}</span>
+      <span className="fld-box">
+        <input type="text" value={value} placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)} />
+      </span>
+    </label>
+  );
+}
+
+function SweepBuilder({ st, set }) {
+  const sw = st.sweep || {};
+  const upd = (patch) => set({ ...st, sweep: { ...sw, ...patch } });
+  const g = (k, d) => (sw[k] === undefined ? d : sw[k]);
+
+  const tilt = paramById("tilt"), pitch = paramById("pitch");
+  const tiltVals = g("tiltOn", true) ? range(g("tiltFrom", 15), g("tiltTo", 25), g("tiltStep", 1)) : [];
+  const pitchVals = g("pitchOn", true) ? range(g("pitchFrom", 5), g("pitchTo", 9), g("pitchStep", 0.5)) : [];
+  const axes = [
+    { param: tilt, values: tiltVals },
+    { param: pitch, values: pitchVals },
+  ].filter((x) => x.values.length);
+  const rows = sweepRows(axes);
+
+  const fileName = `${(g("project", "") || "project").replace(/\.PRJ$/i, "")}_PVhubSweep.CSV`;
+  const csv = buildBatchParamsCsv({
+    project: g("project", ""), baseVariant: g("baseVariant", ""),
+    variantComment: g("variantComment", ""),
+    axes, comment: g("comment", "PVhub sweep"),
+  });
+
+  const download = () => {
+    /* Windows-1252 and UTF-8 agree because the file is pure ASCII, so a
+       plain text blob is safe here. */
+    const blob = new Blob([csv], { type: "text/csv;charset=windows-1252" });
+    const el = document.createElement("a");
+    el.href = URL.createObjectURL(blob);
+    el.download = fileName;
+    el.click();
+    URL.revokeObjectURL(el.href);
+  };
+
+  const Axis = ({ on, onKey, label, fromKey, toKey, stepKey, dFrom, dTo, dStep, unit, vals }) => (
+    <div style={{ background: C.panel2, border: `1px solid ${on ? C.accent : C.line}`,
+      borderRadius: 7, padding: "9px 11px", marginBottom: 8 }}>
+      <label className="chk" style={{ display: "flex", alignItems: "center", gap: 8,
+        font: "600 12px system-ui", color: C.text, cursor: "pointer", marginBottom: on ? 7 : 0 }}>
+        <input type="checkbox" checked={on} style={{ accentColor: C.accent }}
+          onChange={(e) => upd({ [onKey]: e.target.checked })} />
+        {label}
+      </label>
+      {on && (
+        <>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Num label="From" unit={unit} step={0.1} value={g(fromKey, dFrom)}
+              onChange={(v) => upd({ [fromKey]: v })} />
+            <Num label="To" unit={unit} step={0.1} value={g(toKey, dTo)}
+              onChange={(v) => upd({ [toKey]: v })} />
+            <Num label="Step" unit={unit} step={0.1} min={0} value={g(stepKey, dStep)}
+              onChange={(v) => upd({ [stepKey]: v })} />
+          </div>
+          <div style={{ font: "10.5px var(--mono)", color: vals.length ? C.muted : "#d64545",
+            marginTop: 5 }}>
+            {vals.length
+              ? `${vals.length} value${vals.length > 1 ? "s" : ""}: ${vals.slice(0, 10).join(", ")}${vals.length > 10 ? " …" : ""}`
+              : "No values — check the step is not zero and the bounds are the right way round."}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ width: "100%" }}>
+      <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui" }}>
+        <p><strong style={{ color: C.accent }}>PVsyst cannot be driven from here.</strong> It is a
+        licensed Windows desktop program with no public API, and this is a web page, so nothing
+        in this tool can run a simulation for you. What it can do is write the file that makes
+        PVsyst run them all unattended: you build one variant by hand, point its batch mode at
+        this file, and it works through every case on its own.</p>
+        <p>This writes the parameter file. PVsyst writes a results file back, and that goes in
+        the panel below.</p>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0" }}>
+        <Txt label="Project file" value={g("project", "")} placeholder="Eland.PRJ"
+          onChange={(v) => upd({ project: v })} />
+        <Txt label="Base variant" value={g("baseVariant", "")} placeholder="VC1"
+          onChange={(v) => upd({ baseVariant: v })} />
+        <Txt label="Run comment" value={g("comment", "PVhub sweep")}
+          onChange={(v) => upd({ comment: v })} />
+      </div>
+
+      <Axis on={g("tiltOn", true)} onKey="tiltOn" label="Plane tilt" unit="°"
+        fromKey="tiltFrom" toKey="tiltTo" stepKey="tiltStep" dFrom={15} dTo={25} dStep={1}
+        vals={tiltVals} />
+      <Axis on={g("pitchOn", true)} onKey="pitchOn" label="Shed pitch (3D scene)" unit="m"
+        fromKey="pitchFrom" toKey="pitchTo" stepKey="pitchStep" dFrom={5} dTo={9} dStep={0.5}
+        vals={pitchVals} />
+
+      <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap",
+        margin: "4px 0 10px" }}>
+        <button className="btn primary" disabled={!rows.length} onClick={download}>
+          Download {fileName}
+        </button>
+        <span style={{ font: "650 12px var(--mono)", color: rows.length ? C.text : "#d64545" }}>
+          {rows.length} simulation{rows.length === 1 ? "" : "s"}
+        </span>
+        <span style={{ font: "10.5px system-ui", color: C.muted }}>
+          Each one is a full hourly run in PVsyst, so a large grid takes a while.
+        </span>
+      </div>
+
+      <div style={{ font: "650 11.5px system-ui", color: C.accent, letterSpacing: "0.06em",
+        textTransform: "uppercase", margin: "6px 0 6px" }}>
+        What to do with it
+      </div>
+      <ol style={{ font: "11px/1.7 system-ui", color: C.text, margin: 0, paddingLeft: 20 }}>
+        {runInstructions({ project: g("project", ""), baseVariant: g("baseVariant", ""), fileName })
+          .map((t, i) => <li key={i} style={{ marginBottom: 3 }}>{t}</li>)}
+      </ol>
+
+      <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui", marginTop: 10 }}>
+        <p><strong style={{ color: C.accent }}>Only two column headings are confirmed.</strong>{" "}
+        <code>Plane / tilt</code> and <code>Sheds 3D / pitch</code> are the two seen in real
+        PVsyst batch files, so those are the two offered. PVsyst can sweep a great deal more —
+        its own batch dialog lists them — but a heading guessed here would produce a file it
+        accepts and a sweep that changes nothing, which is the
+        <em> “parameter did not change”</em> case rather than an error. Send a parameter file
+        exported from your PVsyst and the list can be widened against it.</p>
+        <p><strong style={{ color: C.accent }}>The capacity is yours, the specific yield is
+        PVsyst's.</strong> Its 3D scene is a regular field, so the module count will not match a
+        layout fitted to a real boundary. Take kWh/kWp and PR from the simulation and multiply
+        by the capacity your own layout actually achieved; the ratio survives the geometry
+        simplification and the absolute figure does not.</p>
+      </div>
+    </div>
+  );
+}
+
 export function BatchAnalyserTab({ st, set }) {
   const [file, setFile] = useState(null);      // { name, parsed } or { name, error }
   const [busy, setBusy] = useState(false);
@@ -469,6 +623,10 @@ export function BatchAnalyserTab({ st, set }) {
       <div className="tbl" style={{ marginBottom: 10 }}>
         PVSYST BATCH RESULTS — TILT AND PITCH SELECTION
       </div>
+
+      <Section code="B0" title="Build the sweep for PVsyst">
+        <SweepBuilder st={st} set={set} />
+      </Section>
 
       <Section code="B1" title="Batch results file">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%", alignItems: "center" }}>

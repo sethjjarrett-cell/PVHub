@@ -31,6 +31,7 @@ src/CostingTool.jsx    Costing tab: quote library, ageing, escalation, LCOE, com
 src/bess.js            battery capacity chain and the 8,760-hour dispatch — no React
 src/BessTool.jsx       Battery tab: capacity chain, dispatch, sweep, the walkthrough
 src/batchAnalyser.js   PVsyst batch CSV parsing and tilt/pitch analysis, no React
+src/pvsystBatch.js     writes the batch PARAMETER csv PVsyst reads — the other half of it
 src/BatchAnalyser.jsx  Batch analyser tab: six hand-rolled charts, recommendation, exports
 src/pvsystReport.js    PVsyst simulation-report PDF reader — text in, project record out
 src/ProjectTracker.jsx Tracker tab: drop reports in, compare yields and loss diagrams
@@ -207,6 +208,8 @@ node tests/pvsystReport.test.mjs    # 188 assertions against three real reports:
 node tests/pdfWorker.test.mjs       # 1 assertion: the inlined worker matches pdfjs-dist
 node tests/trackerStore.test.mjs    # 26 assertions: which store is chosen at startup, and
                                     # that the interface never misstates where data is
+node tests/pvsystBatch.test.mjs     # 64 assertions: the sweep file PVsyst reads, and that
+                                    # the writer and the results reader agree on its shape
 ```
 
 **The inlined pdf.js worker rots silently.** `src/pdfWorkerText.js` holds the worker source as
@@ -488,6 +491,31 @@ Deliberate engineering decisions, each stated in the UI's own text:
   again and there is nothing to learn from a second copy. A different timestamp is a re-run
   of that variant, and the change between the two is usually the point — `dedupeAgainst`
   keeps those and `findDuplicates` flags them.
+- **PVsyst is driven by a parameter file, never by a generated variant.** A `.VCx` is plain
+  text and its definition is only ~600 lines of the 24,000 (the rest is base-36 hourly
+  results), so writing one looks tempting. It is not: the format is undocumented, every
+  object is stamped `Version=8.1.4`, the `Flags=$...` are opaque bitfields, and the file
+  holds `pvShdFTable` shading factor tables that PVsyst *derives* from the 3D scene — write
+  a scene without regenerating those and it may simulate something other than what was
+  drawn, silently. Batch mode is a documented feature driving a variant a human built.
+  `src/pvsystBatch.js` writes the sweep, `src/batchAnalyser.js` reads the results back.
+- **Only batch column headings actually seen in a PVsyst file are offered.** `Plane / tilt /
+  [deg]` and `Sheds 3D / pitch / [m]` are confirmed by observation; everything else is typed
+  by hand against PVsyst's own batch dialog. A guessed heading is worse than none, because
+  PVsyst accepts the file and silently runs the base case — the "Warning: parameter X did
+  not change" rows the analyser already has to keep. (A variant file also showed the
+  internal identifier `NSheds3D`, which proves batch mode reaches 3D-scene parameters, but
+  not what its column heading is.)
+- **The batch file PVhub writes is pure ASCII.** PVsyst reads these as Windows-1252, so an
+  em dash or a curly quote arrives as mojibake. The degree and squared signs in PVsyst's own
+  files appear only in *result* column units, which a parameter file does not carry, so
+  there is no encoding to get wrong — provided nothing non-ASCII is written. A test asserts
+  it.
+- **PVsyst's scene is a regular field, so the capacity is PVhub's and the specific yield is
+  PVsyst's.** A layout fitted to a real boundary will not have the module count of an N x M
+  grid. Take kWh/kWp and PR from the simulation and multiply by the capacity the layout
+  actually achieved — the same standing rule as the PVGIS baseline above: the ratio survives
+  the geometry simplification, the absolute does not.
 - **A tracked field that was not found is listed as missing, never shown as zero.** Across a
   comparison table a silent zero moves every average taken down the column. `fieldSpread`
   excludes absent records and reports how many it excluded; `lossMatrix` returns `null`, not
