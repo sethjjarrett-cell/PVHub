@@ -9,7 +9,8 @@
    ===================================================================== */
 
 import React, { useState } from "react";
-import { fmt, C, Num, Section, Page, Working, WarnList } from "./ui.jsx";
+import { fmt, C, Num, Section, Page, Working, WarnList, Rows } from "./ui.jsx";
+import { buildBom, bomToCsv, BOM_INPUTS, BOM_EXCLUSIONS } from "./bom.js";
 import {
   STEPS, assess, stepState, nextStep, derive, summarise, sanityChecks,
 } from "./bdFlow.js";
@@ -54,6 +55,7 @@ export function BdFlowTab({ st, set }) {
   const d = derive(p);
   const sum = summarise(p);
   const checks = sanityChecks(p);
+  const bom = buildBom(p);
   const next = nextStep(state);
 
   /* --- step 1: coordinates, and the temperature extremes --- */
@@ -167,8 +169,8 @@ export function BdFlowTab({ st, set }) {
               <Big label="Annual energy" value={d.annualMwh === null ? "—" : fmt(d.annualMwh, 0)}
                 unit="MWh/yr" how={d.annualHow}
                 tone={sum.provisional ? TONE.provisional : undefined} />
-              <Big label="Capex" value={d.capex === null ? "—" : d.capex.toLocaleString("en-GB")}
-                unit="" how={d.capexHow} />
+              <Big label="AC capacity" value={d.acKw === null ? "—" : fmt(d.acKw, 0)}
+                unit="kW" how={d.acKw === null ? null : `${g("nInverter", 0)} inverters`} />
             </div>
             {sum.caveat && (
               <div className="warns" style={{ width: "100%" }}>
@@ -336,16 +338,63 @@ export function BdFlowTab({ st, set }) {
           </Step>
 
           <Step s={STEPS[6]}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Num label="Capex rate" unit="per Wp" step={0.01} value={g("capexPerWp", 0)}
-                onChange={(v) => upd({ capexPerWp: v })} />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              {BOM_INPUTS.map((i) => (
+                <Num key={i.key} label={i.label} unit={i.unit} step={1}
+                  value={g(i.key, 0)} onChange={(v) => upd({ [i.key]: v })} />
+              ))}
             </div>
-            <div style={{ font: "10.5px/1.6 system-ui", color: C.muted, marginTop: 7 }}>
-              A rate per watt is the quickest answer. The Costing tab does it properly: your own
-              quotes, their pricing dates, and an LCOE. No price is built in here, deliberately
-              — an embedded default ends up in a board paper with nobody remembering where
-              it came from.
+
+            {bom.lines.length > 0 ? (
+              <>
+                <Rows
+                  min={640}
+                  keyOf={(l) => l.item}
+                  rows={bom.lines}
+                  cols={[
+                    { key: "item", label: "Item" },
+                    { key: "qty", label: "Qty", align: "right",
+                      render: (l) => <span style={{ font: "650 13px var(--mono)" }}>
+                        {l.qty.toLocaleString("en-GB")}</span> },
+                    { key: "spec", label: "Specification", render: (l) => l.spec || "—" },
+                    { key: "how", label: "How it was derived",
+                      render: (l) => <span style={{ font: "10.5px system-ui", color: C.muted }}>
+                        {l.how}</span> },
+                  ]}
+                />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "9px 0" }}>
+                  <button className="btn primary" onClick={() => {
+                    const blob = new Blob([bomToCsv(bom, { project: g("pvsystProject", "") })],
+                      { type: "text/csv;charset=utf-8" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = "BillOfMaterials.CSV";
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  }}>Export the BOM</button>
+                  <span style={{ font: "10.5px system-ui", color: C.muted, alignSelf: "center" }}>
+                    It carries the exclusions with it, so a bidder knows the scope.
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div style={{ font: "10.5px system-ui", color: C.muted }}>
+                Nothing countable yet — this is built on the module count from step 5.
+              </div>
+            )}
+
+            {bom.missing.length > 0 && (
+              <WarnList items={bom.missing.map((m) => `Left off the BOM: ${m}.`)} />
+            )}
+            {bom.assumptions.length > 0 && <WarnList items={bom.assumptions} />}
+
+            <div style={{ font: "650 11.5px system-ui", color: C.muted, letterSpacing: "0.05em",
+              textTransform: "uppercase", margin: "10px 0 5px" }}>
+              Not in this BOM
             </div>
+            <ul style={{ font: "10.5px/1.6 system-ui", color: C.muted, margin: 0, paddingLeft: 18 }}>
+              {BOM_EXCLUSIONS.map((x, i) => <li key={i} style={{ marginBottom: 2 }}>{x}</li>)}
+            </ul>
           </Step>
 
         </div>

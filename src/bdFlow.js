@@ -54,10 +54,10 @@ export const STEPS = [
     asks: "Nothing more.",
     gives: "Annual energy: PVsyst's specific yield times the capacity that fits.",
     needs: ["sweep", "layout"] },
-  { id: "quote", n: 7, title: "What it costs",
-    asks: "A quote from the library, or a rate per watt.",
-    gives: "Capex, and an indicative LCOE.",
-    needs: ["yield"] },
+  { id: "bom", n: 7, title: "What it takes",
+    asks: "Modules per table, piles per table, a transformer size.",
+    gives: "The bill of materials: what to send out for pricing.",
+    needs: ["layout"] },
 ];
 
 export const stepById = (id) => STEPS.find((s) => s.id === id) || null;
@@ -141,14 +141,21 @@ export function assess(p = {}) {
     blocked: !out.layout.done || !out.sweep.done,
   };
 
-  const rate = num(p.capexPerWp);
-  out.quote = {
-    done: out.yield.done && rate !== null && rate > 0,
+  /* The BOM hangs off the LAYOUT, not the yield. You can count tables
+     and transformers the moment the array is settled; what the plant
+     generates does not change how many piles go in the ground. Making
+     it wait for a PVsyst run would hold up the one deliverable a
+     supplier can actually price. */
+  const mpt = num(p.modulesPerTable), tkva = num(p.transformerKva);
+  out.bom = {
+    done: out.layout.done && mpt !== null && mpt > 0 && tkva !== null && tkva > 0
+      && num(p.nInverter) !== null,
     missing: [
-      !out.yield.done ? "the annual energy" : null,
-      rate === null || rate <= 0 ? "a capex rate" : null,
+      !out.layout.done ? "the module count" : null,
+      mpt === null || mpt <= 0 ? "modules per table" : null,
+      tkva === null || tkva <= 0 ? "a transformer size" : null,
     ].filter(Boolean),
-    blocked: !out.yield.done,
+    blocked: !out.layout.done,
   };
 
   return out;
@@ -185,7 +192,6 @@ export function derive(p = {}) {
   const moduleCount = num(p.moduleCount);
   const moduleWp = num(p.moduleWp);
   const specificYield = num(p.specificYield);
-  const capexPerWp = num(p.capexPerWp);
   const inverterKwac = num(p.inverterKwac);
   const nInverter = num(p.nInverter);
 
@@ -203,17 +209,12 @@ export function derive(p = {}) {
   const annualMwh = dcKwp !== null && specificYield !== null
     ? Math.round((dcKwp * specificYield) / 1000 * 10) / 10 : null;
 
-  const capex = dcKwp !== null && capexPerWp !== null
-    ? Math.round(dcKwp * 1000 * capexPerWp) : null;
-
   return {
-    dcKwp, acKw, dcac, annualMwh, capex,
+    dcKwp, acKw, dcac, annualMwh,
     dcKwpHow: dcKwp === null ? null
       : `${moduleCount} modules x ${moduleWp} Wp`,
     annualHow: annualMwh === null ? null
       : `${specificYield} kWh/kWp from PVsyst x ${dcKwp} kWp from the layout`,
-    capexHow: capex === null ? null
-      : `${dcKwp} kWp x ${capexPerWp} per Wp`,
   };
 }
 
@@ -229,7 +230,6 @@ export const SANITY = {
   dcac: [0.9, 2.0],
   specificYield: [600, 2600],   // kWh/kWp/yr, Scotland to the Atacama
   gcr: [20, 90],                // %
-  capexPerWp: [0.2, 3.0],
 };
 
 export function sanityChecks(p = {}, opts = {}) {
@@ -270,13 +270,6 @@ export function sanityChecks(p = {}, opts = {}) {
     }
   }
 
-  const cap = num(p.capexPerWp);
-  if (cap !== null && (cap < SANITY.capexPerWp[0] || cap > SANITY.capexPerWp[1])) {
-    out.push({ field: "capexPerWp", severity: "warn",
-      text: `${cap} per Wp is outside the ${SANITY.capexPerWp[0]} to ${SANITY.capexPerWp[1]} `
-        + "band that utility-scale work falls in. Check whether the rate is per Wp or per kWp." });
-  }
-
   /* A site that cannot hold what has been drawn on it. Roughly 1 MWp
      per hectare is the loosest plausible density for fixed tilt; past
      about 1.5 the modules do not physically fit. */
@@ -307,7 +300,6 @@ export function summarise(p = {}, opts = {}) {
   const bits = [`${d.dcKwp >= 1000 ? `${Math.round(d.dcKwp / 100) / 10} MWp` : `${d.dcKwp} kWp`} on the site`];
   if (d.dcac !== null) bits.push(`DC/AC ${d.dcac}`);
   if (d.annualMwh !== null) bits.push(`${d.annualMwh.toLocaleString("en-GB")} MWh a year`);
-  if (d.capex !== null) bits.push(`capex ${d.capex.toLocaleString("en-GB")}`);
   return {
     ready: d.annualMwh !== null,
     provisional: st.sweep.provisional,

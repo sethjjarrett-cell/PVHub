@@ -17,7 +17,7 @@ const FULL = {
   lat: -25.66, lon: 30.23, areaHa: 60, tempPulled: true,
   moduleWp: 650, inverterKwac: 350, nInverter: 16, modulesInSeries: 27,
   pitchM: 7, tiltDeg: 20, collectorWidthM: 4.7, specificYield: 1800,
-  moduleCount: 9000, capexPerWp: 0.55,
+  moduleCount: 9000, modulesPerTable: 28, pilesPerTable: 6, transformerKva: 3150,
 };
 
 console.log("\n--- the steps run in dependency order ---");
@@ -31,7 +31,12 @@ const idx = (id) => STEPS.findIndex((s) => s.id === id);
 ok(idx("sweep") < idx("layout"), "the sweep comes before the layout, because it sets the pitch");
 ok(idx("layout") < idx("yield"), "and the layout before the yield, because it sets the capacity");
 ok(idx("string") < idx("sweep"), "string length is settled before the sweep that uses it");
-ok(idx("yield") < idx("quote"), "and the energy before the money");
+/* The BOM hangs off the layout, not the yield: you can count tables the
+   moment the array is settled, and what the plant generates does not
+   change how many piles go in the ground. */
+ok(stepById("bom").needs.includes("layout"), "the BOM depends on the layout");
+ok(!stepById("bom").needs.includes("yield"),
+  "and NOT on the yield, so a PVsyst run does not hold it up");
 /* Every declared dependency must name a step that exists and comes
    earlier, or the flow could point at something unreachable. */
 for (const s of STEPS) {
@@ -47,7 +52,7 @@ const empty = assess({});
 eq(nextStep(empty).id, "site", "the first thing asked for is the site");
 eq(stepState("site", empty), "todo", "site is to do");
 eq(stepState("string", empty), "blocked", "string sizing is blocked behind it");
-eq(stepState("quote", empty), "blocked", "and so is the quote");
+eq(stepState("bom", empty), "blocked", "and so is the bill of materials");
 ok(empty.site.missing.includes("coordinates"), "it names the coordinates as missing");
 ok(empty.site.missing.includes("site area"), "and the area");
 ok(empty.kit.missing.length === 2, "and both pieces of kit");
@@ -71,6 +76,12 @@ eq(stepState("layout", waiting), "done", "the layout still completes");
 eq(waiting.layout.onProvisionalPitch, true, "and records that its pitch was assumed");
 eq(stepState("yield", waiting), "blocked", "but the yield waits for a real specific yield");
 ok(waiting.sweep.missing.includes("PVsyst's specific yield"), "which it names");
+/* The one deliverable a supplier can price must not wait on a
+   simulation that takes hours. */
+const noYield = assess({ ...FULL, specificYield: null });
+eq(stepState("bom", noYield), "done", "the BOM completes while the PVsyst run is outstanding");
+eq(stepState("yield", noYield), "blocked", "even though the yield cannot");
+
 const landed = assess(FULL);
 eq(stepState("sweep", landed), "done", "results arriving settles the sweep");
 eq(landed.layout.onProvisionalPitch, false, "and the layout is no longer on an assumed pitch");
@@ -84,7 +95,6 @@ eq(d.dcac, 1.045, "DC/AC is that division");
 /* The standing rule: PVsyst gives kWh per kWp, the layout gives the
    kWp. Multiplying them is why the two run separately. */
 eq(d.annualMwh, 10530, "annual energy is specific yield x capacity");
-eq(d.capex, Math.round(5850 * 1000 * 0.55), "capex is capacity x rate");
 ok(/9000 modules/.test(d.dcKwpHow), "the capacity shows its arithmetic");
 ok(/from PVsyst/.test(d.annualHow) && /from the layout/.test(d.annualHow),
   "and the energy names both sources");
@@ -111,8 +121,6 @@ ok(sanityChecks({ ...FULL, pitchM: 4.9 }).some((c) => c.field === "pitchM"),
   "a pitch tighter than the collector is caught");
 ok(/axis to axis/.test(sanityChecks({ ...FULL, pitchM: 4.9 }).find((c) => c.field === "pitchM").text),
   "and it suggests the likely cause");
-ok(sanityChecks({ ...FULL, capexPerWp: 550 }).some((c) => c.field === "capexPerWp"),
-  "a rate entered per kWp instead of per Wp is caught");
 ok(sanityChecks({ ...FULL, areaHa: 2 }).some((c) => c.field === "areaHa"),
   "5.85 MWp on two hectares is caught as physically impossible");
 /* Wide on purpose: these catch a wrong number, not a bold one. */

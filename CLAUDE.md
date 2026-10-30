@@ -23,6 +23,7 @@ src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
 src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
 src/BdFlow.jsx         Guided flow tab: a map pin to a quotable number
+src/bom.js             the bill of materials — quantities and scope, no prices — no React
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
 src/roofGeom.js        roof polygon maths, the plane fit and the module auto-fill — no React
 src/dxf.js             DXF R12 writer — string assembly, no React, no dependencies
@@ -214,8 +215,10 @@ node tests/trackerStore.test.mjs    # 26 assertions: which store is chosen at st
                                     # that the interface never misstates where data is
 node tests/stringSizing.test.mjs    # 49 assertions: the conventions as code — no averaging,
                                     # N_max floors, the divisibility fallback
-node tests/bdFlow.test.mjs          # 81 assertions: step order and blocking, and the guards
+node tests/bdFlow.test.mjs          # 82 assertions: step order and blocking, and the guards
                                     # that stop a wrong number reaching a client
+node tests/bom.test.mjs             # 53 assertions: the rounding either way, the remainders,
+                                    # the scope exclusions and the ASCII fold
 node tests/pvsystBatch.test.mjs     # 169 assertions: the sweep file PVsyst reads, reproduced
                                     # byte for byte against a template PVsyst itself wrote,
                                     # plus the gap-to-pitch and whole-unit DC/AC conversions
@@ -583,23 +586,51 @@ Deliberate engineering decisions, each stated in the UI's own text:
   call `sizeStrings`. The conventions above (no averaging, `N_max` floors, the full-power
   bound, the divisibility fallback) are asserted in `tests/stringSizing.test.mjs` rather
   than only stated here.
-- **The guided flow runs site → string → sweep → layout → yield → quote, and that order is
-  load-bearing.** The sweep settles the row pitch, and the pitch is an *input* to the
-  layout, so it comes first; the sweep needs nothing back, because it reports yield per kWp.
-  The layout then says how many kWp the site holds and the two multiply. The only reason to
-  overlap them is time: a PVsyst sweep is hours, so the layout runs on a provisional pitch
-  and every figure downstream is marked assumed until the results land. Do not "simplify"
-  this into layout-then-sweep — it would make the pitch an output of the thing that needs
-  it as an input.
+- **The guided flow runs site → string → sweep → layout → yield → BOM, and the
+  dependency, not the clock, is what fixes that order.** Pitch is an *input* to the
+  layout, so the step that settles pitch is listed before the one that consumes it, and
+  the sweep needs nothing back because it reports yield per kWp. But the sweep is run in
+  PVsyst, and a PVsyst variant has to be built around a plant that already exists — a
+  module count, an inverter count, a number of sheds — which only a layout can supply. So
+  the listed order is a dependency graph, not a worklist: **in practice it is two passes.**
+  Pass one runs the layout on a rule-of-thumb pitch, which answers "does it fit", gives the
+  BOM, and gives PVsyst a plant to sweep. Pass two takes the sweep's chosen tilt and pitch
+  back into the layout and re-reads the capacity. `assumed` exists for exactly the window
+  between the two. Do not reorder the steps to match the second reading — it would make
+  the pitch an output of the thing that needs it as an input — and do not present the
+  first pass's capacity as final.
+- **The BOM hangs off the layout, not off the yield.** Everything in it — modules,
+  strings, tables, piles, inverters, transformers — is a count derived from the module
+  count and the equipment sizes, and none of it waits on a simulation. `bom` therefore
+  declares `needs: ["layout"]`, so a business developer has a materials list in minutes
+  while the PVsyst run is still going. Do not make it depend on the yield for tidiness.
+- **The BOM counts things and names no prices.** The same refusal the costing tool makes,
+  for the same reason: a plausible unit rate gets quoted and then cited. `src/bom.js`
+  carries quantities, the specification of each item and the arithmetic that produced it,
+  and `BOM_EXCLUSIONS` states what is *not* in it — cable (its length comes off a routed
+  layout, not off a module count), civils, the grid connection, spares — so a bidder
+  reading the export knows the scope rather than guessing it.
+- **Strings floor and tables ceil, and both remainders are reported.** A part-filled string
+  is not a string, so the count floors and the leftover modules are called out, because
+  they are modules bought that cannot be connected as drawn. A part-filled table is still a
+  table somebody buys, so that count rounds up and the last table's short load is stated.
+  Transformer count rounds up too and the resulting loading is reported, with a light load
+  flagged — four units at 82% is a design decision, not an output.
+- **The BOM export is pure ASCII.** It is a CSV that lands in a procurement inbox, and a
+  BOM-less UTF-8 file opened in Excel on Windows is read as Windows-1252, which turns the
+  em dashes the interface uses into mojibake in the column a bidder reads hardest.
+  `asciify` transliterates on the way out (— to -, × to x, ° to " deg") and drops
+  anything left, so the screen keeps its typography and the file stays readable. Same
+  convention as the PVsyst batch writer, same reason, and a test asserts it.
 - **A guided step with a gap says what the gap is.** No step ever substitutes a plausible
   default to keep the flow moving, and `assess` reports `missing` per step. The same refusal
   the costing tool makes about prices, for the same reason.
 - **The flow carries guards a non-engineer would not think to apply.** `sanityChecks` catches
-  a DC/AC of five, a specific yield off by a factor of ten, a pitch tighter than the
-  collector, a capex rate entered per kWp instead of per Wp, and more megawatts than the
-  hectares can physically hold. The bounds are deliberately *wide*: they catch a wrong
-  number, not a bold one, and tightening them to "typical" would start arguing with
-  legitimate designs.
+  a DC/AC of five, a specific yield off by a factor of ten, a pitch confused with the
+  clear gap (which reads as implausible ground cover, caught both ways), and more
+  megawatts per hectare than modules physically pack. The bounds are deliberately
+  *wide*: they catch a wrong number, not a bold one, and tightening them to "typical"
+  would start arguing with legitimate designs.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.
