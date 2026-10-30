@@ -208,8 +208,9 @@ node tests/pvsystReport.test.mjs    # 188 assertions against three real reports:
 node tests/pdfWorker.test.mjs       # 1 assertion: the inlined worker matches pdfjs-dist
 node tests/trackerStore.test.mjs    # 26 assertions: which store is chosen at startup, and
                                     # that the interface never misstates where data is
-node tests/pvsystBatch.test.mjs     # 95 assertions: the sweep file PVsyst reads, reproduced
-                                    # byte for byte against a template PVsyst itself wrote
+node tests/pvsystBatch.test.mjs     # 169 assertions: the sweep file PVsyst reads, reproduced
+                                    # byte for byte against a template PVsyst itself wrote,
+                                    # plus the gap-to-pitch and whole-unit DC/AC conversions
 ```
 
 **The inlined pdf.js worker rots silently.** `src/pdfWorkerText.js` holds the worker source as
@@ -526,6 +527,28 @@ Deliberate engineering decisions, each stated in the UI's own text:
   files appear only in *result* column units, which a parameter file does not carry, so
   there is no encoding to get wrong — provided nothing non-ASCII is written. A test asserts
   it.
+- **Row spacing is specified as the clear gap, and the pitch is derived.** A site walk and a
+  mounting supplier talk about the daylight between rows (2.5 to 5 m in 0.5 m steps is the
+  working range here); PVsyst wants the pitch, axis to axis. They differ by the collector's
+  horizontal projection, so `pitch = gap + L·cos(tilt)` — which means **the pitch is not a
+  value list**, it depends on the tilt of the case it sits in, and sweeping tilt and gap
+  together gives a different pitch on every row. A steeper tilt gives a *shorter* pitch for
+  the same gap; getting that backwards widens rows as they steepen. A tracker has no fixed
+  gap, because the panels rotate, so there the pitch is swept directly.
+- **DC/AC is stepped in whole units, never as a ratio.** Neither a string nor an inverter
+  divides, so stepping a target ratio and rounding manufactures values the plant cannot
+  build and runs the same case twice under two labels. What is stepped is whichever whole
+  thing is free to move: **AC fixed** (the grid connection sets the export) steps the
+  strings and the ratio climbs evenly; **DC fixed** (the site or layout sets the array)
+  steps the inverters and the ratio falls in much bigger jumps. `unitRangeForBand` suggests
+  the integer range covering a band so the user does not have to solve it, and the sweep
+  reports the increment each step actually produces — on a four-inverter plant a string
+  moves the ratio 0.05 and an inverter moves it 0.16.
+- **The DC/AC bands are the user's working numbers, not a standard.** Fixed tilt 1.10–1.40,
+  tracker 1.05–1.30, east-west 1.10–1.60. The ordering is physical and a test asserts it: a
+  tracker's flatter profile puts more hours near the inverter limit so it clips sooner and
+  carries *less* DC than fixed tilt, while an east-west pair shares one inverter between
+  faces that peak apart and carries *more*.
 - **PVsyst's scene is a regular field, so the capacity is PVhub's and the specific yield is
   PVsyst's.** A layout fitted to a real boundary will not have the module count of an N x M
   grid. Take kWh/kWp and PR from the simulation and multiply by the capacity the layout

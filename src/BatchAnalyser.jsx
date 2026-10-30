@@ -15,10 +15,11 @@
    ===================================================================== */
 
 import React, { useState, useMemo, useRef } from "react";
-import { fmt, C, Num, Section, Page } from "./ui.jsx";
+import { fmt, C, Num, Section, Page, Rows, WarnList } from "./ui.jsx";
 import {
   BATCH_PARAMS, paramById, range, sweepRows, buildBatchParamsCsv, runInstructions,
-  DELIMITERS,
+  DELIMITERS, MOUNTS, mountById, GAP_DEFAULT, buildSweep,
+  DCAC_MODES, ratioFor, unitRangeForBand,
 } from "./pvsystBatch.js";
 import {
   parseBatchCsv, analyseBatch, buildRecommendation, toCsv, fmtEnergy,
@@ -454,43 +455,60 @@ function SweepBuilder({ st, set }) {
   const upd = (patch) => set({ ...st, sweep: { ...sw, ...patch } });
   const g = (k, d) => (sw[k] === undefined ? d : sw[k]);
 
-  /* Defaults per parameter, so a newly ticked axis starts somewhere
-     sensible rather than at zero. */
-  const DEF = {
-    tilt: { from: 15, to: 25, step: 1 },
-    azimuth: { from: -20, to: 20, step: 10 },
-    pitch: { from: 5, to: 9, step: 0.5 },
-    nSeries: { from: 24, to: 28, step: 1 },
-    nParallel: { from: 70, to: 90, step: 5 },
-    nInverter: { from: 3, to: 5, step: 1 },
+  const mount = mountById(g("mount", "fixed"));
+  const byGap = mount.spacing === "gap";
+
+  /* The system the derived sweeps need. Collector width is shared with
+     the analysis below, which already asks for it. */
+  const sys = {
+    collectorWidthM: st.collectorWidthM > 0 ? st.collectorWidthM : g("collectorWidthM", 0),
+    moduleWp: g("moduleWp", 650),
+    modulesInSeries: g("modulesInSeries", 27),
+    inverterKwac: g("inverterKwac", 350),
+    nInverter: g("nInverter", 4),
+    nParallel: g("nParallel", 96),
   };
 
-  const axes = BATCH_PARAMS.map((p) => {
-    if (!g(`${p.id}On`, p.id === "tilt" || p.id === "pitch")) return { param: p, values: [] };
-    if (p.kind === "text") {
-      /* A list of filenames, one per line — there is nothing to step. */
-      const vals = String(g(`${p.id}List`, "")).split(/\r?\n/)
-        .map((x) => x.trim()).filter(Boolean);
-      return { param: p, values: vals };
-    }
-    const d = DEF[p.id] || { from: 0, to: 1, step: 1 };
-    return {
-      param: p,
-      values: range(g(`${p.id}From`, d.from), g(`${p.id}To`, d.to), g(`${p.id}Step`, d.step)),
-    };
-  });
-  const live = axes.filter((a) => a.values.length);
-  const rows = sweepRows(live);
+  /* Which whole thing is free to move. A ratio cannot be stepped
+     directly, because neither a string nor an inverter divides. */
+  const dcMode = g("dcMode", "strings");
+  const suggested = unitRangeForBand(dcMode, mount.dcac, sys);
+
+  const spec = {
+    mount: mount.id,
+    baseTilt: g("baseTilt", 20),
+    sys,
+    tilt: { on: g("tiltOn", byGap), from: g("tiltFrom", 15), to: g("tiltTo", 25), step: g("tiltStep", 1) },
+    spacing: byGap
+      ? { on: g("gapOn", true), from: g("gapFrom", GAP_DEFAULT.from), to: g("gapTo", GAP_DEFAULT.to), step: g("gapStep", GAP_DEFAULT.step) }
+      : { on: g("pitchOn", true), from: g("pitchFrom", 5), to: g("pitchTo", 9), step: g("pitchStep", 0.5) },
+    dcac: { on: g("dcacOn", false), mode: dcMode,
+      from: g("unitFrom", suggested ? suggested.from : 1),
+      to: g("unitTo", suggested ? suggested.to : 2),
+      step: g("unitStep", 1) },
+    extraAxes: EXTRA_PARAMS.map((p) => {
+      if (!g(`${p.id}On`, false)) return { param: p, values: [] };
+      if (p.kind === "text") {
+        return { param: p, values: String(g(`${p.id}List`, "")).split(/\r?\n/)
+          .map((x) => x.trim()).filter(Boolean) };
+      }
+      const d = EXTRA_DEF[p.id];
+      return { param: p, values: range(g(`${p.id}From`, d.from), g(`${p.id}To`, d.to), g(`${p.id}Step`, d.step)) };
+    }).filter((a) => a.values.length),
+  };
+
+  const plan = buildSweep(spec);
+  const rows = plan.rows;
 
   const fileName = `${(g("project", "") || "Project").replace(/\.PRJ$/i, "")}_BatchParams_PVhub.CSV`;
   const csv = buildBatchParamsCsv({
     project: g("project", ""), baseVariant: g("baseVariant", ""),
-    variantComment: g("variantComment", g("comment", "PVhub sweep")),
-    axes: live, comment: g("comment", "PVhub sweep"), delimiter: g("delimiter", ","),
+    variantComment: g("comment", "PVhub sweep"),
+    columns: plan.columns, rows: plan.rows,
+    comment: g("comment", "PVhub sweep"), delimiter: g("delimiter", ","),
   });
 
   const download = () => {
-    /* Pure ASCII, so Windows-1252 and UTF-8 agree byte for byte. */
     const blob = new Blob([csv], { type: "text/csv;charset=windows-1252" });
     const el = document.createElement("a");
     el.href = URL.createObjectURL(blob);
@@ -499,50 +517,34 @@ function SweepBuilder({ st, set }) {
     URL.revokeObjectURL(el.href);
   };
 
-  const Card = ({ p }) => {
-    const on = g(`${p.id}On`, p.id === "tilt" || p.id === "pitch");
-    const d = DEF[p.id] || { from: 0, to: 1, step: 1 };
-    const vals = (axes.find((a) => a.param.id === p.id) || {}).values || [];
+  const Range = ({ id, label, unit, def, note, hint }) => {
+    const on = g(`${id}On`, def.on);
+    const vals = on ? range(g(`${id}From`, def.from), g(`${id}To`, def.to), g(`${id}Step`, def.step)) : [];
     return (
       <div style={{ background: C.panel2, border: `1px solid ${on ? C.accent : C.line}`,
         borderRadius: 7, padding: "9px 11px", marginBottom: 8 }}>
         <label className="chk" style={{ display: "flex", alignItems: "center", gap: 8,
           font: "600 12px system-ui", color: C.text, cursor: "pointer" }}>
           <input type="checkbox" checked={on} style={{ accentColor: C.accent }}
-            onChange={(e) => upd({ [`${p.id}On`]: e.target.checked })} />
-          {p.label}
-          <span style={{ font: "10.5px var(--mono)", color: C.muted, marginLeft: 4 }}>
-            {p.group} / {p.sub}
-          </span>
+            onChange={(e) => upd({ [`${id}On`]: e.target.checked })} />
+          {label}
+          {hint && <span style={{ font: "10.5px var(--mono)", color: C.muted, marginLeft: 4 }}>{hint}</span>}
         </label>
         {on && (
           <>
-            <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, margin: "5px 0 7px" }}>
-              {p.note}
+            {note && <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, margin: "5px 0 7px" }}>{note}</div>}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Num label="From" unit={unit} step={0.05} value={g(`${id}From`, def.from)}
+                onChange={(v) => upd({ [`${id}From`]: v })} />
+              <Num label="To" unit={unit} step={0.05} value={g(`${id}To`, def.to)}
+                onChange={(v) => upd({ [`${id}To`]: v })} />
+              <Num label="Step" unit={unit} step={0.05} min={0} value={g(`${id}Step`, def.step)}
+                onChange={(v) => upd({ [`${id}Step`]: v })} />
             </div>
-            {p.kind === "text" ? (
-              <textarea rows={3} value={g(`${p.id}List`, "")}
-                placeholder={"One .OND filename per line, e.g.\nSungrow_SG350_HX_20.OND"}
-                onChange={(e) => upd({ [`${p.id}List`]: e.target.value })}
-                style={{ width: "100%", background: C.panel, color: C.text,
-                  border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px",
-                  font: "11.5px var(--mono)", resize: "vertical" }} />
-            ) : (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Num label="From" unit={p.unit} step={0.1} value={g(`${p.id}From`, d.from)}
-                  onChange={(v) => upd({ [`${p.id}From`]: v })} />
-                <Num label="To" unit={p.unit} step={0.1} value={g(`${p.id}To`, d.to)}
-                  onChange={(v) => upd({ [`${p.id}To`]: v })} />
-                <Num label="Step" unit={p.unit} step={0.1} min={0} value={g(`${p.id}Step`, d.step)}
-                  onChange={(v) => upd({ [`${p.id}Step`]: v })} />
-              </div>
-            )}
-            <div style={{ font: "10.5px var(--mono)", color: vals.length ? C.muted : "#d64545",
-              marginTop: 5 }}>
+            <div style={{ font: "10.5px var(--mono)", color: vals.length ? C.muted : "#d64545", marginTop: 5 }}>
               {vals.length
                 ? `${vals.length} value${vals.length > 1 ? "s" : ""}: ${vals.slice(0, 8).join(", ")}${vals.length > 8 ? " \u2026" : ""}`
-                : p.kind === "text" ? "No entries yet."
-                  : "No values \u2014 check the step is not zero and the bounds are the right way round."}
+                : "No values \u2014 check the step is not zero and the bounds are the right way round."}
             </div>
           </>
         )}
@@ -554,15 +556,20 @@ function SweepBuilder({ st, set }) {
     <div style={{ width: "100%" }}>
       <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui" }}>
         <p><strong style={{ color: C.accent }}>PVsyst cannot be driven from here.</strong> It is a
-        licensed Windows desktop program with no public API, and this is a web page, so nothing
-        in this tool can run a simulation for you. What it can do is write the file that makes
-        PVsyst run them all unattended: you build one variant by hand, point its batch mode at
-        this file, and it works through every case on its own.</p>
-        <p>This writes the parameter file. PVsyst writes a results file back, and that goes in
-        the panel below.</p>
+        licensed Windows desktop program with no public API, and this is a web page. What this
+        does is write the file that makes PVsyst run every case unattended: build one variant by
+        hand, point its batch mode at this file, and it works through the lot on its own.</p>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0" }}>
+        <label className="fld" style={{ width: 250 }}>
+          <span className="fld-l">Mount type</span>
+          <span className="fld-box">
+            <select value={mount.id} onChange={(e) => upd({ mount: e.target.value })}>
+              {MOUNTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </span>
+        </label>
         <Txt label="Project file" value={g("project", "")} placeholder="MySite_Project.PRJ"
           onChange={(v) => upd({ project: v })} />
         <Txt label="Base variant" value={g("baseVariant", "")} placeholder="VC1"
@@ -578,11 +585,129 @@ function SweepBuilder({ st, set }) {
           </span>
         </label>
       </div>
+      <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, marginBottom: 10 }}>
+        {mount.note}
+      </div>
 
-      {BATCH_PARAMS.map((p) => <Card key={p.id} p={p} />)}
+      {byGap && (
+        <Range id="tilt" label="Plane tilt" unit="deg" hint="Plane / tilt"
+          def={{ on: true, from: 15, to: 25, step: 1 }}
+          note="The collector tilt. It also sets how much ground each row covers, so it changes the pitch a given gap produces." />
+      )}
+
+      {byGap && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end",
+          marginBottom: 8 }}>
+          <Num label="Collector width" unit="m" step={0.05} value={sys.collectorWidthM}
+            onChange={(v) => upd({ collectorWidthM: v })} />
+          {!g("tiltOn", true) && (
+            <Num label="Tilt (not swept)" unit="deg" step={0.5} value={g("baseTilt", 20)}
+              onChange={(v) => upd({ baseTilt: v })} />
+          )}
+          <span style={{ font: "10.5px/1.5 system-ui", color: sys.collectorWidthM > 0 ? C.muted : "#e0a63a",
+            flex: 1, minWidth: 240, paddingBottom: 6 }}>
+            {sys.collectorWidthM > 0
+              ? `The slope length of one row \u2014 ${fmt(sys.collectorWidthM, 2)} m occupies `
+                + `${fmt(sys.collectorWidthM * Math.cos((g("baseTilt", 20) * Math.PI) / 180), 2)} m `
+                + `of ground at ${fmt(g("baseTilt", 20), 0)}\u00b0, and the gap is added to that.`
+              : "\u26a0 Needed before a clear gap can become a pitch. Nothing is swept until it is set."}
+          </span>
+        </div>
+      )}
+
+      {byGap ? (
+        <Range id="gap" label="Clear gap between rows" unit="m" hint="→ Sheds 3D / pitch"
+          def={{ on: true, from: GAP_DEFAULT.from, to: GAP_DEFAULT.to, step: GAP_DEFAULT.step }}
+          note="The daylight on the ground between one row and the next. PVsyst wants the pitch, axis to axis, so the collector's horizontal projection is added: pitch = gap + width x cos(tilt). Each tilt therefore gives a different pitch for the same gap." />
+      ) : (
+        <Range id="pitch" label="Row pitch" unit="m" hint="Sheds 3D / pitch"
+          def={{ on: true, from: 5, to: 9, step: 0.5 }}
+          note="Axis to axis. A tracker has no fixed gap to quote, because the panels rotate, so the pitch is swept directly." />
+      )}
+
+      <div style={{ background: C.panel2, border: `1px solid ${g("dcacOn", false) ? C.accent : C.line}`,
+        borderRadius: 7, padding: "9px 11px", marginBottom: 8 }}>
+        <label className="chk" style={{ display: "flex", alignItems: "center", gap: 8,
+          font: "600 12px system-ui", color: C.text, cursor: "pointer" }}>
+          <input type="checkbox" checked={g("dcacOn", false)} style={{ accentColor: C.accent }}
+            onChange={(e) => upd({ dcacOn: e.target.checked })} />
+          DC/AC ratio
+          <span style={{ font: "10.5px var(--mono)", color: C.muted, marginLeft: 4 }}>
+            {mount.dcac[0]}&ndash;{mount.dcac[1]} typical for {mount.label.toLowerCase()}
+          </span>
+        </label>
+
+        {g("dcacOn", false) && (<>
+          <div style={{ font: "10.5px/1.55 system-ui", color: C.muted, margin: "6px 0 8px" }}>
+            PVsyst has no DC/AC column, and the ratio cannot be stepped anyway: neither a
+            string nor an inverter divides. What is stepped is whichever whole thing is free
+            to move, which depends on which side is already fixed.
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            {DCAC_MODES.map((md) => (
+              <button key={md.id} className="btn"
+                onClick={() => upd({ dcMode: md.id, unitFrom: undefined, unitTo: undefined })}
+                style={{ borderColor: dcMode === md.id ? C.accent : undefined,
+                  color: dcMode === md.id ? C.accent : undefined, textAlign: "left" }}>
+                {md.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ font: "10.5px/1.55 system-ui", color: C.muted, marginBottom: 8 }}>
+            {(DCAC_MODES.find((md) => md.id === dcMode) || {}).holds}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Num label={dcMode === "inverters" ? "From (inverters)" : "From (strings)"} unit=""
+              step={1} min={1} value={g("unitFrom", suggested ? suggested.from : 1)}
+              onChange={(v) => upd({ unitFrom: v })} />
+            <Num label="To" unit="" step={1} min={1}
+              value={g("unitTo", suggested ? suggested.to : 2)}
+              onChange={(v) => upd({ unitTo: v })} />
+            <Num label="Step" unit="" step={1} min={1} value={g("unitStep", 1)}
+              onChange={(v) => upd({ unitStep: v })} />
+            {suggested && (
+              <button className="btn" style={{ alignSelf: "flex-end" }}
+                onClick={() => upd({ unitFrom: suggested.from, unitTo: suggested.to, unitStep: 1 })}>
+                Use {suggested.from}&ndash;{suggested.to} for the typical band
+              </button>
+            )}
+          </div>
+
+          <div style={{ font: "600 11.5px system-ui", color: C.muted, margin: "10px 0 7px" }}>
+            {dcMode === "inverters"
+              ? "The array being held fixed, and the inverter it is divided by"
+              : "The inverters being held fixed, and the string the array is built from"}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Num label="Module rating" unit="Wp" step={5} value={sys.moduleWp}
+              onChange={(v) => upd({ moduleWp: v })} />
+            <Num label="Modules in series" unit="" step={1} value={sys.modulesInSeries}
+              onChange={(v) => upd({ modulesInSeries: v })} />
+            <Num label="Inverter rating" unit="kWac" step={5} value={sys.inverterKwac}
+              onChange={(v) => upd({ inverterKwac: v })} />
+            {dcMode === "inverters"
+              ? <Num label="Strings (fixed)" unit="" step={1} value={sys.nParallel}
+                  onChange={(v) => upd({ nParallel: v })} />
+              : <Num label="Inverters (fixed)" unit="" step={1} value={sys.nInverter}
+                  onChange={(v) => upd({ nInverter: v })} />}
+          </div>
+        </>)}
+      </div>
+
+      <div style={{ font: "650 11.5px system-ui", color: C.muted, letterSpacing: "0.05em",
+        textTransform: "uppercase", margin: "10px 0 6px" }}>
+        Other PVsyst parameters
+      </div>
+      {EXTRA_PARAMS.map((p) => (
+        <ExtraCard key={p.id} p={p} g={g} upd={upd} />
+      ))}
+
+      <WarnList items={plan.warnings} />
 
       <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap",
-        margin: "4px 0 10px" }}>
+        margin: "10px 0" }}>
         <button className="btn primary" disabled={!rows.length} onClick={download}>
           Download {fileName}
         </button>
@@ -590,19 +715,50 @@ function SweepBuilder({ st, set }) {
           {rows.length} simulation{rows.length === 1 ? "" : "s"}
         </span>
         <span style={{ font: "10.5px system-ui", color: C.muted }}>
-          Each one is a full hourly run in PVsyst, so a large grid takes a while.
+          Each one is a full hourly run in PVsyst.
         </span>
       </div>
 
       {rows.length > 200 && (
         <div className="warns" style={{ width: "100%" }}>
           <div className="warn">
-            {rows.length} runs is a long sitting \u2014 8,760 hours simulated each time, and
+            {rows.length} runs is a long sitting — 8,760 hours simulated each time, and
             every extra axis multiplies rather than adds. Sweep two parameters at a time and
-            fix the rest at the value the first sweep chose; that answers the same question in
-            a fraction of the runs and the grid stays readable.
+            fix the rest at the value the first sweep chose.
           </div>
         </div>
+      )}
+
+      {plan.cases.length > 0 && (
+        <details style={{ marginBottom: 10 }}>
+          <summary style={{ font: "11.5px system-ui", color: C.accent, cursor: "pointer" }}>
+            Preview the cases ({plan.cases.length})
+          </summary>
+          <div style={{ maxHeight: 260, overflowY: "auto", marginTop: 7 }}>
+            <Rows
+              min={560}
+              keyOf={(c, i) => i}
+              rows={plan.cases.slice(0, 200)}
+              cols={[
+                { key: "n", label: "#", render: (c, i) => `SIM_${i + 1}` },
+                ...(plan.cases[0].tilt !== null && plan.cases[0].tilt !== undefined
+                  ? [{ key: "tilt", label: "Tilt", align: "right", render: (c) => `${fmt(c.tilt, 1)}\u00b0` }] : []),
+                ...(plan.cases[0].gap !== undefined
+                  ? [{ key: "gap", label: "Gap", align: "right", render: (c) => `${fmt(c.gap, 2)} m` }] : []),
+                ...(plan.cases[0].pitch !== undefined
+                  ? [{ key: "pitch", label: "Pitch", align: "right", render: (c) => `${fmt(c.pitch, 2)} m` },
+                     { key: "gcr", label: "GCR", align: "right", render: (c) => (c.gcr === null ? "\u2014" : `${fmt(c.gcr, 1)}%`) }] : []),
+                ...(plan.cases[0].unit !== undefined
+                  ? [{ key: "unit", label: plan.cases[0].dcMode === "inverters" ? "Inverters" : "Strings",
+                       align: "right", render: (c) => c.unit },
+                     { key: "dc", label: "DC", align: "right",
+                       render: (c) => `${fmt(c.dcKwp, 0)} kWp` },
+                     { key: "dcac", label: "DC/AC", align: "right",
+                       render: (c) => fmt(c.dcac, 3) }] : []),
+              ]}
+            />
+          </div>
+        </details>
       )}
 
       <div style={{ font: "650 11.5px system-ui", color: C.accent, letterSpacing: "0.06em",
@@ -615,20 +771,78 @@ function SweepBuilder({ st, set }) {
       </ol>
 
       <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui", marginTop: 10 }}>
-        <p><strong style={{ color: C.accent }}>Every heading here was read off a file PVsyst
+        <p><strong style={{ color: C.accent }}>Every heading was read off a file PVsyst
         wrote.</strong> Its own template says <em>&ldquo;Do not modify the column
         titles!&rdquo;</em>, so they are copied verbatim rather than tidied &mdash; hence
-        <code> azim</code> and <code> in parall</code>. A heading that is close but not exact
-        produces a file PVsyst accepts and a sweep that changes nothing, which is the
-        <em> &ldquo;parameter did not change&rdquo;</em> case rather than an error. PVsyst can
-        sweep more than these seven; its batch dialog lists them, and the list here grows
-        against real files, not guesses.</p>
+        <code> azim</code> and <code> in parall</code>. PVsyst can sweep more than these;
+        its batch dialog lists them, and this list grows against real files, not guesses.</p>
         <p><strong style={{ color: C.accent }}>The capacity is yours, the specific yield is
         PVsyst&rsquo;s.</strong> Its 3D scene is a regular field, so the module count will not
         match a layout fitted to a real boundary. Take kWh/kWp and PR from the simulation and
-        multiply by the capacity your own layout actually achieved; the ratio survives the
-        geometry simplification and the absolute figure does not.</p>
+        multiply by the capacity your own layout achieved.</p>
       </div>
+    </div>
+  );
+}
+
+/* The raw columns, swept as given. Tilt, pitch and strings are handled
+   above because two of them are derived. */
+const EXTRA_PARAMS = BATCH_PARAMS.filter(
+  (p) => !["tilt", "pitch", "nParallel"].includes(p.id));
+const EXTRA_DEF = {
+  azimuth: { from: -20, to: 20, step: 10 },
+  nSeries: { from: 24, to: 28, step: 1 },
+  nInverter: { from: 3, to: 5, step: 1 },
+};
+
+function ExtraCard({ p, g, upd }) {
+  const on = g(`${p.id}On`, false);
+  const d = EXTRA_DEF[p.id] || { from: 0, to: 1, step: 1 };
+  const vals = !on ? []
+    : p.kind === "text"
+      ? String(g(`${p.id}List`, "")).split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+      : range(g(`${p.id}From`, d.from), g(`${p.id}To`, d.to), g(`${p.id}Step`, d.step));
+  return (
+    <div style={{ background: C.panel2, border: `1px solid ${on ? C.accent : C.line}`,
+      borderRadius: 7, padding: "9px 11px", marginBottom: 8 }}>
+      <label className="chk" style={{ display: "flex", alignItems: "center", gap: 8,
+        font: "600 12px system-ui", color: C.text, cursor: "pointer" }}>
+        <input type="checkbox" checked={on} style={{ accentColor: C.accent }}
+          onChange={(e) => upd({ [`${p.id}On`]: e.target.checked })} />
+        {p.label}
+        <span style={{ font: "10.5px var(--mono)", color: C.muted, marginLeft: 4 }}>
+          {p.group} / {p.sub}
+        </span>
+      </label>
+      {on && (
+        <>
+          <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, margin: "5px 0 7px" }}>
+            {p.note}
+          </div>
+          {p.kind === "text" ? (
+            <textarea rows={3} value={g(`${p.id}List`, "")}
+              placeholder={"One .OND filename per line, e.g.\nSungrow_SG350_HX_20.OND"}
+              onChange={(e) => upd({ [`${p.id}List`]: e.target.value })}
+              style={{ width: "100%", background: C.panel, color: C.text,
+                border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px",
+                font: "11.5px var(--mono)", resize: "vertical" }} />
+          ) : (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Num label="From" unit={p.unit} step={1} value={g(`${p.id}From`, d.from)}
+                onChange={(v) => upd({ [`${p.id}From`]: v })} />
+              <Num label="To" unit={p.unit} step={1} value={g(`${p.id}To`, d.to)}
+                onChange={(v) => upd({ [`${p.id}To`]: v })} />
+              <Num label="Step" unit={p.unit} step={1} min={0} value={g(`${p.id}Step`, d.step)}
+                onChange={(v) => upd({ [`${p.id}Step`]: v })} />
+            </div>
+          )}
+          <div style={{ font: "10.5px var(--mono)", color: vals.length ? C.muted : "#d64545",
+            marginTop: 5 }}>
+            {vals.length ? `${vals.length} value${vals.length > 1 ? "s" : ""}: ${vals.slice(0, 8).join(", ")}`
+              : "Nothing to sweep yet."}
+          </div>
+        </>
+      )}
     </div>
   );
 }
