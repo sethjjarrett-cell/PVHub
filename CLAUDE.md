@@ -20,6 +20,9 @@ src/CableRefTables.jsx the reference-table display layer — RefCard, the three
                        highlight states, the factor chain
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
+src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
+src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
+src/BdFlow.jsx         Guided flow tab: a map pin to a quotable number
 src/YieldReport.jsx    Yield report tab: pulled data, expected generation, pitch trade-off
 src/roofGeom.js        roof polygon maths, the plane fit and the module auto-fill — no React
 src/dxf.js             DXF R12 writer — string assembly, no React, no dependencies
@@ -116,6 +119,7 @@ Adding a workspace means adding it to a group as well, or it is unreachable.
 | `cost` | `cost` alone |
 | `bess` | `bess` alone |
 | `track` | `track` alone; reads exported PVsyst report PDFs |
+| `guided` | `guided` alone; the seven-step business-development path |
 
 They are **one app with one state tree**, not separate apps — a value typed in any workspace
 is still there in the others. Do not fork them; duplicated inputs would drift apart within a
@@ -208,6 +212,10 @@ node tests/pvsystReport.test.mjs    # 188 assertions against three real reports:
 node tests/pdfWorker.test.mjs       # 1 assertion: the inlined worker matches pdfjs-dist
 node tests/trackerStore.test.mjs    # 26 assertions: which store is chosen at startup, and
                                     # that the interface never misstates where data is
+node tests/stringSizing.test.mjs    # 49 assertions: the conventions as code — no averaging,
+                                    # N_max floors, the divisibility fallback
+node tests/bdFlow.test.mjs          # 81 assertions: step order and blocking, and the guards
+                                    # that stop a wrong number reaching a client
 node tests/pvsystBatch.test.mjs     # 169 assertions: the sweep file PVsyst reads, reproduced
                                     # byte for byte against a template PVsyst itself wrote,
                                     # plus the gap-to-pitch and whole-unit DC/AC conversions
@@ -569,6 +577,29 @@ Deliberate engineering decisions, each stated in the UI's own text:
   `describeStore` says which store is in use — never the stronger guarantee than is true.
   Only the file *handle* is kept in IndexedDB, so the file can be reconnected; it carries no
   records, and failing to store it costs reconnection, not the session.
+- **The string sizing maths lives in `src/stringSizing.js`, not in App.jsx.** It was a
+  `useMemo` in the String Sizing tab until the guided flow needed it; a second copy would
+  have drifted from the first within a week, so it was lifted out whole and both sides now
+  call `sizeStrings`. The conventions above (no averaging, `N_max` floors, the full-power
+  bound, the divisibility fallback) are asserted in `tests/stringSizing.test.mjs` rather
+  than only stated here.
+- **The guided flow runs site → string → sweep → layout → yield → quote, and that order is
+  load-bearing.** The sweep settles the row pitch, and the pitch is an *input* to the
+  layout, so it comes first; the sweep needs nothing back, because it reports yield per kWp.
+  The layout then says how many kWp the site holds and the two multiply. The only reason to
+  overlap them is time: a PVsyst sweep is hours, so the layout runs on a provisional pitch
+  and every figure downstream is marked assumed until the results land. Do not "simplify"
+  this into layout-then-sweep — it would make the pitch an output of the thing that needs
+  it as an input.
+- **A guided step with a gap says what the gap is.** No step ever substitutes a plausible
+  default to keep the flow moving, and `assess` reports `missing` per step. The same refusal
+  the costing tool makes about prices, for the same reason.
+- **The flow carries guards a non-engineer would not think to apply.** `sanityChecks` catches
+  a DC/AC of five, a specific yield off by a factor of ten, a pitch tighter than the
+  collector, a capex rate entered per kWp instead of per Wp, and more megawatts than the
+  hectares can physically hold. The bounds are deliberately *wide*: they catch a wrong
+  number, not a bold one, and tightening them to "typical" would start arguing with
+  legitimate designs.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.

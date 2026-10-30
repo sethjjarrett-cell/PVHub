@@ -16,8 +16,10 @@ import { parseDxf as readDxf, pickOutline, routeLengths } from "./dxfRead.js";
 import { YieldReportTab } from "./YieldReport.jsx";
 import { parsePvsystFile } from "./pvsystFiles.js";
 import { extractPdfText, ensurePdfWorker } from "./pdfText.js";
+import { sizeStrings, RISE_TABLE } from "./stringSizing.js";
 import { BatchAnalyserTab, BATCH_DEFAULTS } from "./BatchAnalyser.jsx";
 import { ProjectTrackerTab } from "./ProjectTracker.jsx";
+import { BdFlowTab } from "./BdFlow.jsx";
 
 /* =====================================================================
    LAYOUT GENERATOR — Phase 2
@@ -4338,11 +4340,6 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
    basis): every result shown with its formula, substitution, and the
    reasoning, plus an MPPT-window widget and a design-space strip.
    ===================================================================== */
-const RISE_TABLE = [
-  { label: "Roof mount, gap ≤ 15 cm", rise: 35 },
-  { label: "Rack mount, gap ≥ 15 cm", rise: 30 },
-  { label: "Top of a pole / freefield", rise: 25 },
-];
 
 
 function ModuleIV({ mod }) {
@@ -4550,64 +4547,12 @@ function StringSizingTool({ mod, setMod, inv, setInv, frameP, onAdopt, uiMode, l
     ]);
   };
 
-  const r = useMemo(() => {
-    // β_Vmp derivation waterfall: datasheet → γ−α → NOCT (irradiance-corrected)
-    const route2 = (mod.gPmax !== null && mod.aIsc !== null) ? mod.gPmax - mod.aIsc : null;
-    const route3 =
-      mod.vmpNoct !== null && mod.noct !== null && mod.cells !== null && mod.ideality !== null
-        ? (((mod.vmpNoct - mod.vmp) -
-            mod.cells * mod.ideality * 0.00008617 * (273.15 + mod.noct) * Math.log(0.8)) /
-            mod.vmp / (mod.noct - 25)) * 100
-        : null;
-    const bVmpUsed = mod.bVmp !== null ? mod.bVmp : route2 !== null ? route2 : route3;
-    const method = mod.bVmp !== null ? "Datasheet value"
-      : route2 !== null ? "Derived: γ_Pmax − α_Isc"
-      : route3 !== null ? "Derived from NOCT delta (irradiance-corrected)"
-      : "NO ROUTE — enter data";
-
-    // adopted temperature extremes: most extreme source, never averaged
-    const los = tSrc.map((s) => s.lo).filter((v) => v !== null);
-    const his = tSrc.map((s) => s.hi).filter((v) => v !== null);
-    const tLo = los.length ? Math.min(...los) : null;
-    const tHi = his.length ? Math.max(...his) : null;
-
-    const rise = RISE_TABLE[siteT.riseIdx].rise;
-    const tcMin = tLo !== null ? tLo - siteT.margin : null;
-    const tcMax = tHi !== null ? tHi + rise + siteT.margin : null;
-    const bad = bVmpUsed === null || tcMin === null || tcMax === null;
-
-    const vocCold1 = bad ? 0 : mod.voc * (1 + (mod.bVoc / 100) * (tcMin - 25));
-    const vmpHot1 = bad ? 1 : mod.vmp * (1 + (bVmpUsed / 100) * (tcMax - 25));
-    const vmpCold1 = bad ? 0 : mod.vmp * (1 + (bVmpUsed / 100) * (tcMin - 25));
-    const ceiling = Math.min(inv.vMax, mod.vSysMax || inv.vMax);
-    const nMax = bad ? 0 : Math.floor(ceiling / vocCold1);
-    const nMin = bad ? 1 : Math.ceil(inv.fpLo / vmpHot1);
-    const valid = !bad && nMax >= nMin;
-    // frame-P preference: largest N divisible by P, unless that drops below N_min
-    const nDivCand = nMax - (nMax % Math.max(1, frameP));
-    const nRec = !valid ? null : nDivCand >= nMin ? nDivCand : nMax;
-    const recDivisible = nRec !== null && nRec % frameP === 0;
-    const N = nSel !== null ? nSel : (nRec ?? 1);
-
-    const effStart = [inv.vStart, inv.trackLo].filter((v) => v !== null);
-    const startV = effStart.length ? Math.max(...effStart) : null;
-    const nStart = startV !== null && !bad ? Math.ceil(startV / vmpHot1) : null;
-
-    const byIsc = inv.iMppt !== null && mod.isc > 0 ? Math.floor(inv.iMppt / mod.isc) : null;
-    const strPar = byIsc !== null && inv.connMax !== null ? Math.min(inv.connMax, byIsc)
-      : byIsc !== null ? byIsc : inv.connMax;
-    const pString = N * mod.pmax;
-    const pMppt = strPar !== null ? strPar * pString : null;
-    const pInv = pMppt !== null ? pMppt * inv.nMppt : null;
-    const dcac = pInv !== null && inv.acKva ? pInv / 1000 / inv.acKva : null;
-
-    return {
-      route2, route3, bVmpUsed, method, tLo, tHi, rise, tcMin, tcMax, bad,
-      vocCold1, vmpHot1, vmpCold1, ceiling, nMax, nMin, valid, nRec, recDivisible,
-      nDivCand, N, vocColdN: N * vocCold1, vmpHotN: N * vmpHot1, vmpColdN: N * vmpCold1,
-      startV, nStart, byIsc, strPar, pString, pMppt, pInv, dcac,
-    };
-  }, [mod, inv, tSrc, siteT, frameP, nSel]);
+  /* The maths lives in src/stringSizing.js so the guided flow can call
+     the same function this tab does. One copy, one set of conventions. */
+  const r = useMemo(
+    () => sizeStrings({ mod, inv, tSrc, siteT, frameP, nSel }),
+    [mod, inv, tSrc, siteT, frameP, nSel],
+  );
 
   return (
     <div className="app" style={{ display: "flex", height: "100%", minHeight: 0, background: C.chrome }}>
@@ -7209,6 +7154,10 @@ export default function App() {
   const [sharedTmy, setSharedTmy] = useState(null);
   const [entered, setEntered] = useState(false);
   const [landStep, setLandStep] = useState(0);
+  /* The guided flow keeps its own small record: the handful of figures
+     a BD types, kept apart from the full tool's state so the two do
+     not fight over the same fields. */
+  const [guided, setGuided] = useState({});
   /* Which landing section is open. Hover on a mouse, tap on a touch
      screen; null means all three are closed. */
   const [openGroup, setOpenGroup] = useState(null);
@@ -7362,7 +7311,7 @@ export default function App() {
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
     ["report", "Yield report"], ["batch", "Batch analyser"], ["bess", "Battery"],
     ["roof", "Roof area"], ["rdesign", "Roof designer"], ["cost", "Costing"],
-    ["track", "Tracker"],
+    ["track", "Tracker"], ["guided", "Guided flow"],
   ];
   /* Ground mount is the full tool. Roof mount drops what a roof does not
      have — an MV collector ring, a field to tile, a row-pitch sweep — and
@@ -7388,6 +7337,13 @@ export default function App() {
      the application on screen — not a separate app, because duplicating
      the inputs would guarantee the two drifted apart. */
   const WORKSPACES = [
+    { id: "guided", name: "Guided flow", short: "Guided",
+      blurb: "Seven steps from a map pin to a quotable number: coordinates in, temperature "
+        + "extremes pulled, a string length, the PVsyst sweep to hand off, the capacity that "
+        + "fits, the energy and the capex. For getting a defensible figure without opening "
+        + "the cable derating tab.",
+      note: "One tab. The same engines, fewer questions.",
+      groups: [["Guided", ["guided"]]] },
     { id: "prelim", name: "Preliminary design", short: "Prelim",
       blurb: "The whole workflow, linked end to end: module and inverter in, string sizing, "
         + "a generated layout, cables, yield, a battery. Everything feeds everything else. "
@@ -7457,7 +7413,7 @@ export default function App() {
   const LANDING_GROUPS = [
     { id: "design", name: "Plant design",
       blurb: "Lay the site out, and find out what it generates.",
-      tools: ["prelim", "layout", "yield"] },
+      tools: ["guided", "prelim", "layout", "yield"] },
     { id: "size", name: "Sizing tools",
       blurb: "Strings, cables and batteries worked out against the standards.",
       tools: ["string", "cable", "bess"], planned: ["loadflow"] },
@@ -8003,6 +7959,9 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
         <BatchAnalyserTab st={batch} set={setBatch} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "guided" ? "flex" : "none" }}>
+        <BdFlowTab st={guided} set={setGuided} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "track" ? "flex" : "none" }}>
         <ProjectTrackerTab />
