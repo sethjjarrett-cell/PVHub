@@ -14,31 +14,68 @@
    other than what was drawn — silently. Batch mode is a documented
    feature driving a variant a human built and checked.
 
-   WHAT IS CONFIRMED AND WHAT IS NOT. The column headings below are taken
-   from real PVsyst batch files, not from documentation. Two are
-   confirmed by observation: "Plane / tilt / [deg]" and
-   "Sheds 3D / pitch / [m]". A variant file also showed PVsyst's internal
-   identifier for the shed count (NSheds3D), which proves batch mode can
-   drive 3D-scene parameters, but not what its column heading looks like.
-   Anything beyond the confirmed two is entered by hand, against the
-   parameter list in PVsyst's own batch dialog. Guessing a heading would
-   produce a file PVsyst accepts and a sweep that moves nothing — the
-   "Warning: parameter X did not change" case the analyser already has to
-   cope with.
+   WHAT IS CONFIRMED AND WHAT IS NOT. Every column heading below has been
+   read off a real PVsyst batch file — a parameter template PVsyst wrote
+   itself, and two results files. None came from documentation. PVsyst's
+   own template says "Do not modify the column titles!", so a heading
+   that is close but not exact is a sweep that silently does nothing.
+   Anything not in this list is entered by hand against the parameter
+   list in PVsyst's own dialog, and is marked unconfirmed in the
+   interface.
+
+   THE DELIMITER IS NOT THE SAME IN BOTH DIRECTIONS. The parameter
+   template PVsyst generates is comma separated; the results file it
+   writes back is semicolon separated. Both came from the same user on
+   the same product. So the delimiter is a setting rather than a
+   constant: it defaults to the comma PVsyst used in the template it
+   expects back, and can be switched.
    ================================================================== */
 
-/** Columns whose heading has been seen in a real PVsyst batch file. */
+/**
+ * Columns whose heading has been read off a real PVsyst batch file.
+ * `group`, `sub` and `unit` are the three header rows, verbatim — PVsyst
+ * tells you not to modify them, so they are copied rather than tidied
+ * ("azim", not "azimuth"; "in parall", not "in parallel").
+ */
 export const BATCH_PARAMS = [
   {
-    id: "tilt", group: "Plane", sub: "tilt", unit: "deg", confirmed: true,
-    label: "Plane tilt",
+    id: "tilt", group: "Plane", sub: "tilt", unit: "deg", kind: "number", confirmed: true,
+    label: "Plane tilt", dp: 1,
     note: "The collector tilt. On a tracker variant this is not the parameter to sweep.",
   },
   {
-    id: "pitch", group: "Sheds 3D", sub: "pitch", unit: "m", confirmed: true,
-    label: "Shed pitch (3D scene)",
-    note: "Row spacing in the shading scene. PVsyst also notes in the results that it set "
-      + "the orientation's Pitch NS to match.",
+    id: "azimuth", group: "Plane", sub: "azim", unit: "deg", kind: "number", confirmed: true,
+    label: "Plane azimuth", dp: 1,
+    note: "PVsyst's convention: 0 is the equator-facing direction, negative is east of it.",
+  },
+  {
+    id: "pitch", group: "Sheds 3D", sub: "pitch", unit: "m", kind: "number", confirmed: true,
+    label: "Shed pitch (3D scene)", dp: 2,
+    note: "Row spacing in the shading scene. PVsyst notes in the results that it set the "
+      + "orientation's Pitch NS to match.",
+  },
+  {
+    id: "nSeries", group: "Nb module", sub: "in series", unit: "", kind: "number", confirmed: true,
+    label: "Modules in series", dp: 0,
+    note: "String length. Check it against the string sizing tab's N_min and N_max — PVsyst "
+      + "will run a string that does not fit the inverter window and only warn.",
+  },
+  {
+    id: "nParallel", group: "Nb strings", sub: "in parall", unit: "", kind: "number", confirmed: true,
+    label: "Strings in parallel", dp: 0,
+    note: "Together with modules in series this sets the array size, so sweeping it sweeps "
+      + "the DC/AC ratio.",
+  },
+  {
+    id: "nInverter", group: "Nb inverter", sub: "or MPPT", unit: "", kind: "number", confirmed: true,
+    label: "Inverters (or MPPTs)", dp: 0,
+    note: "The other half of the DC/AC ratio.",
+  },
+  {
+    id: "ondFile", group: "Inverter", sub: "*.OND File", unit: "Filename", kind: "text",
+    confirmed: true, label: "Inverter model (.OND)",
+    note: "A filename, not a number — the .OND must already be in PVsyst's component "
+      + "database on the machine that runs the batch.",
   },
 ];
 
@@ -91,11 +128,20 @@ export function sweepRows(axes) {
 
 /* ---------- writing the file --------------------------------------- */
 
-const cell = (v) => {
+/* PVsyst's own parameter template is comma separated and its results
+   file is semicolon separated. Default to the comma, because the file
+   written here is the one PVsyst reads. */
+export const DELIMITERS = [
+  { id: ",", label: "Comma (what PVsyst's own template uses)" },
+  { id: ";", label: "Semicolon (what its results files use)" },
+];
+
+const cellFor = (delim) => (v) => {
   const s = v === null || v === undefined ? "" : String(v);
-  /* PVsyst writes semicolon-separated and does not quote, but a comment
-     carrying a semicolon would break the row, so quote only then. */
-  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  /* PVsyst does not quote, but a comment carrying the delimiter would
+     add a column and shift every value after it. Quote only then. */
+  return s.includes(delim) || s.includes('"') || s.includes("\n")
+    ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 const pad = (row, width) => {
@@ -111,68 +157,96 @@ export function pvsystStamp(d = new Date()) {
     + `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/* The lines PVsyst puts in its own template, verbatim. They are
+   instructions to the person editing the file in Excel, and they are
+   reproduced so the file PVhub writes looks like the one PVsyst would
+   have written — including the warning not to touch the column titles,
+   which is exactly why the headings above are copied rather than
+   tidied. Written raw: the quotes around SIM_ are literal and must not
+   be escaped into "" pairs. */
+const PREAMBLE_NOTES = [
+  "Please define the parameters to be varied for each run",
+  "Do not modify the column titles!",
+  'Only the lines beginning by "SIM_" will be executed',
+];
+const FOOTER_NOTE =
+  "Do not forget to close this file in Excel before returning to PVsyst "
+  + "to initiate the simulation !";
+
 /**
  * Build the batch parameter CSV.
  *
- * The layout mirrors the files PVsyst writes: a labelled preamble, then
- * three header rows (name, detail, unit), then one SIM_n row per case.
- * The analyser finds the header by looking for "Ident" in the first
- * cell rather than by row number, and so does PVsyst, which is why the
- * preamble length is not critical.
+ * The layout follows the template PVsyst generates: a labelled preamble,
+ * its own instruction lines, three header rows (name, detail, unit),
+ * then one SIM_n row per case, then a footer. PVsyst finds the header by
+ * content, so the preamble length is not critical, but matching it keeps
+ * the file recognisable to whoever opens it in Excel.
  *
- * Result columns are deliberately NOT written. A parameter file states
- * what to run; PVsyst appends the outputs when it writes the results
- * file. Including empty output columns has not been verified against a
- * real parameter export, and an unverified guess here would be a file
- * that fails in someone else's hands.
+ * Result columns are deliberately NOT written: PVsyst's own template has
+ * none, and appends them when it writes the results file back.
  */
 export function buildBatchParamsCsv({
   project = "", baseVariant = "", variantComment = "",
-  axes = [], comment = "", modified = null,
+  axes = [], comment = "", created = null, delimiter = ",",
 } = {}) {
+  const d = delimiter === ";" ? ";" : ",";
+  const cell = cellFor(d);
   const live = axes.filter((a) => a && a.param && a.values && a.values.length);
   const rows = sweepRows(live);
   const params = live.map((a) => a.param);
 
-  /* Ident, one column per parameter, then Simul (the per-run comment). */
   const groups = ["Ident", ...params.map((p) => p.group), "Simul"];
   const subs = ["", ...params.map((p) => p.sub), "Comment"];
-  const units = ["", ...params.map((p) => (p.unit ? `[${p.unit}]` : "")), ""];
+  const units = ["", ...params.map((p) => (p.unit ? (p.kind === "text" ? p.unit : `[${p.unit}]`) : "")), ""];
   const width = groups.length;
 
+  const blank = () => pad([], width).join(d);
+  /* A whole-row note sits in the first cell with the rest empty, and is
+     written without quoting so PVsyst's own wording survives byte for
+     byte. It contains no delimiter, which is why that is safe. */
+  const note = (text) => pad([text], width).join(d);
+
   const out = [
-    ["PVsyst simulations Batch mode"],
-    ["Simulation parameters definition"],
-    [`File modified on ${modified || pvsystStamp()}`],
-    [],
-    ["Project", "", "", project],
-    ["Variants based on", "", baseVariant, variantComment],
-    [],
-    /* ASCII only, deliberately: PVsyst reads these as Windows-1252, so a
-       stray em dash or curly quote would arrive as mojibake. The degree
-       and squared signs that appear in PVsyst's own files are only ever
-       in result column units, which a parameter file does not carry. */
-    ["Written by PVhub - check the parameter headings against PVsyst's batch dialog"],
-    [],
-    groups, subs, units,
-    [],
-    ...rows.map((vals, i) => [`SIM_${i + 1}`, ...vals, comment]),
+    note("PVsyst simulations Batch mode"),
+    note("Simulation parameters definition"),
+    note(`File created on ${created || pvsystStamp()}`),
+    blank(),
+    pad(["Project", "", "", project], width).map(cell).join(d),
+    pad(["Variants based on", "", baseVariant, variantComment], width).map(cell).join(d),
+    blank(),
+    ...PREAMBLE_NOTES.map(note),
+    blank(),
+    pad(groups, width).map(cell).join(d),
+    pad(subs, width).map(cell).join(d),
+    pad(units, width).map(cell).join(d),
+    blank(),
+    ...rows.map((vals, i) => pad([`SIM_${i + 1}`, ...vals, comment], width).map(cell).join(d)),
+    /* Three blank rows before the footer, as PVsyst leaves — room to add
+       a case by hand in Excel without disturbing the footer. */
+    blank(), blank(), blank(),
+    note(FOOTER_NOTE),
   ];
 
-  return out.map((r) => pad(r, width).map(cell).join(";")).join("\r\n") + "\r\n";
+  return out.join("\r\n") + "\r\n";
 }
 
 /** Read one back, so a file written here survives a round trip and a
     file exported from PVsyst can be loaded as a starting point. */
 export function parseBatchParamsCsv(text) {
   const lines = String(text || "").split(/\r?\n/);
+  /* Detected, not assumed: PVsyst's template is comma separated and its
+     results files are semicolon separated. Count on the header row
+     rather than the whole file, because the preamble prose contains
+     commas of its own. */
+  const headLine = lines.find((l) => /^Ident[,;]/.test(l)) || "";
+  const d = (headLine.match(/;/g) || []).length > (headLine.match(/,/g) || []).length ? ";" : ",";
   const rows = lines.map((l) => {
     const out = []; let cur = "", inQ = false;
     for (let i = 0; i < l.length; i++) {
       const c = l[i];
       if (inQ) { if (c === '"') { if (l[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
       else if (c === '"') inQ = true;
-      else if (c === ";") { out.push(cur); cur = ""; }
+      else if (c === d) { out.push(cur); cur = ""; }
       else cur += c;
     }
     out.push(cur);

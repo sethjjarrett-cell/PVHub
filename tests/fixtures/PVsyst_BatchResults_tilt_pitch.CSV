@@ -1,0 +1,54 @@
+PVsyst simulations Batch mode;;;;;;;;;;
+Simulation parameters definition;;;;;;;;;;
+File created on 04/08/26 11:42;;;;;;;;;;
+;;;;;;;;;;
+Project;;;Example Field Project.PRJ;;;;;;;
+Variants based on;;VC0;Fixed tilt vs pitch;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+Ident;Plane;Sheds 3D;Simul;Error;ShdLoss;Yf;IL_Pmax;PR;E_Grid;Lc
+;tilt;pitch;Comment;;kWh/m²;kWh/kWp/day;MWh;ratio;MWh;kWh/kWp/day
+;[deg];[m];;;;;;;;
+;;;;;;;;;;
+SIM_1;18;10;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;30.50;5.223;19.49;0.8911;803.0;0.580
+SIM_2;18;10.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;25.92;5.243;19.99;0.8945;806.1;0.560
+SIM_3;18;11;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;22.53;5.259;20.37;0.8972;808.5;0.544
+SIM_4;18;11.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;19.28;5.274;20.68;0.8997;810.8;0.530
+SIM_5;18;12;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;17.19;5.284;20.94;0.9015;812.4;0.519
+SIM_6;18;12.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;15.25;5.293;21.12;0.9030;813.7;0.510
+SIM_7;18.5;10;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;31.88;5.226;19.67;0.8903;803.4;0.586
+SIM_8;18.5;10.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;27.25;5.246;20.18;0.8937;806.4;0.565
+SIM_9;18.5;11;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;23.70;5.262;20.59;0.8965;808.9;0.549
+SIM_10;18.5;11.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;20.45;5.276;20.90;0.8990;811.2;0.534
+SIM_11;18.5;12;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;18.11;5.287;21.16;0.9008;812.9;0.523
+SIM_12;18.5;12.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;16.15;5.296;21.35;0.9024;814.2;0.514
+SIM_13;19;10;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;33.43;5.227;19.83;0.8895;803.6;0.591
+SIM_14;19;10.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;28.63;5.247;20.36;0.8929;806.7;0.571
+SIM_15;19;11;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;24.88;5.264;20.78;0.8958;809.3;0.554
+SIM_16;19;11.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;21.62;5.279;21.11;0.8982;811.5;0.539
+SIM_17;19;12;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;19.02;5.290;21.37;0.9002;813.3;0.528
+SIM_18;19;12.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;17.06;5.299;21.58;0.9018;814.7;0.519
+SIM_19;19.5;10;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;37.17;5.224;19.98;0.8878;803.1;0.602
+SIM_20;19.5;10.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;32.06;5.245;20.53;0.8914;806.3;0.581
+SIM_21;19.5;11;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;28.12;5.262;20.97;0.8944;809.0;0.563
+SIM_22;19.5;11.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;24.86;5.277;21.31;0.8968;811.2;0.548
+SIM_23;19.5;12;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;22.00;5.289;21.58;0.8989;813.1;0.536
+SIM_24;19.5;12.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;20.04;5.298;21.79;0.9005;814.5;0.527
+SIM_25;20;10;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;39.36;5.223;20.13;0.8868;803.0;0.608
+SIM_26;20;10.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;33.59;5.246;20.69;0.8907;806.5;0.586
+SIM_27;20;11;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;29.47;5.263;21.15;0.8936;809.2;0.568
+SIM_28;20;11.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;26.18;5.278;21.51;0.8961;811.5;0.553
+SIM_29;20;12;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;23.08;5.291;21.79;0.8983;813.5;0.540
+SIM_30;20;12.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;21.11;5.300;22.01;0.8999;814.9;0.531
+SIM_31;20.5;10;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;41.43;5.223;20.28;0.8858;803.0;0.615
+SIM_32;20.5;10.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;34.86;5.247;20.85;0.8899;806.7;0.591
+SIM_33;20.5;11;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;30.58;5.265;21.33;0.8930;809.5;0.573
+SIM_34;20.5;11.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;27.26;5.280;21.71;0.8955;811.7;0.558
+SIM_35;20.5;12;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;24.05;5.293;21.99;0.8977;813.8;0.544
+SIM_36;20.5;12.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;21.93;5.303;22.22;0.8994;815.3;0.534
+SIM_37;21;10;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;43.49;5.222;20.42;0.8848;802.9;0.622
+SIM_38;21;10.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;36.14;5.249;21.01;0.8893;806.9;0.595
+SIM_39;21;11;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;31.70;5.267;21.51;0.8923;809.7;0.577
+SIM_40;21;11.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;28.34;5.281;21.89;0.8948;811.9;0.562
+SIM_41;21;12;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;25.12;5.295;22.19;0.8971;814.0;0.549
+SIM_42;21;12.5;Fixed tilt vs pitch;Info: parameter Pitch NS was set, Warning: The inverter power is slightly undersized. ;22.76;5.305;22.42;0.8989;815.6;0.538

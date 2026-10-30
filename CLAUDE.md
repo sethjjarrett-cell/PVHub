@@ -208,8 +208,8 @@ node tests/pvsystReport.test.mjs    # 188 assertions against three real reports:
 node tests/pdfWorker.test.mjs       # 1 assertion: the inlined worker matches pdfjs-dist
 node tests/trackerStore.test.mjs    # 26 assertions: which store is chosen at startup, and
                                     # that the interface never misstates where data is
-node tests/pvsystBatch.test.mjs     # 64 assertions: the sweep file PVsyst reads, and that
-                                    # the writer and the results reader agree on its shape
+node tests/pvsystBatch.test.mjs     # 95 assertions: the sweep file PVsyst reads, reproduced
+                                    # byte for byte against a template PVsyst itself wrote
 ```
 
 **The inlined pdf.js worker rots silently.** `src/pdfWorkerText.js` holds the worker source as
@@ -499,13 +499,28 @@ Deliberate engineering decisions, each stated in the UI's own text:
   a scene without regenerating those and it may simulate something other than what was
   drawn, silently. Batch mode is a documented feature driving a variant a human built.
   `src/pvsystBatch.js` writes the sweep, `src/batchAnalyser.js` reads the results back.
-- **Only batch column headings actually seen in a PVsyst file are offered.** `Plane / tilt /
-  [deg]` and `Sheds 3D / pitch / [m]` are confirmed by observation; everything else is typed
-  by hand against PVsyst's own batch dialog. A guessed heading is worse than none, because
+- **Batch column headings are copied verbatim from files PVsyst wrote, never tidied.**
+  PVsyst's own template says *"Do not modify the column titles!"*, so the catalogue carries
+  `azim` not `azimuth`, `in parall` not `in parallel`, `*.OND File` with its asterisk. Seven
+  are confirmed against real files: `Plane/tilt`, `Plane/azim`, `Sheds 3D/pitch`,
+  `Nb module/in series`, `Nb strings/in parall`, `Nb inverter/or MPPT`,
+  `Inverter/*.OND File`. A heading that is close but not exact is worse than none, because
   PVsyst accepts the file and silently runs the base case — the "Warning: parameter X did
-  not change" rows the analyser already has to keep. (A variant file also showed the
-  internal identifier `NSheds3D`, which proves batch mode reaches 3D-scene parameters, but
-  not what its column heading is.)
+  not change" rows the analyser already has to keep. `tests/pvsystBatch.test.mjs` asserts
+  every shipped heading appears in a fixture PVsyst produced, so the catalogue cannot drift
+  into guesswork.
+- **The delimiter differs by direction and is a setting, not a constant.** The parameter
+  template PVsyst *generates* is comma separated; the results file it *writes back* is
+  semicolon separated — both from the same user on the same product. The writer defaults to
+  the comma, since the file it produces is the one PVsyst reads, and `parseBatchParamsCsv`
+  detects the delimiter from the header row rather than the whole file, because the preamble
+  prose contains commas of its own.
+- **The written parameter file reproduces PVsyst's template byte for byte**, preamble notes
+  and all, including the literal quotes in `Only the lines beginning by "SIM_" will be
+  executed` (written raw, never escaped into `""` pairs) and the three blank rows before the
+  footer. That exact-reproduction test is the strongest check available without PVsyst
+  itself: it covers the delimiter, every header row, the spacing and the CRLF endings at
+  once.
 - **The batch file PVhub writes is pure ASCII.** PVsyst reads these as Windows-1252, so an
   em dash or a curly quote arrives as mojibake. The degree and squared signs in PVsyst's own
   files appear only in *result* column units, which a parameter file does not carry, so

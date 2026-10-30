@@ -18,6 +18,7 @@ import React, { useState, useMemo, useRef } from "react";
 import { fmt, C, Num, Section, Page } from "./ui.jsx";
 import {
   BATCH_PARAMS, paramById, range, sweepRows, buildBatchParamsCsv, runInstructions,
+  DELIMITERS,
 } from "./pvsystBatch.js";
 import {
   parseBatchCsv, analyseBatch, buildRecommendation, toCsv, fmtEnergy,
@@ -453,25 +454,43 @@ function SweepBuilder({ st, set }) {
   const upd = (patch) => set({ ...st, sweep: { ...sw, ...patch } });
   const g = (k, d) => (sw[k] === undefined ? d : sw[k]);
 
-  const tilt = paramById("tilt"), pitch = paramById("pitch");
-  const tiltVals = g("tiltOn", true) ? range(g("tiltFrom", 15), g("tiltTo", 25), g("tiltStep", 1)) : [];
-  const pitchVals = g("pitchOn", true) ? range(g("pitchFrom", 5), g("pitchTo", 9), g("pitchStep", 0.5)) : [];
-  const axes = [
-    { param: tilt, values: tiltVals },
-    { param: pitch, values: pitchVals },
-  ].filter((x) => x.values.length);
-  const rows = sweepRows(axes);
+  /* Defaults per parameter, so a newly ticked axis starts somewhere
+     sensible rather than at zero. */
+  const DEF = {
+    tilt: { from: 15, to: 25, step: 1 },
+    azimuth: { from: -20, to: 20, step: 10 },
+    pitch: { from: 5, to: 9, step: 0.5 },
+    nSeries: { from: 24, to: 28, step: 1 },
+    nParallel: { from: 70, to: 90, step: 5 },
+    nInverter: { from: 3, to: 5, step: 1 },
+  };
 
-  const fileName = `${(g("project", "") || "project").replace(/\.PRJ$/i, "")}_PVhubSweep.CSV`;
+  const axes = BATCH_PARAMS.map((p) => {
+    if (!g(`${p.id}On`, p.id === "tilt" || p.id === "pitch")) return { param: p, values: [] };
+    if (p.kind === "text") {
+      /* A list of filenames, one per line — there is nothing to step. */
+      const vals = String(g(`${p.id}List`, "")).split(/\r?\n/)
+        .map((x) => x.trim()).filter(Boolean);
+      return { param: p, values: vals };
+    }
+    const d = DEF[p.id] || { from: 0, to: 1, step: 1 };
+    return {
+      param: p,
+      values: range(g(`${p.id}From`, d.from), g(`${p.id}To`, d.to), g(`${p.id}Step`, d.step)),
+    };
+  });
+  const live = axes.filter((a) => a.values.length);
+  const rows = sweepRows(live);
+
+  const fileName = `${(g("project", "") || "Project").replace(/\.PRJ$/i, "")}_BatchParams_PVhub.CSV`;
   const csv = buildBatchParamsCsv({
     project: g("project", ""), baseVariant: g("baseVariant", ""),
-    variantComment: g("variantComment", ""),
-    axes, comment: g("comment", "PVhub sweep"),
+    variantComment: g("variantComment", g("comment", "PVhub sweep")),
+    axes: live, comment: g("comment", "PVhub sweep"), delimiter: g("delimiter", ","),
   });
 
   const download = () => {
-    /* Windows-1252 and UTF-8 agree because the file is pure ASCII, so a
-       plain text blob is safe here. */
+    /* Pure ASCII, so Windows-1252 and UTF-8 agree byte for byte. */
     const blob = new Blob([csv], { type: "text/csv;charset=windows-1252" });
     const el = document.createElement("a");
     el.href = URL.createObjectURL(blob);
@@ -480,35 +499,56 @@ function SweepBuilder({ st, set }) {
     URL.revokeObjectURL(el.href);
   };
 
-  const Axis = ({ on, onKey, label, fromKey, toKey, stepKey, dFrom, dTo, dStep, unit, vals }) => (
-    <div style={{ background: C.panel2, border: `1px solid ${on ? C.accent : C.line}`,
-      borderRadius: 7, padding: "9px 11px", marginBottom: 8 }}>
-      <label className="chk" style={{ display: "flex", alignItems: "center", gap: 8,
-        font: "600 12px system-ui", color: C.text, cursor: "pointer", marginBottom: on ? 7 : 0 }}>
-        <input type="checkbox" checked={on} style={{ accentColor: C.accent }}
-          onChange={(e) => upd({ [onKey]: e.target.checked })} />
-        {label}
-      </label>
-      {on && (
-        <>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Num label="From" unit={unit} step={0.1} value={g(fromKey, dFrom)}
-              onChange={(v) => upd({ [fromKey]: v })} />
-            <Num label="To" unit={unit} step={0.1} value={g(toKey, dTo)}
-              onChange={(v) => upd({ [toKey]: v })} />
-            <Num label="Step" unit={unit} step={0.1} min={0} value={g(stepKey, dStep)}
-              onChange={(v) => upd({ [stepKey]: v })} />
-          </div>
-          <div style={{ font: "10.5px var(--mono)", color: vals.length ? C.muted : "#d64545",
-            marginTop: 5 }}>
-            {vals.length
-              ? `${vals.length} value${vals.length > 1 ? "s" : ""}: ${vals.slice(0, 10).join(", ")}${vals.length > 10 ? " …" : ""}`
-              : "No values — check the step is not zero and the bounds are the right way round."}
-          </div>
-        </>
-      )}
-    </div>
-  );
+  const Card = ({ p }) => {
+    const on = g(`${p.id}On`, p.id === "tilt" || p.id === "pitch");
+    const d = DEF[p.id] || { from: 0, to: 1, step: 1 };
+    const vals = (axes.find((a) => a.param.id === p.id) || {}).values || [];
+    return (
+      <div style={{ background: C.panel2, border: `1px solid ${on ? C.accent : C.line}`,
+        borderRadius: 7, padding: "9px 11px", marginBottom: 8 }}>
+        <label className="chk" style={{ display: "flex", alignItems: "center", gap: 8,
+          font: "600 12px system-ui", color: C.text, cursor: "pointer" }}>
+          <input type="checkbox" checked={on} style={{ accentColor: C.accent }}
+            onChange={(e) => upd({ [`${p.id}On`]: e.target.checked })} />
+          {p.label}
+          <span style={{ font: "10.5px var(--mono)", color: C.muted, marginLeft: 4 }}>
+            {p.group} / {p.sub}
+          </span>
+        </label>
+        {on && (
+          <>
+            <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, margin: "5px 0 7px" }}>
+              {p.note}
+            </div>
+            {p.kind === "text" ? (
+              <textarea rows={3} value={g(`${p.id}List`, "")}
+                placeholder={"One .OND filename per line, e.g.\nSungrow_SG350_HX_20.OND"}
+                onChange={(e) => upd({ [`${p.id}List`]: e.target.value })}
+                style={{ width: "100%", background: C.panel, color: C.text,
+                  border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px",
+                  font: "11.5px var(--mono)", resize: "vertical" }} />
+            ) : (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Num label="From" unit={p.unit} step={0.1} value={g(`${p.id}From`, d.from)}
+                  onChange={(v) => upd({ [`${p.id}From`]: v })} />
+                <Num label="To" unit={p.unit} step={0.1} value={g(`${p.id}To`, d.to)}
+                  onChange={(v) => upd({ [`${p.id}To`]: v })} />
+                <Num label="Step" unit={p.unit} step={0.1} min={0} value={g(`${p.id}Step`, d.step)}
+                  onChange={(v) => upd({ [`${p.id}Step`]: v })} />
+              </div>
+            )}
+            <div style={{ font: "10.5px var(--mono)", color: vals.length ? C.muted : "#d64545",
+              marginTop: 5 }}>
+              {vals.length
+                ? `${vals.length} value${vals.length > 1 ? "s" : ""}: ${vals.slice(0, 8).join(", ")}${vals.length > 8 ? " \u2026" : ""}`
+                : p.kind === "text" ? "No entries yet."
+                  : "No values \u2014 check the step is not zero and the bounds are the right way round."}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{ width: "100%" }}>
@@ -523,20 +563,23 @@ function SweepBuilder({ st, set }) {
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0" }}>
-        <Txt label="Project file" value={g("project", "")} placeholder="Eland.PRJ"
+        <Txt label="Project file" value={g("project", "")} placeholder="MySite_Project.PRJ"
           onChange={(v) => upd({ project: v })} />
         <Txt label="Base variant" value={g("baseVariant", "")} placeholder="VC1"
           onChange={(v) => upd({ baseVariant: v })} />
         <Txt label="Run comment" value={g("comment", "PVhub sweep")}
           onChange={(v) => upd({ comment: v })} />
+        <label className="fld" style={{ width: 230 }}>
+          <span className="fld-l">Separator</span>
+          <span className="fld-box">
+            <select value={g("delimiter", ",")} onChange={(e) => upd({ delimiter: e.target.value })}>
+              {DELIMITERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </span>
+        </label>
       </div>
 
-      <Axis on={g("tiltOn", true)} onKey="tiltOn" label="Plane tilt" unit="°"
-        fromKey="tiltFrom" toKey="tiltTo" stepKey="tiltStep" dFrom={15} dTo={25} dStep={1}
-        vals={tiltVals} />
-      <Axis on={g("pitchOn", true)} onKey="pitchOn" label="Shed pitch (3D scene)" unit="m"
-        fromKey="pitchFrom" toKey="pitchTo" stepKey="pitchStep" dFrom={5} dTo={9} dStep={0.5}
-        vals={pitchVals} />
+      {BATCH_PARAMS.map((p) => <Card key={p.id} p={p} />)}
 
       <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap",
         margin: "4px 0 10px" }}>
@@ -551,6 +594,17 @@ function SweepBuilder({ st, set }) {
         </span>
       </div>
 
+      {rows.length > 200 && (
+        <div className="warns" style={{ width: "100%" }}>
+          <div className="warn">
+            {rows.length} runs is a long sitting \u2014 8,760 hours simulated each time, and
+            every extra axis multiplies rather than adds. Sweep two parameters at a time and
+            fix the rest at the value the first sweep chose; that answers the same question in
+            a fraction of the runs and the grid stays readable.
+          </div>
+        </div>
+      )}
+
       <div style={{ font: "650 11.5px system-ui", color: C.accent, letterSpacing: "0.06em",
         textTransform: "uppercase", margin: "6px 0 6px" }}>
         What to do with it
@@ -561,18 +615,19 @@ function SweepBuilder({ st, set }) {
       </ol>
 
       <div className="readout" style={{ width: "100%", font: "10.5px/1.65 system-ui", marginTop: 10 }}>
-        <p><strong style={{ color: C.accent }}>Only two column headings are confirmed.</strong>{" "}
-        <code>Plane / tilt</code> and <code>Sheds 3D / pitch</code> are the two seen in real
-        PVsyst batch files, so those are the two offered. PVsyst can sweep a great deal more —
-        its own batch dialog lists them — but a heading guessed here would produce a file it
-        accepts and a sweep that changes nothing, which is the
-        <em> “parameter did not change”</em> case rather than an error. Send a parameter file
-        exported from your PVsyst and the list can be widened against it.</p>
+        <p><strong style={{ color: C.accent }}>Every heading here was read off a file PVsyst
+        wrote.</strong> Its own template says <em>&ldquo;Do not modify the column
+        titles!&rdquo;</em>, so they are copied verbatim rather than tidied &mdash; hence
+        <code> azim</code> and <code> in parall</code>. A heading that is close but not exact
+        produces a file PVsyst accepts and a sweep that changes nothing, which is the
+        <em> &ldquo;parameter did not change&rdquo;</em> case rather than an error. PVsyst can
+        sweep more than these seven; its batch dialog lists them, and the list here grows
+        against real files, not guesses.</p>
         <p><strong style={{ color: C.accent }}>The capacity is yours, the specific yield is
-        PVsyst's.</strong> Its 3D scene is a regular field, so the module count will not match a
-        layout fitted to a real boundary. Take kWh/kWp and PR from the simulation and multiply
-        by the capacity your own layout actually achieved; the ratio survives the geometry
-        simplification and the absolute figure does not.</p>
+        PVsyst&rsquo;s.</strong> Its 3D scene is a regular field, so the module count will not
+        match a layout fitted to a real boundary. Take kWh/kWp and PR from the simulation and
+        multiply by the capacity your own layout actually achieved; the ratio survives the
+        geometry simplification and the absolute figure does not.</p>
       </div>
     </div>
   );

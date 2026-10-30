@@ -1,0 +1,20 @@
+PVsyst simulations Batch mode,,,,,,,
+Simulation parameters definition,,,,,,,
+File created on 30/10/26 10:18,,,,,,,
+,,,,,,,
+Project,,,Example Roof Project.PRJ,,,,
+Variants based on,,VC1,Prelim Calc,,,,
+,,,,,,,
+Please define the parameters to be varied for each run,,,,,,,
+Do not modify the column titles!,,,,,,,
+Only the lines beginning by "SIM_" will be executed,,,,,,,
+,,,,,,,
+Ident,Plane,Plane,Nb module,Nb strings,Inverter,Nb inverter,Simul
+,tilt,azim,in series,in parall,*.OND File,or MPPT,Comment
+,[deg],[deg],,,Filename,,
+,,,,,,,
+SIM_1,3.0,-2.0,16,78,Sungrow_SG150_CX.OND,4,Prelim Calc
+,,,,,,,
+,,,,,,,
+,,,,,,,
+Do not forget to close this file in Excel before returning to PVsyst to initiate the simulation !,,,,,,,
