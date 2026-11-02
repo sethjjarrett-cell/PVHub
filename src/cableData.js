@@ -190,6 +190,26 @@ export const AL_R20 = [
 ];
 
 /**
+ * Copper, IEC 60228 class 2 stranded, ohms per metre at 20 °C — the
+ * same basis as AL_R20 above, for the fault-loop work in
+ * src/faultNetwork.js.
+ *
+ * Not to be confused with DC_R20, which is a PV cable table: that one
+ * is class 5 flexible and reads several per cent higher at the small
+ * sizes, which is right for a string cable and wrong for a
+ * distribution circuit.
+ */
+export const CU_R20 = [
+  { size: 1.5, r: 0.0121 }, { size: 2.5, r: 0.00741 }, { size: 4, r: 0.00461 },
+  { size: 6, r: 0.00308 }, { size: 10, r: 0.00183 }, { size: 16, r: 0.00115 },
+  { size: 25, r: 0.000727 }, { size: 35, r: 0.000524 }, { size: 50, r: 0.000387 },
+  { size: 70, r: 0.000268 }, { size: 95, r: 0.000193 }, { size: 120, r: 0.000153 },
+  { size: 150, r: 0.000124 }, { size: 185, r: 0.0000991 }, { size: 240, r: 0.0000754 },
+  { size: 300, r: 0.0000601 }, { size: 400, r: 0.000047 }, { size: 500, r: 0.0000366 },
+  { size: 630, r: 0.0000283 },
+];
+
+/**
  * Reactance, Ω/m, three single-cores in trefoil at 50 Hz. Reactance is
  * set by the spacing between conductor centres far more than by the
  * conductor area, so this varies little down the table — but it stops

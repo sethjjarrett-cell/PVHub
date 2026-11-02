@@ -18,6 +18,9 @@ src/cableData.js       IEC reference tables and the adiabatic k physics — data
 src/CableTools.jsx     the four Cables tabs (DC, AC, MV, short circuit)
 src/CableRefTables.jsx the reference-table display layer — RefCard, the three
                        highlight states, the factor chain
+src/faultNetwork.js    radial LV network: fault levels, the IEC 60364-5-54 k tables,
+                       the adiabatic check and PE sizing — no React
+src/FaultTool.jsx      Fault study tab: the network editor, the working, the tables
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
@@ -114,7 +117,7 @@ Adding a workspace means adding it to a group as well, or it is unreachable.
 |---|---|
 | `prelim` | the whole thing — then asks mount type and detail level |
 | `layout` | `layout` alone; the generator already carries every input it needs |
-| `cable` | `cdc`, `cac`, `cmv`, `csc` |
+| `cable` | `cdc`, `cac`, `cmv`, `csc`, `cnet` |
 | `string` | `module`, `inverter`, `string`, `clip` |
 | `yield` | `shade`, `report`, `batch` |
 | `cost` | `cost` alone |
@@ -137,8 +140,8 @@ workspace five tab groups render. The set depends on the mount type picked on th
 screen:
 
 - **Ground** — `Technologies` (module, inverter, frame), `Calculations` (string, clip),
-  `Layout`, `Cables` (cdc, cac, cmv, csc), `Yield & Summary` (shade, report, batch, bess,
-  summary).
+  `Layout`, `Cables` (cdc, cac, cmv, csc, cnet), `Yield & Summary` (shade, report, batch,
+  bess, summary).
 - **Roof** — the same, but `Roof` (roof) replaces `Layout`, `Cables` loses `cmv`, and
   `Yield & Summary` loses `batch`.
 
@@ -177,6 +180,12 @@ keeps only the last of two `className` props and drops the other silently. When 
 missing the shell sized to its own content inside a body with `overflow: hidden`, so any tab
 taller than the window had everything below the fold unreachable, with no scrollbar to reach it
 either. Short tabs hid it for weeks. Check a long tab at a short window, not just a long window.
+
+A trap worth knowing before writing a component here: **`ref` is a reserved prop**. Passing
+a string to it on a function component throws React error #290, and a production build names
+only the string that was passed, nothing about which component or file. A citation prop
+called `ref` looks entirely reasonable in source and takes the whole application down on
+first render. `Derivation` in `src/FaultTool.jsx` calls it `cite` for that reason.
 
 A third trap, this one in the application rather than the probe: **a tap fires `focus` and
 then `click` as two separate events**, and React re-renders between them. A disclosure that
@@ -219,6 +228,10 @@ node tests/bdFlow.test.mjs          # 82 assertions: step order and blocking, an
                                     # that stop a wrong number reaching a client
 node tests/bom.test.mjs             # 53 assertions: the rounding either way, the remainders,
                                     # the scope exclusions and the ASCII fold
+node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 Annex A
+                                    # reproduced from the Annex A formula, Table 54.2, the
+                                    # cascade, and the checks that decide whether a
+                                    # conductor survives a fault
 node tests/pvsystBatch.test.mjs     # 169 assertions: the sweep file PVsyst reads, reproduced
                                     # byte for byte against a template PVsyst itself wrote,
                                     # plus the gap-to-pitch and whole-unit DC/AC conversions
@@ -631,6 +644,44 @@ Deliberate engineering decisions, each stated in the UI's own text:
   megawatts per hectare than modules physically pack. The bounds are deliberately
   *wide*: they catch a wrong number, not a bold one, and tightening them to "typical"
   would start arguing with legitimate designs.
+- **A fault study carries two fault currents, and they are never interchanged.** The
+  three-phase maximum is taken with the conductors at 20 °C and IEC 60909's c = 1.05,
+  because cold metal has the least resistance and passes the most current — that is what
+  equipment must break and what the conductor must survive. The earth-fault minimum is
+  taken at the operating temperature, with c = 0.95, over the line *plus* the protective
+  conductor, because that is the smallest current a protective device will ever have to
+  detect. They differ by a factor of several on a long run, and a design checked on only
+  one of them is unsafe in whichever direction it skipped.
+- **The real question is whether the device operates, not whether the cable survives.**
+  `deviceCheck` compares the minimum earth-fault current against the instantaneous
+  threshold. Where it does not reach, the device falls back on its thermal element and the
+  fault lasts seconds rather than milliseconds, so the adiabatic check is re-run at that
+  time — and the fix is a larger protective conductor or a shorter run, never a larger
+  line conductor. A long thin circuit is frequently in no thermal danger at all, precisely
+  because the impedance that stops it tripping is the impedance that limits the current. A
+  tool that ran only the adiabatic check would pass it.
+- **The protective conductor is the larger of Table 54.2 and the adiabatic figure, always.**
+  Neither alone is sufficient: the table knows nothing about the fault current present and
+  is badly short on a small line conductor close to a large transformer, while the
+  adiabatic figure knows nothing about the mechanical and continuity reasons the table
+  exists. `checkCable` reports both and which governed.
+- **The k footnote above 300 mm² is applied in the lookup, not left to the caller.** The
+  standard prints "143/133" with a footnote saying the lower value applies above 300 mm².
+  A 400 mm² PVC conductor taken at 143 is overstated by 12%, and that is exactly the step
+  a hand calculation skips. `kFor` applies it, says so when it bites, and the table on
+  screen strikes through the value that does not apply.
+- **Steel has a k but no resistance.** IEC 60364-5-54 tabulates steel in every k table,
+  because armour is a legitimate earth path. IEC 60228 does not tabulate it at all, because
+  steel in a cable is armour rather than a conductor and its resistance depends on the wire
+  count and lay the maker chose. Falling through to the copper table understates a steel
+  earth loop by roughly eight times, which turns a circuit that will not disconnect into
+  one that appears to. `rTableFor` returns nothing, the solver names the cause and says
+  that the adiabatic check is unaffected, because that needs only the area and k.
+- **Removing a board re-parents its children, it does not orphan them.** Dropping half the
+  network silently off the results is worse than moving it up one level. A node whose
+  parent genuinely no longer exists is listed as an orphan and given no fault figures,
+  rather than being quietly attached to the source — which would understate its impedance
+  and overstate every current below it.
 - **British English** (`optimisation`, `paralleling`, `metre`), `lang="en-GB"`. SI units.
 
 If you think one of these is wrong, raise it — they size real equipment.

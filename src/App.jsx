@@ -8,6 +8,8 @@ import {
   Working, NumS, NumO, Page,
 } from "./ui.jsx";
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
+import { FaultStudyTab } from "./FaultTool.jsx";
+import { defaultNetwork } from "./faultNetwork.js";
 import { BessTab } from "./BessTool.jsx";
 import { RoofDesignerTab, ROOF_PLANE_DEFAULT } from "./RoofDesigner.jsx";
 import { CostingTab, COSTING_DEFAULT } from "./CostingTool.jsx";
@@ -7134,6 +7136,9 @@ const CABLE_DEFAULTS = {
     scrThetaI: 70, scrThetaF: 250,
     dcStrings: 24, dcT: 1,
   },
+  /* The fault study keeps a whole network rather than a flat set of
+     fields, so its default comes from the module that owns the shape. */
+  net: defaultNetwork(),
 };
 
 export default function App() {
@@ -7296,6 +7301,7 @@ export default function App() {
           ac: { ...CABLE_DEFAULTS.ac, ...d.cables.ac },
           mv: { ...CABLE_DEFAULTS.mv, ...d.cables.mv },
           sc: { ...CABLE_DEFAULTS.sc, ...d.cables.sc },
+          net: d.cables.net || CABLE_DEFAULTS.net,
         });
         reg.current.layout?.set(d.layout);
         reg.current.shade?.set(d.shade);
@@ -7309,6 +7315,7 @@ export default function App() {
     ["string", "String Sizing"], ["clip", "Paralleling"],
     ["shade", "Pitch & Yield"], ["layout", "Layout"], ["summary", "Summary"],
     ["cdc", "DC cable"], ["cac", "AC cable"], ["cmv", "MV cable"], ["csc", "Short circuit"],
+    ["cnet", "Fault study"],
     ["report", "Yield report"], ["batch", "Batch analyser"], ["bess", "Battery"],
     ["roof", "Roof area"], ["rdesign", "Roof designer"], ["cost", "Costing"],
     ["track", "Tracker"], ["guided", "Guided flow"],
@@ -7323,14 +7330,14 @@ export default function App() {
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Layout", ["layout"]],
-    ["Cables", ["cdc", "cac", "cmv", "csc"]],
+    ["Cables", ["cdc", "cac", "cmv", "csc", "cnet"]],
     ["Yield & Summary", ["shade", "report", "batch", "bess", "cost", "track", "summary"]],
   ];
   const GROUPS_ROOF = [
     ["Technologies", ["module", "inverter", "frame"]],
     ["Calculations", ["string", "clip"]],
     ["Roof", ["roof", "rdesign"]],
-    ["Cables", ["cdc", "cac", "csc"]],
+    ["Cables", ["cdc", "cac", "csc", "cnet"]],
     ["Yield & Summary", ["shade", "report", "bess", "cost", "track", "summary"]],
   ];
   /* The workspaces. Each is the same engines with a different amount of
@@ -7357,10 +7364,11 @@ export default function App() {
       groups: [["Layout", ["layout"]]] },
     { id: "cable", name: "Cable sizing and derating", short: "Cable",
       blurb: "DC, AC and MV cable against IEC 60364-5-52 and 60502-2. Every derating factor "
-        + "shown with the table row it came from, volt drop, power loss, and the adiabatic "
-        + "short-circuit check. Type the currents — nothing else is needed.",
-      note: "Four tabs. No module, inverter or layout required.",
-      groups: [["Cables", ["cdc", "cac", "cmv", "csc"]]] },
+        + "shown with the table row it came from, volt drop, power loss, the adiabatic "
+        + "short-circuit check, and a cascading fault study from the transformer down. Type "
+        + "the currents — nothing else is needed.",
+      note: "Five tabs. No module, inverter or layout required.",
+      groups: [["Cables", ["cdc", "cac", "cmv", "csc", "cnet"]]] },
     { id: "string", name: "String sizing", short: "String",
       blurb: "Module and inverter in, string length out: the maximum on the coldest morning, "
         + "the minimum off the full-power knee, and how many strings a device will take. "
@@ -7952,6 +7960,9 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "csc" ? "flex" : "none" }}>
         <ShortCircuitTab mod={pvMod} inv={pvInv} elec={elec} st={cables.sc} set={setCable("sc")} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: tool === "cnet" ? "flex" : "none" }}>
+        <FaultStudyTab st={cables.net} set={setCable("net")} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "report" ? "flex" : "none" }}>
         <YieldReportTab loc={siteLoc} setLoc={setSiteLoc} mod={pvMod} inv={pvInv} elec={elec}
