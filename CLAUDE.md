@@ -20,7 +20,8 @@ src/CableRefTables.jsx the reference-table display layer — RefCard, the three
                        highlight states, the factor chain
 src/faultNetwork.js    radial LV network: fault levels, the IEC 60364-5-54 k tables,
                        the adiabatic check and PE sizing — no React
-src/FaultTool.jsx      Fault study tab: the network editor, the working, the tables
+src/FaultTool.jsx      Fault study tab: the single line, the network editor, the
+                       working, the tables
 src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
@@ -644,6 +645,22 @@ Deliberate engineering decisions, each stated in the UI's own text:
   megawatts per hectare than modules physically pack. The bounds are deliberately
   *wide*: they catch a wrong number, not a bold one, and tightening them to "typical"
   would start arguing with legitimate designs.
+- **The single line is a view of the network, never a second place to edit it.** A radial
+  network is a tree, so `layoutTree` places leaves left to right and centres every parent
+  over its own children — nobody positions anything by hand, and the diagram cannot drift
+  from the model because it is derived from it on every render. Clicking a cable and
+  clicking the board it feeds select the same thing, because in a radial network a board is
+  reached by exactly one cable and they are one row of the results. A node that could not be
+  worked out draws grey, never green: an unknown must not read as a pass.
+- **The viewBox and the element take the same pair of numbers.** The drawing is padded to a
+  minimum size so a one-node network does not render as a postage stamp, and that padded
+  figure has to reach the `width` and `height` attributes as well as the `viewBox`, or the
+  drawing is scaled against a box of a different shape. Getting it wrong halves the diagram
+  on the narrowest tree only, which is exactly the case a test on a network of four nodes
+  does not reach. The SVG is sized from the layout and capped with `maxWidth: 100%`, not set
+  to `width="100%"`: a two-column tree stretched across a desk monitor reads as a diagram of
+  something far bigger than it is, and the same rule scales the whole thing down on a phone
+  instead of cutting it off.
 - **A fault study carries two fault currents, and they are never interchanged.** The
   three-phase maximum is taken with the conductors at 20 °C and IEC 60909's c = 1.05,
   because cold metal has the least resistance and passes the most current — that is what

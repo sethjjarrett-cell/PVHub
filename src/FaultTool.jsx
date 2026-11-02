@@ -90,6 +90,207 @@ function Derivation({ n, title, formula, subs, result, state, verdict, why, cite
 }
 
 /* ---------------------------------------------------------------
+   The single line
+   ---------------------------------------------------------------
+
+   A radial network is a tree, so the drawing is a tidy-tree layout:
+   leaves are placed left to right in order, and every parent is
+   centred over its own children. That is enough to keep a small
+   distribution board diagram readable without anyone positioning
+   anything by hand, which is the whole point — the diagram is a view
+   of the network, not a second place to edit it.
+
+   Everything on it is clickable. A cable and the board it feeds are
+   the same selection, because they are the same row of the results:
+   in a radial network a board is reached by exactly one cable, so
+   "this board" and "the cable feeding it" are one object.
+   --------------------------------------------------------------- */
+
+const SL = { col: 168, row: 104, boxW: 118, boxH: 34 };
+
+function layoutTree(net, solved) {
+  const kids = new Map();
+  for (const n of net.nodes) {
+    if (!solved.nodes.has(n.id)) continue;
+    const key = n.parent || "__src";
+    if (!kids.has(key)) kids.set(key, []);
+    kids.get(key).push(n);
+  }
+  const pos = new Map();
+  let cursor = 0;
+  const place = (node, depth) => {
+    const ch = kids.get(node.id) || [];
+    let x;
+    if (!ch.length) x = cursor++;
+    else {
+      const xs = ch.map((c) => place(c, depth + 1));
+      x = (xs[0] + xs[xs.length - 1]) / 2;
+    }
+    pos.set(node.id, { x, depth });
+    return x;
+  };
+  const roots = kids.get("__src") || [];
+  const rootXs = roots.map((r) => place(r, 1));
+  const srcX = rootXs.length ? (rootXs[0] + rootXs[rootXs.length - 1]) / 2 : 0;
+
+  const px = (x) => x * SL.col + SL.col / 2;
+  const py = (d) => d * SL.row + 46;
+  const out = new Map();
+  for (const [id, v] of pos) out.set(id, { cx: px(v.x), cy: py(v.depth), depth: v.depth });
+  return {
+    pos: out, src: { cx: px(srcX), cy: py(0) },
+    width: Math.max(cursor, 1) * SL.col,
+    height: (Math.max(...[...pos.values()].map((v) => v.depth), 0) + 1) * SL.row + 40,
+  };
+}
+
+/* Red, green or grey, from the checks — never green for a node that
+   could not be worked out, because an unknown must not read as a pass. */
+function statusOf(c) {
+  if (!c) return "unknown";
+  if (c.miss && c.miss.length) return "unknown";
+  const verdicts = [c.line.pass, c.peOk, c.dev.reaches,
+                    c.dev.breaking ? c.dev.breaking.pass : null];
+  if (verdicts.some((v) => v === false)) return "bad";
+  if (verdicts.some((v) => v === null || v === undefined)) return "unknown";
+  return "good";
+}
+const STATUS = {
+  good: { line: HL.used.line, fill: "rgba(79,176,106,0.14)", text: HL.used.text },
+  bad: { line: "#d65a5a", fill: "rgba(214,90,90,0.14)", text: "#f0a0a0" },
+  unknown: { line: "#5a6472", fill: "rgba(90,100,114,0.14)", text: "#9aa4b2" },
+};
+
+function SingleLine({ net, solved, checks, sel, onSelect }) {
+  const L = useMemo(() => layoutTree(net, solved), [net, solved]);
+  const src = solved.source;
+  /* One pair of numbers for the viewBox and the element, or the
+     drawing is scaled against a box of a different shape. A single
+     node makes the narrowest tree there is, so a padded viewBox with
+     an unpadded width attribute halves it — and only in that one
+     case, which is how it survives a test on a network of four. */
+  const vw = Math.max(L.width, SL.col * 2);
+  const vh = Math.max(L.height, 200);
+
+  /* An elbow from the parent's underside to this node's top: down,
+     across, down. Drawn as one path so the clickable stroke is one
+     thing rather than three. */
+  const elbow = (from, to) => {
+    const midY = (from.cy + SL.boxH / 2 + (to.cy - SL.boxH / 2)) / 2;
+    return `M ${from.cx} ${from.cy + SL.boxH / 2} L ${from.cx} ${midY} `
+      + `L ${to.cx} ${midY} L ${to.cx} ${to.cy - SL.boxH / 2}`;
+  };
+
+  return (
+    <div style={{ width: "100%", background: C.panel2, border: `1px solid ${C.line}`,
+      borderRadius: 6, padding: 8, marginBottom: 10 }}>
+      {/* Natural size up to the panel width, then scaled down to fit —
+          not stretched to fill. A two-column tree blown across a desk
+          monitor reads as a diagram of something much bigger than it
+          is, and on a phone the same rule scales the whole thing down
+          rather than cutting it off, which is why the SVG is sized
+          from the layout rather than set to 100%. */}
+      <svg viewBox={`0 0 ${vw} ${vh}`} width={vw} height={vh}
+        style={{ display: "block", margin: "0 auto", maxWidth: "100%", height: "auto" }}
+        preserveAspectRatio="xMidYMin meet">
+        {/* the source */}
+        <g onClick={() => onSelect(null)} style={{ cursor: "pointer" }}>
+          <rect x={L.src.cx - SL.boxW / 2} y={L.src.cy - SL.boxH / 2} width={SL.boxW} height={SL.boxH}
+            rx="4" fill={src.miss ? STATUS.unknown.fill : "rgba(232,130,12,0.14)"}
+            stroke={src.miss ? STATUS.unknown.line : C.accent} strokeWidth="1.5" />
+          {/* the two interlinked circles that mean a transformer */}
+          <circle cx={L.src.cx - SL.boxW / 2 + 15} cy={L.src.cy} r="7.5"
+            fill="none" stroke={src.miss ? STATUS.unknown.line : C.accent} strokeWidth="1.3" />
+          <circle cx={L.src.cx - SL.boxW / 2 + 23} cy={L.src.cy} r="7.5"
+            fill="none" stroke={src.miss ? STATUS.unknown.line : C.accent} strokeWidth="1.3" />
+          <text x={L.src.cx + 12} y={L.src.cy - 1} textAnchor="middle"
+            style={{ font: "600 10px system-ui", fill: C.text }}>
+            {net.source.kind === "grid" ? `${net.source.skMva ?? "?"} MVA network` : `${net.source.kva ?? "?"} kVA`}
+          </text>
+          <text x={L.src.cx + 12} y={L.src.cy + 10} textAnchor="middle"
+            style={{ font: "9px var(--mono)", fill: C.muted }}>
+            {net.source.kind === "grid" ? `${net.source.uSecV ?? "?"} V`
+              : `${net.source.ukPct ?? "?"}% · ${net.source.uSecV ?? "?"} V`}
+          </text>
+          <text x={L.src.cx} y={L.src.cy - SL.boxH / 2 - 7} textAnchor="middle"
+            style={{ font: "600 10px var(--mono)", fill: C.accent }}>
+            {src.miss ? "incomplete" : amps(src.ik3max)}
+          </text>
+        </g>
+
+        {/* the cables */}
+        {net.nodes.filter((n) => L.pos.has(n.id)).map((n) => {
+          const to = L.pos.get(n.id);
+          const from = n.parent && L.pos.has(n.parent) ? L.pos.get(n.parent) : L.src;
+          const st = STATUS[statusOf(checks.get(n.id))];
+          const on = sel === n.id;
+          const midY = (from.cy + SL.boxH / 2 + (to.cy - SL.boxH / 2)) / 2;
+          return (
+            <g key={`c${n.id}`} onClick={() => onSelect(n.id)} style={{ cursor: "pointer" }}>
+              {/* a fat invisible stroke so the line is tappable on a phone */}
+              <path d={elbow(from, to)} fill="none" stroke="transparent" strokeWidth="22" />
+              <path d={elbow(from, to)} fill="none" stroke={st.line}
+                strokeWidth={on ? 2.6 : 1.5} />
+              <text x={to.cx + 6} y={midY - 4}
+                style={{ font: "9px var(--mono)", fill: on ? C.text : C.muted }}>
+                {n.cable.size ?? "?"}mm² / {n.cable.peSize ?? "?"}
+              </text>
+              <text x={to.cx + 6} y={midY + 7}
+                style={{ font: "9px var(--mono)", fill: C.muted }}>
+                {n.cable.lengthM ?? "?"} m
+              </text>
+            </g>
+          );
+        })}
+
+        {/* the boards and the loads */}
+        {net.nodes.filter((n) => L.pos.has(n.id)).map((n) => {
+          const p = L.pos.get(n.id);
+          const c = checks.get(n.id);
+          const st = STATUS[statusOf(c)];
+          const on = sel === n.id;
+          const load = n.kind === "load";
+          return (
+            <g key={`n${n.id}`} onClick={() => onSelect(n.id)} style={{ cursor: "pointer" }}>
+              <rect x={p.cx - SL.boxW / 2} y={p.cy - SL.boxH / 2} width={SL.boxW} height={SL.boxH}
+                rx={load ? 16 : 4} fill={st.fill} stroke={st.line} strokeWidth={on ? 2.4 : 1.4} />
+              {/* a busbar stub, so a board reads as a board rather than a label */}
+              {!load && (
+                <line x1={p.cx - SL.boxW / 2 + 7} y1={p.cy + SL.boxH / 2 - 6}
+                  x2={p.cx + SL.boxW / 2 - 7} y2={p.cy + SL.boxH / 2 - 6}
+                  stroke={st.line} strokeWidth="2" />
+              )}
+              <text x={p.cx} y={p.cy - 2} textAnchor="middle"
+                style={{ font: "600 10px system-ui", fill: C.text }}>
+                {(n.name || n.id).slice(0, 18)}
+              </text>
+              <text x={p.cx} y={p.cy + 9} textAnchor="middle"
+                style={{ font: "9px var(--mono)", fill: st.text }}>
+                {c ? `${amps(c.rec.ik3max)} · ${c.dev.t} s` : "—"}
+              </text>
+            </g>
+          );
+        })}
+
+        {!net.nodes.length && (
+          <text x={L.src.cx} y={L.src.cy + 60} textAnchor="middle"
+            style={{ font: "11px system-ui", fill: C.muted }}>
+            Add a board to start building the network.
+          </text>
+        )}
+      </svg>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6,
+        font: "10.5px system-ui", color: C.muted }}>
+        <span><span style={{ color: STATUS.good.text }}>■</span> every check passes</span>
+        <span><span style={{ color: STATUS.bad.text }}>■</span> something fails</span>
+        <span><span style={{ color: STATUS.unknown.text }}>■</span> not enough entered to say</span>
+        <span style={{ flex: 1, textAlign: "right" }}>Tap a cable or a board to edit it.</span>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
    One node's inputs
    --------------------------------------------------------------- */
 
@@ -471,6 +672,8 @@ export function FaultStudyTab({ st, set }) {
       </Section>
 
       <Section code="F2" title="The network">
+        <SingleLine net={net} solved={solved} checks={checks} sel={sel}
+          onSelect={(id) => { if (id) { setSel(id); setOpenNode(id); } }} />
         <div style={{ width: "100%", display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
           <button className="btn primary" onClick={addNode}>Add a board or circuit</button>
           <button className="btn" onClick={() => set(defaultNetwork())}>Reset to the worked example</button>
