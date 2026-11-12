@@ -520,6 +520,22 @@ hand, so a cable change there does not regroup the feeders here until the limit 
 the limit, through the same offer panel the other hand-offs use, rather than linking them
 silently.
 
+### G42. Pulled terrain is a screening surface, and a drawn boundary is placed by assumption
+
+*Was: terrain came from a DXF or the demo surface only. It can now be pulled from the open
+Terrarium tiles (`src/sitePull.js`).*
+
+The source is SRTM at about 30 m across most of the world. That is good enough to see which
+part of a site falls away and not good enough to check a tracker's slope limit row by row,
+and the message says so. A boundary drawn by hand, or read from a DXF with no position on
+the earth, has no georeference at all; the pull places its centroid at the site's
+coordinates and warns, because ground pulled for a guessed position is someone else's
+ground. Only a KML or KMZ boundary is placed exactly.
+
+**Recommendation.** Read a georeference out of a DXF when the drawing is in a known
+projected system (UTM coordinates are recognisable by their size), and offer a survey
+import as the thing to use once the site is real.
+
 ## Severity 4 — Polish
 
 ### G12. No favicon

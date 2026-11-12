@@ -30,6 +30,8 @@ src/handoff.js         what the layout offers each downstream tool, and what it 
 src/siteConstraints.js exclusion zones, the access-road tree, and the route-graph helpers
                        App.jsx used to hold — no React
 src/feeders.js         which stations share an MV feeder back to the grid point — no React
+src/sitePull.js        the georeference (local metres to degrees and back) and terrain
+                       pulled from open elevation tiles — no React but for the tile decode
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
 src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
@@ -242,6 +244,9 @@ node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 
                                     # reproduced from the Annex A formula, Table 54.2, the
                                     # cascade, and the checks that decide whether a
                                     # conductor survives a fault
+node tests/sitePull.test.mjs        # 37 assertions: metres to degrees and back, tile
+                                    # addressing, Terrarium decoding, and bilinear heights
+                                    # that come back null rather than zero
 node tests/feeders.test.mjs         # 26 assertions: feeders chained on a known graph, the
                                     # limit respected, and the run table the MV tab reads
 node tests/siteConstraints.test.mjs # 62 assertions: a frame against a zone and its buffer,
@@ -286,6 +291,7 @@ rather than failing silently.
 |---|---|---|
 | `archive-api.open-meteo.com` / `api.open-meteo.com` | ERA5 daily temperature extremes for string sizing; hourly temperature, and irradiance where the satellite record has none | a button |
 | `satellite-api.open-meteo.com` | EUMETSAT SARAH-3 hourly irradiance, ten years, reduced to a typical year | a button |
+| `s3.amazonaws.com/elevation-tiles-prod` | Terrarium elevation tiles (SRTM about 30 m), a screening terrain surface | a button |
 | `re.jrc.ec.europa.eu/api/v5_3/PVcalc` | PVGIS validated absolute yield baseline | a link, and the answer handed back |
 | `re.jrc.ec.europa.eu/api/v5_3/tmy` | PVGIS's own typical year, as an alternative to the one above | a link, and the answer handed back |
 
@@ -433,6 +439,12 @@ Deliberate engineering decisions, each stated in the UI's own text:
   cannot reach, and a destination the entrance cannot. A grid point or an entrance placed
   inside a zone is flagged too — the grid point starts at the boundary's centroid, which is
   often exactly where the pond is.
+- **Pulled terrain says where it was pulled for.** A KML or KMZ boundary carries its own
+  georeference and is placed exactly. A drawn one, or a DXF in local coordinates, has none,
+  so `pullTerrain` is handed the site's latitude and longitude as the boundary's centroid and
+  the message says so in full, because a confident surface for the wrong hillside is worse
+  than no surface. A point whose tile did not come back is dropped, never given a height of
+  zero, and a site needing more than 64 tiles is refused rather than pulled slowly.
 - **The access road is the tree of shortest routes from the entrance, counted once.**
   `routeTree` routes from the entrance to every station and to the grid point along the
   corridor graph the cable already uses, and its length is the union of the edges, the same

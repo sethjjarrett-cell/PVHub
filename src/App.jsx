@@ -11,6 +11,7 @@ import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTool
 import { FaultStudyTab } from "./FaultTool.jsx";
 import { stationPlan, stationIndexer, describePlan, describeKva, STATION_MODES, parseKvaList, unitsByKva } from "./stations.js";
 import { planFeeders } from "./feeders.js";
+import { metresPerDegree, makeGeoRef, pullTerrain } from "./sitePull.js";
 import { WeatherSource, BaselineSource } from "./SiteData.jsx";
 import {
   ZONE_KINDS, makeZone, prepareZones, rectClear, segmentBlocked, inBlockingZone,
@@ -962,13 +963,7 @@ function parseDxf(text) {
 
 /** Metres per degree at latitude φ, WGS84 series. Good to a few parts in
     10⁵ over a site, which is far below the accuracy of a traced boundary. */
-function metresPerDegree(latDeg) {
-  const f = (latDeg * Math.PI) / 180;
-  return {
-    lat: 111132.92 - 559.82 * Math.cos(2 * f) + 1.175 * Math.cos(4 * f),
-    lon: 111412.84 * Math.cos(f) - 93.5 * Math.cos(3 * f),
-  };
-}
+/* metresPerDegree lives in src/sitePull.js, beside the inverse it has to agree with. */
 
 /** Project lon/lat to local metres about a reference point. Northing is
     negated because the canvas is Y-down and north is up, the same
@@ -2714,6 +2709,11 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
      from section 06 plus the inverter rating, which sizing a station by
      kVA cannot do without and which lives on the Inverter tab. */
   const elecSt = useMemo(() => ({ ...elec, invKva: invAcKw }), [elec, invAcKw]);
+  /* Where the local metres are on the earth: exact for a KML or KMZ
+     boundary, which was projected about a known point, and otherwise
+     assumed from the site's coordinates and labelled as such. */
+  const [geoRef, setGeoRef] = useState(null);
+  const [pullMsg, setPullMsg] = useState(null);
   const [zones, setZones] = useState([]);
   const [entrance, setEntrance] = useState(null);
   const [drawTarget, setDrawTarget] = useState("boundary");
@@ -2851,6 +2851,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
 
     if (setLoc) setLoc({ lat: Number(ref.lat.toFixed(6)), lon: Number(ref.lon.toFixed(6)) });
     setGeoOrigin(null);
+    setGeoRef({ lat: ref.lat, lon: ref.lon, source: "kml" });
 
     if (cand.length) {
       setDxfBoundaries(cand.slice(0, 8));
@@ -2939,7 +2940,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
             if (all.length) {
               const bb = bboxOf(all);
               org = { x: Math.floor(bb.minX), y: Math.floor(bb.minY) };
-              setGeoOrigin(org);
+              setGeoOrigin(org); setGeoRef(null);
             } else org = { x: 0, y: 0 };
           }
           const shift = (p) => ({ ...p, x: p.x - org.x, y: p.y - org.y });
@@ -2992,7 +2993,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           if (!org && raw.length) {
             const bb = bboxOf(raw);
             org = { x: Math.floor(bb.minX), y: Math.floor(bb.minY) };
-            setGeoOrigin(org);
+            setGeoOrigin(org); setGeoRef(null);
           }
           const pts = raw.map((p) => ({ ...p, x: p.x - (org?.x || 0), y: p.y - (org?.y || 0) }));
           if (pts.length >= 4) { setTerrainPts(pts); setImportMsg(`Terrain: ${fmt(pts.length, 0)} points loaded.`); }
@@ -3507,7 +3508,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
 
   if (reg) reg.current.layout = {
     get: () => ({ polygon, ss, align, alignLine, capacity, blockCfg, pitchCfg, site, slopeLim, terrainPts, showSlope,
-      zones, entrance }),
+      zones, entrance, geoRef }),
     set: (s) => {
       if (!s) return;
       if (s.polygon) setPolygonRaw(s.polygon);
@@ -3524,6 +3525,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       // A project saved before zones existed has none, which is what it had.
       setZones(Array.isArray(s.zones) ? s.zones.map(makeZone) : []);
       setEntrance(s.entrance ?? null);
+      setGeoRef(s.geoRef ?? null);
       setFitToken((t) => t + 1);
     },
   };
@@ -3707,16 +3709,44 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                 </div>
               )}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button className="btn" disabled={pullMsg?.busy || polygon.length < 3} onClick={async () => {
+                  const c = polygonCentroid(polygon);
+                  const geo = geoRef ? makeGeoRef(geoRef)
+                    : loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)
+                      ? makeGeoRef({ lat: loc.lat, lon: loc.lon, x0: c.x, y0: c.y })
+                      : null;
+                  setPullMsg({ busy: true, text: "Pulling elevation tiles…" });
+                  const r = await pullTerrain({ polygon, geo, spacing: 20 });
+                  if (!r.ok) { setPullMsg({ busy: false, warn: true, text: r.msg }); return; }
+                  setTerrainPts(r.pts);
+                  setPullMsg({ busy: false, warn: geo.source !== "kml", text:
+                    `${fmt(r.pts.length, 0)} heights pulled from the open Terrarium elevation tiles (SRTM at about 30 m in `
+                    + "most of the world, finer national surveys where they exist), sampled every 20 m from "
+                    + `${r.tiles} tile${r.tiles === 1 ? "" : "s"}.`
+                    + (r.missing ? ` ${r.missing} points had no data and were left out rather than set to zero.` : "")
+                    + " This is a screening surface: right for seeing which ground to avoid, wrong for checking a "
+                    + "tracker's slope row by row. Use a survey for that."
+                    + (geo.source !== "kml"
+                      ? " This boundary was drawn, or came from a DXF without a position on the earth, so it has been "
+                        + `placed with its middle at the site's coordinates (${fmt(geo.lat, 4)}, ${fmt(geo.lon, 4)}). `
+                        + "If that is not where it is, this is somebody else's ground: import the boundary as KML or KMZ."
+                      : "") });
+                }}>{pullMsg?.busy ? "Pulling…" : "Pull terrain from open data"}</button>
                 <button className="btn" onClick={() => {
                   setTerrainPts(demoTerrain(bboxOf(polygon.length >= 3 ? polygon : EXAMPLE_BOUNDARY)));
                   setImportMsg("Demo rolling-hills surface loaded (synthetic).");
                 }}>Load demo terrain</button>
                 {terrain && (
-                  <button className="btn" onClick={() => { setTerrainPts(null); setImportMsg(""); }}>
+                  <button className="btn" onClick={() => { setTerrainPts(null); setImportMsg(""); setPullMsg(null); }}>
                     Clear terrain
                   </button>
                 )}
               </div>
+              {pullMsg && !pullMsg.busy && (
+                <div className={pullMsg.warn ? "warn" : "readout"} style={{ width: "100%" }}>
+                  {pullMsg.warn ? "⚠ " : ""}{pullMsg.text}
+                </div>
+              )}
               {terrain && (
                 <div className="readout">
                   Terrain grid <b>{terrain.nx}×{terrain.ny}</b> at <b>{fmt(terrain.cell, 1)} m</b> ·
