@@ -559,18 +559,21 @@ rather than inventing them, so the failure is visible rather than silent — but
 not "handled". The pattern for closing it is established: add the report as an anonymised
 fixture and assert against it.
 
-### G34. The tracker has no basemap
+### G34. The tracker's map is country outlines, nothing finer
 
-`SiteMap` plots latitude and longitude on a labelled graticule with the tropics marked, and
-deliberately draws no coastlines: a tile service would be the only part of the application
-that needs the network, and an outline sketched from memory looks authoritative and is
-wrong — the first attempt at one was unrecognisable. The degrees are exact, so a project is
-locatable, but you cannot see at a glance that a pin is in Zambia rather than the Indian
-Ocean.
+*Was: the tracker has no basemap. It now draws Natural Earth country outlines, bundled, in
+the same projection as the author's travel page — 1:110 million for the world and 1:50
+million, loaded as a separate file of the application's own, once the view closes in.*
 
-What would close it: embed a real low-resolution coastline (Natural Earth 1:110m is public
-domain and compresses to tens of kilobytes as a simplified path set), still with no network
-call.
+What that does not give is anything below the scale of a country: no roads, no towns, no
+terrain, no imagery. A site is placed exactly, from the report's own degrees, on a coastline
+that can be several kilometres out — so a floating array or an estuary site may sit just off
+the outline, and the tracker says so rather than snapping it to the nearest country.
+
+**Recommendation.** Leave it. Anything finer means a tile service, and a tile service is told
+which part of the world is being looked at every time the view moves, on the one tab whose
+contents are private. If a closer look at a single site is wanted, the place for it is the
+Layout tab's own canvas with a basemap the user chose to load, not this overview.
 
 ### G35. A tracked project cannot carry its layout
 

@@ -21,6 +21,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { fmt, C, Sel, Section, Page, Working, Rows, WarnList, useNarrow } from "./ui.jsx";
 import { extractPdfText } from "./pdfText.js";
+import { SiteMap } from "./TrackerMap.jsx";
 import {
   supportsFileStore, savedHandle, forgetHandle, handleState, grantHandle, startupPlan,
   chooseNewFile, chooseExistingFile, readHandle, writeHandle,
@@ -56,99 +57,6 @@ const Stat = ({ label, value, unit, tone }) => (
   </div>
 );
 
-/* ---------- where the projects are ---------------------------------
-   An equirectangular plot of each report's own latitude and longitude,
-   on a labelled graticule.
-
-   It is deliberately not a map. Drawing coastlines would mean either a
-   tile service — and this application makes no network call, so that
-   would be the only part of it that stops working on a plane — or
-   embedding outline data, and a coastline sketched from memory is worse
-   than none: it looks authoritative and is wrong. A graticule with the
-   degrees written on it locates a project exactly, because the numbers
-   are the report's own. GAPS has the note about adding a real basemap.
-   ------------------------------------------------------------------ */
-function SiteMap({ records, selectedId, onPick }) {
-  const W = 720, H = 364, PAD = 30;
-  const X = (lon) => PAD + (lon + 180) * ((W - PAD * 2) / 360);
-  const Y = (lat) => PAD + (90 - lat) * ((H - PAD * 2) / 180);
-  const pts = records
-    .map((r) => ({ r, lat: r.fields.lat, lon: r.fields.lon }))
-    .filter((p) => typeof p.lat === "number" && typeof p.lon === "number");
-  const noGeo = records.length - pts.length;
-  const LATS = [-60, -30, 0, 30, 60], LONS = [-120, -60, 0, 60, 120];
-  const deg = (v, pos, neg) => `${Math.abs(v)}°${v === 0 ? "" : v > 0 ? pos : neg}`;
-  return (
-    <>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto",
-        background: "#101317", border: `1px solid ${C.line}`, borderRadius: 7 }}>
-        <rect x={PAD} y={PAD} width={W - PAD * 2} height={H - PAD * 2}
-          fill="#0d1014" stroke="#242c38" />
-        {LATS.map((la) => (
-          <g key={`la${la}`}>
-            <line x1={PAD} y1={Y(la)} x2={W - PAD} y2={Y(la)}
-              stroke={la === 0 ? "#33506b" : "#1d242e"} strokeWidth={la === 0 ? 1 : 0.6} />
-            <text x={PAD - 5} y={Y(la) + 3.5} textAnchor="end" fill={C.muted}
-              style={{ font: "10.5px var(--mono)" }}>{deg(la, "N", "S")}</text>
-          </g>
-        ))}
-        {LONS.map((lo) => (
-          <g key={`lo${lo}`}>
-            <line x1={X(lo)} y1={PAD} x2={X(lo)} y2={H - PAD}
-              stroke={lo === 0 ? "#33506b" : "#1d242e"} strokeWidth={lo === 0 ? 1 : 0.6} />
-            <text x={X(lo)} y={H - PAD + 14} textAnchor="middle" fill={C.muted}
-              style={{ font: "10.5px var(--mono)" }}>{deg(lo, "E", "W")}</text>
-          </g>
-        ))}
-        {/* The tropics and the equator are the one piece of geography
-            that actually bears on a PV yield, so they are the one piece
-            drawn. */}
-        {[23.44, -23.44].map((t) => (
-          <line key={t} x1={PAD} y1={Y(t)} x2={W - PAD} y2={Y(t)}
-            stroke="#2d3b2f" strokeWidth={0.8} strokeDasharray="4 4" />
-        ))}
-        <text x={W - PAD - 4} y={Y(23.44) - 4} textAnchor="end" fill="#4d6b52"
-          style={{ font: "10.5px system-ui" }}>Tropics</text>
-        {pts.map(({ r, lat, lon }) => {
-          const on = r.id === selectedId;
-          return (
-            <g key={r.id} onClick={() => onPick(r.id)} style={{ cursor: "pointer" }}>
-              <circle cx={X(lon)} cy={Y(lat)} r={on ? 7 : 4.5}
-                fill={on ? C.accent : "#6fa8dc"} stroke="#0d1014" strokeWidth={1.2} />
-              {on && (
-                <text x={X(lon)} y={Y(lat) - 11} textAnchor="middle" fill={C.accent}
-                  style={{ font: "11px system-ui" }}>
-                  {r.fields.siteName || r.fields.project}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
-        {pts.map(({ r, lat, lon }) => (
-          <button key={r.id} className="btn" onClick={() => onPick(r.id)}
-            style={{ font: "10.5px system-ui", padding: "4px 9px",
-              borderColor: r.id === selectedId ? C.accent : undefined,
-              color: r.id === selectedId ? C.accent : undefined }}>
-            {r.fields.siteName || r.fields.project}
-            <span style={{ color: C.muted, fontFamily: "var(--mono)" }}>
-              {"  "}{fmt(Math.abs(lat), 2)}°{lat >= 0 ? "N" : "S"}{" "}
-              {fmt(Math.abs(lon), 2)}°{lon >= 0 ? "E" : "W"}
-            </span>
-          </button>
-        ))}
-      </div>
-      <div style={{ font: "10.5px/1.6 system-ui", color: C.muted, marginTop: 7 }}>
-        {pts.length} of {records.length} plotted from the latitude and longitude in the report
-        itself.{noGeo > 0 && ` ${noGeo} carried no coordinates.`} This is a coordinate plot, not
-        a map: there are no coastlines because drawing them would need either a tile service —
-        and nothing else here touches the network — or outline data sketched from memory, which
-        looks authoritative and is wrong. The degrees are exact.
-      </div>
-    </>
-  );
-}
 
 /* ---------- the tab ------------------------------------------------- */
 

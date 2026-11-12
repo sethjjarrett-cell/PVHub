@@ -47,6 +47,8 @@ src/BatchAnalyser.jsx  Batch analyser tab: six hand-rolled charts, recommendatio
 src/pvsystReport.js    PVsyst simulation-report PDF reader — text in, project record out
 src/ProjectTracker.jsx Tracker tab: drop reports in, compare yields and loss diagrams
 src/trackerStore.js    where tracked projects live: a file on disk, or browser storage
+src/worldMap.js        the tracker's map: projection, point-in-country, zoom — no React
+src/TrackerMap.jsx     the tracker's world map, on bundled Natural Earth outlines
 src/pdfText.js         pdf.js plumbing: worker setup and text extraction, shared
 src/main.jsx           mount + boot-overlay teardown
 src/pdfWorkerText.js   pdf.js worker, inlined as a string (1.3 MB, generated — never hand-edit)
@@ -236,6 +238,8 @@ node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 
                                     # reproduced from the Annex A formula, Table 54.2, the
                                     # cascade, and the checks that decide whether a
                                     # conductor survives a fault
+node tests/worldMap.test.mjs        # 47 assertions: which country a point is in, what each
+                                    # view frames, and sites that overlap at a given zoom
 node tests/stations.test.mjs        # 26 assertions: one station plan, and the indexer that
                                     # stamps it on every block agreeing with it
 node tests/pvgis.test.mjs           # 94 assertions: the typical year against a record with a
@@ -659,6 +663,31 @@ Deliberate engineering decisions, each stated in the UI's own text:
   `describeStore` says which store is in use — never the stronger guarantee than is true.
   Only the file *handle* is kept in IndexedDB, so the file can be reconnected; it carries no
   records, and failing to store it costs reconnection, not the session.
+- **The tracker's map is bundled, never fetched.** The outlines are Natural Earth via the
+  `world-atlas` package, the same data and projection as the map on the author's travel
+  page, which loads them from a CDN at run time. Here they are imported, so the bundler
+  inlines them: this application calls no content network, and the tracker is the one tab
+  whose contents are private. A tile service learns which part of the world is on screen at
+  every pan; an outline in the bundle tells nobody anything. The finer 1:50 million set is
+  a dynamic import, which makes it a second file on the application's own origin rather
+  than part of the first download — not a call to anywhere else. Do not swap either for a
+  tile layer or a CDN URL.
+- **A point in no country is left in no country.** `countryOf` returns null for a site
+  outside every outline and the tracker says so. At this scale that is sometimes a
+  coastline drawn a few kilometres out, and sometimes a longitude with its sign lost, which
+  puts a Zambian roof in the Atlantic. Snapping to the nearest country would hide the
+  second case behind the first, and catching it is the main thing a map does that the old
+  coordinate plot could not.
+- **Reports that share a site are one dot with a count, at every zoom.** `groupBySpot`
+  gathers reports at the same coordinates and `clusterOnScreen` then merges spots that
+  would overlap at the current scale, so the merge undoes itself as the view closes in.
+  Clicking steps through what is under the dot, because three dots drawn on top of each
+  other read as one report with two unreachable.
+- **A region to zoom to is a set of points, not a polygon.** A spherical polygon wound the
+  wrong way means "everything except this", and fitting a projection to that zooms out to
+  the whole globe without complaint. `regionAround` returns the outline of its box as a
+  `MultiPoint`, which has no inside to get wrong, and never tighter than a stated minimum,
+  so one site does not zoom to a single blunt edge.
 - **The string sizing maths lives in `src/stringSizing.js`, not in App.jsx.** It was a
   `useMemo` in the String Sizing tab until the guided flow needed it; a second copy would
   have drifted from the first within a week, so it was lifted out whole and both sides now

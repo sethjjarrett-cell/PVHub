@@ -1,0 +1,200 @@
+/* ---------- where the projects are ---------------------------------
+   A world map with each report placed from its own latitude and
+   longitude.
+
+   This used to be a bare graticule, on the reasoning that coastlines
+   needed either a tile service or outlines drawn from memory. There
+   was a third option, which is what this is: Natural Earth's country
+   outlines, bundled. They are the same data, in the same projection,
+   as the map on the author's travel page, and src/worldMap.js says why
+   they ship with the application rather than being fetched.
+
+   What a map adds over the plot is not decoration. Two reports for
+   sites forty kilometres apart were two dots with nothing to say they
+   were neighbours, and a longitude with its sign flipped put a project
+   in the South Pacific with no visible reason to doubt it.
+   ------------------------------------------------------------------ */
+
+import React, { useEffect, useMemo, useState } from "react";
+import { feature } from "topojson-client";
+import world from "world-atlas/countries-110m.json";
+import { fmt, C } from "./ui.jsx";
+import {
+  MAP_W, MAP_H, FOCUS_SPAN, regionAround, drawWorld, countryOf, groupBySpot, clusterOnScreen,
+} from "./worldMap.js";
+
+const FEATURES = feature(world, world.objects.countries).features;
+
+/* The palette is this application's, not the travel page's: that map
+   sits on cream paper and this one on a dark panel. What carries over
+   is the idea — the countries that matter are tinted and the rest are
+   left quiet. */
+const INK = {
+  ocean: "#0d1014", land: "#1b222b", edge: "#313c4a", held: "#2c4a37", heldEdge: "#47705a",
+  grid: "#171d25", equator: "#33506b", tropic: "#3d5943",
+};
+
+export function SiteMap({ records, selectedId, onPick }) {
+  const [view, setView] = useState("world");
+  /* A finer outline for the zoomed views. At 1:110 million Britain is
+     about forty straight edges, which is fine across a whole world and
+     blunt across a single country. The 1:50 million set is seven times
+     the size, so it is not in the main bundle: it is a separate file of
+     this application's own, asked for the first time a view closes in.
+     If it cannot be had, the coarse outline simply stays. */
+  const [fine, setFine] = useState(null);
+  useEffect(() => {
+    if (view === "world" || fine) return undefined;
+    let live = true;
+    import("world-atlas/countries-50m.json")
+      .then((m) => { const w = m.default || m; if (live) setFine(feature(w, w.objects.countries).features); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [view, fine]);
+  const shapes = view !== "world" && fine ? fine : FEATURES;
+  const pts = useMemo(() => records
+    .map((r) => ({ r, lat: r.fields.lat, lon: r.fields.lon }))
+    .filter((p) => typeof p.lat === "number" && typeof p.lon === "number"), [records]);
+  const noGeo = records.length - pts.length;
+  const sel = pts.find((p) => p.r.id === selectedId) || null;
+
+  /* Which country each spot is in, worked out once per set of records
+     rather than on every redraw: it is a point-in-polygon test against
+     a hundred and seventy-seven countries. */
+  const spots = useMemo(() => groupBySpot(pts).map((g) => ({
+    ...g, country: countryOf(FEATURES, g.lon, g.lat),
+  })), [pts]);
+  const held = useMemo(() => new Set(spots.map((s) => s.country?.id).filter(Boolean)), [spots]);
+
+  const region = view === "all" ? regionAround(pts)
+    : view === "sel" && sel ? regionAround([sel], FOCUS_SPAN, 0) : null;
+  const regionKey = region ? Object.values(region.box).map((v) => v.toFixed(2)).join(",") : "world";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const map = useMemo(() => drawWorld(shapes, region), [regionKey, shapes]);
+
+  const inFrame = (p) => p && p.x >= -4 && p.x <= MAP_W + 4 && p.y >= -4 && p.y <= MAP_H + 4;
+  const placed = clusterOnScreen(
+    spots.map((s) => ({ ...s, p: map.at(s.lon, s.lat) })).filter((s) => inFrame(s.p)));
+  /* The selected spot is drawn last so its label is never under a
+     neighbour's dot. */
+  placed.sort((a, b) => (a.items.some((i) => i.r.id === selectedId) ? 1 : 0)
+    - (b.items.some((i) => i.r.id === selectedId) ? 1 : 0));
+
+  const nameOf = (r) => r.fields.siteName || r.fields.project;
+  const tropicLabel = map.at(region ? (region.box.w + region.box.e) / 2 : 150, 23.44);
+  const offMap = spots.filter((s) => !s.country);
+
+  const ViewBtn = ({ id, children, disabled }) => (
+    <button className={`btn${view === id ? " on" : ""}`} disabled={disabled}
+      onClick={() => setView(id)} style={{ font: "10.5px system-ui", padding: "4px 10px" }}>
+      {children}
+    </button>
+  );
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
+        <ViewBtn id="world">World</ViewBtn>
+        <ViewBtn id="all" disabled={!pts.length}>All projects</ViewBtn>
+        <ViewBtn id="sel" disabled={!sel}>Selected project</ViewBtn>
+        <span style={{ font: "10.5px system-ui", color: C.muted }}>
+          {held.size > 0 ? `${held.size} ${held.size === 1 ? "country" : "countries"} with a project, tinted` : ""}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} role="img"
+        aria-label={`World map with ${pts.length} project${pts.length === 1 ? "" : "s"} placed on it`}
+        style={{ width: "100%", height: "auto", display: "block", background: "#101317",
+          border: `1px solid ${C.line}`, borderRadius: 7 }}>
+        <path d={map.sphere} fill={INK.ocean} />
+        <path d={map.graticule} fill="none" stroke={INK.grid} strokeWidth="0.6" />
+        {map.countries.map((c) => (
+          <path key={c.id + c.name} d={c.d} fill={held.has(c.id) ? INK.held : INK.land}
+            stroke={held.has(c.id) ? INK.heldEdge : INK.edge} strokeWidth="0.5">
+            <title>{c.name}</title>
+          </path>
+        ))}
+        {/* The equator and the tropics are the piece of geography that
+            actually bears on a PV yield, so they stay drawn. */}
+        <path d={map.equator} fill="none" stroke={INK.equator} strokeWidth="0.8" />
+        {map.tropics.map((d, i) => (
+          <path key={i} d={d} fill="none" stroke={INK.tropic} strokeWidth="0.8" strokeDasharray="4 4" />
+        ))}
+        {inFrame(tropicLabel) && (
+          <text x={tropicLabel.x} y={tropicLabel.y - 4} textAnchor="middle" fill="#5a8062"
+            style={{ font: "10.5px system-ui" }}>Tropic of Cancer</text>
+        )}
+        <path d={map.sphere} fill="none" stroke="#2a3340" strokeWidth="1" />
+
+        {placed.map((s) => {
+          const on = s.items.some((i) => i.r.id === selectedId);
+          const many = s.items.length > 1;
+          /* A spot holding several reports steps through them on each
+             click, so none of them is unreachable under the others. */
+          const next = () => {
+            const k = s.items.findIndex((i) => i.r.id === selectedId);
+            onPick(s.items[(k + 1) % s.items.length].r.id);
+          };
+          const shown = on ? s.items.find((i) => i.r.id === selectedId) : s.items[0];
+          return (
+            <g key={`${s.lat},${s.lon}`} onClick={next} style={{ cursor: "pointer" }}>
+              {/* a larger invisible disc, so the dot can be hit with a thumb */}
+              <circle cx={s.p.x} cy={s.p.y} r="14" fill="transparent" />
+              <circle cx={s.p.x} cy={s.p.y} r={on ? 7 : 5}
+                fill={on ? C.accent : "#6fa8dc"} stroke="#0d1014" strokeWidth="1.3" />
+              {many && (
+                <text x={s.p.x + (on ? 10 : 8)} y={s.p.y + 3.5} fill={on ? C.accent : "#9cc3e8"}
+                  style={{ font: "600 10.5px var(--mono)" }}>×{s.items.length}</text>
+              )}
+              {on && (
+                <text x={s.p.x} y={s.p.y - 12} textAnchor="middle" fill={C.accent}
+                  stroke="#0d1014" strokeWidth="3" paintOrder="stroke"
+                  style={{ font: "600 12px system-ui" }}>
+                  {nameOf(shown.r)}
+                </text>
+              )}
+              <title>
+                {[...new Set(s.items.map((i) => nameOf(i.r)))].join(", ")}
+                {` — near ${fmt(Math.abs(s.lat), 2)}°${s.lat >= 0 ? "N" : "S"} ${fmt(Math.abs(s.lon), 2)}°${s.lon >= 0 ? "E" : "W"}`}
+                {s.country ? `, ${s.country.name}` : ", outside every country outline"}
+                {many ? `. ${s.items.length} reports here: click to step through them.` : ""}
+              </title>
+            </g>
+          );
+        })}
+      </svg>
+
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
+        {pts.map(({ r, lat, lon }) => (
+          <button key={r.id} className="btn" onClick={() => onPick(r.id)}
+            style={{ font: "10.5px system-ui", padding: "4px 9px",
+              borderColor: r.id === selectedId ? C.accent : undefined,
+              color: r.id === selectedId ? C.accent : undefined }}>
+            {nameOf(r)}
+            <span style={{ color: C.muted, fontFamily: "var(--mono)" }}>
+              {"  "}{fmt(Math.abs(lat), 2)}°{lat >= 0 ? "N" : "S"}{" "}
+              {fmt(Math.abs(lon), 2)}°{lon >= 0 ? "E" : "W"}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {offMap.length > 0 && (
+        <div className="warn" style={{ marginTop: 8 }}>
+          ⚠ {offMap.map((s) => nameOf(s.items[0].r)).join(", ")}{" "}
+          {offMap.length === 1 ? "sits" : "sit"} outside every country outline. On the coast that
+          is the coarseness of the outline, which can be several kilometres out. In open sea it
+          is usually a latitude or longitude with the wrong sign — check it against the report.
+        </div>
+      )}
+      <div style={{ font: "10.5px/1.6 system-ui", color: C.muted, marginTop: 7 }}>
+        {pts.length} of {records.length} placed from the latitude and longitude in the report
+        itself.{noGeo > 0 && ` ${noGeo} carried no coordinates.`} The outlines are Natural Earth,
+        1:110 million for the world and 1:50 million once the view closes in, and both ship
+        with the application: nothing is fetched from anywhere else to draw this, so no
+        project&apos;s position leaves this machine. At either scale a coastline is a sketch,
+        good for seeing which country and which neighbours, not for reading a site off the
+        shore. The degrees on the buttons are exact.
+      </div>
+    </>
+  );
+}
