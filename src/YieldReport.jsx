@@ -143,7 +143,7 @@ function TradeCurve({ rows, chosen }) {
   );
 }
 
-export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, rates, st, set, weather, onWeather }) {
+export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, rates, st, set, weather, onWeather, onYield }) {
   const [era5, setEra5] = useState({ state: "idle", msg: "" });
 
   const pull = (setter, fn) => async () => {
@@ -187,6 +187,16 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
   const netSpec = specYield !== null ? specYield * geomKeep : null;
   const annualGWh = netSpec !== null ? (netSpec * mwp * 1000) / 1e6 : null;
   const cf = netSpec !== null && acMw > 0 ? (netSpec * mwp * 1000) / (acMw * 1000 * 8760) : null;
+  /* Handed up so the one-page report quotes this figure rather than
+     working out a second one that could drift from it. */
+  useEffect(() => {
+    if (!onYield) return;
+    onYield(specYield === null ? null : {
+      specYield, geomKeep, keepIsEntered, netSpec, annualGWh, cf,
+      dataset: baseline?.asked?.radDb || null,
+    });
+    // eslint-disable-next-line
+  }, [specYield, geomKeep, keepIsEntered, netSpec, annualGWh, cf]);
 
   /* ---- pitch against everything it costs ----
 

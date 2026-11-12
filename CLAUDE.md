@@ -33,6 +33,8 @@ src/feeders.js         which stations share an MV feeder back to the grid point 
 src/geoExport.js      where an exported drawing lands: the source DXF's coordinates, UTM
                        (Krüger series, tested against PROJ) for KML, or local north-up
 src/pvcollada.js       the PVCollada 2.0 writer: module, racks, tables, terrain — no React
+src/prelimReport.js    the one-page preliminary report: plan, figures, yield, sources and
+                       what is assumed or missing, as standalone printable HTML — no React
 src/sitePull.js        the georeference (local metres to degrees and back) and terrain
                        pulled from open elevation tiles — no React but for the tile decode
 src/osmPull.js         OpenStreetMap: the Overpass question, and the answer read into
@@ -235,6 +237,8 @@ node tests/layoutDxf.test.mjs       # 54 assertions: trench occupancy, the layou
 node tests/geoExport.test.mjs       # 68 assertions: UTM against PROJ to a millimetre at
                                     # eleven points, zones and their exceptions, and the three
                                     # ways an export is placed
+node tests/prelimReport.test.mjs    # 33 assertions: what the one-pager owns up to, the
+                                    # plan, and that a missing input is never filled in
 node tests/pvcollada.test.mjs       # 48 assertions: the PVCollada file's structure, counts,
                                     # tilt, azimuth by hemisphere, tracker height and terrain
 node tests/costing.test.mjs         # 79 assertions: the finance against closed forms, and
@@ -635,6 +639,15 @@ Deliberate engineering decisions, each stated in the UI's own text:
   lxml resolver that maps the remote MathML and `xml.xsd` imports to local stubs (PVCollada uses
   neither), and run the three Schematron files with `lxml.isoschematron`. The official examples
   pass that way, and so did every mounting this writer produces when it was added.
+- **The one-page report quotes; it does not compute, and it gives the caveats equal room.**
+  `prelimReportHtml` builds one A4 sheet from the summary, the Yield report's own figure
+  (handed up through `onYield`, so the two cannot disagree) and where each input came from:
+  boundary KML, DXF or drawn; terrain pulled, surveyed, imported or the synthetic demo
+  (`terrainSrc`, saved with the project). `prelimGaps` lists what the page rests on that nobody
+  confirmed and what is not there, marked missing, assumed or note. No baseline means no yield
+  figure at all, not a typical one; no terrain means flat ground is "not assessed"; station
+  MVA appears only when every station has a real rating. A one-pager is where a preliminary
+  number becomes a quoted one, which is exactly why its gaps are on it.
 - **The block grid's origin is swept 6 × 4, with or without terrain.** It used to be 3 × 2 on
   flat ground, on the idea that only terrain made the origin matter. With 96 m frames on a
   400 m site the coarse sweep left 38% of the capacity behind, and loading terrain appeared to

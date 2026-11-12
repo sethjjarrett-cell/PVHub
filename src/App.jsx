@@ -13,6 +13,8 @@ import { stationPlan, stationIndexer, describePlan, describeKva, STATION_MODES, 
 import { planFeeders } from "./feeders.js";
 import { metresPerDegree, makeGeoRef, pullTerrain } from "./sitePull.js";
 import { exportFrame } from "./geoExport.js";
+import { prelimReportHtml } from "./prelimReport.js";
+import { WEATHER_SOURCES } from "./pvgis.js";
 import { toPvCollada, pvcMissing } from "./pvcollada.js";
 import { WeatherSource, BaselineSource } from "./SiteData.jsx";
 import { OsmPanel } from "./OsmPanel.jsx";
@@ -2723,6 +2725,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   const [geoRef, setGeoRef] = useState(null);
   const [pullMsg, setPullMsg] = useState(null);
   const [pvcMsg, setPvcMsg] = useState("");
+  /* Where the terrain came from, because a pulled 30 m surface, a survey
+     and the synthetic demo carry very different weight in a report. */
+  const [terrainSrc, setTerrainSrc] = useState(null);
   const [zones, setZones] = useState([]);
   const [entrance, setEntrance] = useState(null);
   const [drawTarget, setDrawTarget] = useState("boundary");
@@ -2991,7 +2996,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           }
           setDxfBoundaries(uniq.length ? uniq.slice(0, 8) : null);
           const tp = tpAll;
-          if (tp.length >= 4) setTerrainPts(tp);
+          if (tp.length >= 4) { setTerrainPts(tp); setTerrainSrc("dxf"); }
           if (uniq.length) replaceBoundary(uniq[0].pts); // best guess applied straight away
           const zs = tp.map((p) => p.z);
           setImportMsg(
@@ -3013,7 +3018,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
             setGeoOrigin(org); setGeoRef(null);
           }
           const pts = raw.map((p) => ({ ...p, x: p.x - (org?.x || 0), y: p.y - (org?.y || 0) }));
-          if (pts.length >= 4) { setTerrainPts(pts); setImportMsg(`Terrain: ${fmt(pts.length, 0)} points loaded.`); }
+          if (pts.length >= 4) { setTerrainPts(pts); setTerrainSrc("points"); setImportMsg(`Terrain: ${fmt(pts.length, 0)} points loaded.`); }
           else setImportMsg("No x,y,z rows found in that file.");
         }
       } catch (err) {
@@ -3445,11 +3450,25 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       access: access ? { length: access.length, crossings: access.tight.count,
         throughGaps: access.tight.length, width: blockCfg.gapSlot, unreachable: access.unreachable } : null,
       unreachableInv: cabling?.unreachable?.length || 0,
+      /* For the one-page report: the plan as drawn, and where each input
+         came from, so the report can say what it rests on. */
+      boundarySource: geoRef?.source === "kml" ? "kml" : geoOrigin ? "dxf" : "drawn",
+      terrainSource: terrain ? terrainSrc || "points" : null,
+      plan: {
+        boundary: polygon,
+        zones: prepped.map((z) => ({ name: z.name, kind: z.kind, buffer: z.buffer, pts: z.pts, osm: z.osm || null })),
+        blocks: (v.blocks || []).map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, outline: b.outline || null })),
+        stations: showSs ? (cabling?.subs || []).map((x) => ({ x: x.x, y: x.y })) : [],
+        poi: showSs ? ss : null, entrance,
+        mv: showSs ? cabling?.mvPaths || [] : [],
+        road: access ? access.edges || [] : [],
+      },
     } : null);
     // eslint-disable-next-line
   }, [variants, activeIdx, cabling, areaM2, invAcKw, pitchCfg.rowPitch,
       geo.collectW, frame.mounting, frame.tilt, module.power,
-      elec.modulesPerString, elec.stringsPerInverter, inv?.vAc, access, zones.length, blockCfg.gapSlot]);
+      elec.modulesPerString, elec.stringsPerInverter, inv?.vAc, access, zones.length, blockCfg.gapSlot,
+      geoRef, geoOrigin, terrain, terrainSrc, polygon, prepped, showSs, ss, entrance]);
 
   const applyImport = () => {
     const pts = [];
@@ -3549,7 +3568,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
 
   if (reg) reg.current.layout = {
     get: () => ({ polygon, ss, align, alignLine, capacity, blockCfg, pitchCfg, site, slopeLim, terrainPts, showSlope,
-      zones, entrance, geoRef, geoOrigin }),
+      zones, entrance, geoRef, geoOrigin, terrainSrc }),
     set: (s) => {
       if (!s) return;
       if (s.polygon) setPolygonRaw(s.polygon);
@@ -3568,6 +3587,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       setEntrance(s.entrance ?? null);
       setGeoRef(s.geoRef ?? null);
       setGeoOrigin(s.geoOrigin ?? null);
+      setTerrainSrc(s.terrainSrc ?? (s.terrainPts ? "points" : null));
       setFitToken((t) => t + 1);
     },
   };
@@ -3792,7 +3812,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                   setPullMsg({ busy: true, text: "Pulling elevation tiles…" });
                   const r = await pullTerrain({ polygon, geo, spacing: 20 });
                   if (!r.ok || !geo) { setPullMsg({ busy: false, warn: true, text: r.msg }); return; }
-                  setTerrainPts(r.pts);
+                  setTerrainPts(r.pts); setTerrainSrc("pulled");
                   setPullMsg({ busy: false, warn: geo.source !== "kml", text:
                     `${fmt(r.pts.length, 0)} heights pulled from the open Terrarium elevation tiles (SRTM at about 30 m in `
                     + "most of the world, finer national surveys where they exist), sampled every 20 m from "
@@ -3808,10 +3828,11 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                 }}>{pullMsg?.busy ? "Pulling…" : "Pull terrain from open data"}</button>
                 <button className="btn" onClick={() => {
                   setTerrainPts(demoTerrain(bboxOf(polygon.length >= 3 ? polygon : EXAMPLE_BOUNDARY)));
+                  setTerrainSrc("demo");
                   setImportMsg("Demo rolling-hills surface loaded (synthetic).");
                 }}>Load demo terrain</button>
                 {terrain && (
-                  <button className="btn" onClick={() => { setTerrainPts(null); setImportMsg(""); setPullMsg(null); }}>
+                  <button className="btn" onClick={() => { setTerrainPts(null); setTerrainSrc(null); setImportMsg(""); setPullMsg(null); }}>
                     Clear terrain
                   </button>
                 )}
@@ -7333,7 +7354,44 @@ function ratesFromSaved(saved) {
 }
 const hasRate = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(+v);
 
-function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
+/* The one-page report: built from the summary, the yield report's own
+   figure and the site panels, then opened as a page of its own to print
+   or save as PDF. */
+function OnePager({ s, mod, yieldInfo, loc, weather }) {
+  const build = () => prelimReportHtml({
+    summary: s, plan: s.plan, boundarySource: s.boundarySource, terrainSource: s.terrainSource,
+    weatherSource: weather ? WEATHER_SOURCES[weather.source]?.name || weather.label || "pulled" : null,
+    yield: yieldInfo, lat: loc?.lat, lon: loc?.lon,
+    date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
+    moduleName: [mod.manufacturer, mod.model].filter(Boolean).join(" ") || null,
+    title: `${fmt(s.dcMWp, 2)} MWp`,
+  });
+  const open = () => {
+    const url = URL.createObjectURL(new Blob([build()], { type: "text/html" }));
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+  const save = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([build()], { type: "text/html" }));
+    a.download = "pvhub-preliminary-design.html";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  return (
+    <div className="readout" style={{ marginBottom: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <span style={{ flex: "1 1 320px" }}>
+        <b>One-page report.</b> The plan, the plant in a dozen figures, the yield with its standing,
+        where every input came from, and what is assumed or missing, on one A4 sheet. It quotes
+        what is here and fills in nothing: a missing input is listed, not defaulted.
+      </span>
+      <button className="btn" onClick={open}>Open the one-page report</button>
+      <button className="btn" onClick={save}>Download (.html)</button>
+    </div>
+  );
+}
+
+function SummaryTab({ s, rates, setRates, mod, inv, elec, frame, yieldInfo, loc, weather }) {
   if (!s) {
     return <Page wide><div className="readout">
       Nothing to summarise yet — define a site boundary on the Layout tab.
@@ -7380,6 +7438,7 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
   return (
     <Page wide>
       <div className="tbl" style={{ marginBottom: 10 }}>STEP 8 — SUMMARY</div>
+      <OnePager s={s} mod={mod} yieldInfo={yieldInfo} loc={loc} weather={weather} />
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div style={{ flex: "1 1 420px", minWidth: 340, background: C.panel,
           border: `1px solid ${C.line}`, borderRadius: 6, overflow: "hidden" }}>
@@ -7570,6 +7629,7 @@ export default function App() {
   /* The typical year the models run on: rows, plus where it came from.
      Not saved with the project — it is 8,760 hours and a button away. */
   const [weather, setWeather] = useState(null);
+  const [yieldInfo, setYieldInfo] = useState(null);
   const [entered, setEntered] = useState(false);
   const [landStep, setLandStep] = useState(0);
   /* The guided flow keeps its own small record: the handful of figures
@@ -8379,7 +8439,7 @@ export default function App() {
       <div style={{ flex: 1, minHeight: 0, display: tool === "report" ? "flex" : "none" }}>
         <YieldReportTab loc={siteLoc} setLoc={setSiteLoc} mod={pvMod} inv={pvInv} elec={elec}
           frame={frame} summary={summary} rates={rates} st={report} set={setReport}
-          weather={weather} onWeather={setWeather} />
+          weather={weather} onWeather={setWeather} onYield={setYieldInfo} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
         <BatchAnalyserTab st={batch} set={setBatch} layout={summary} />
@@ -8409,7 +8469,8 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "summary" ? "flex" : "none" }}>
         <SummaryTab s={summary} rates={rates} setRates={setRates}
-          mod={pvMod} inv={pvInv} elec={elec} frame={frame} />
+          mod={pvMod} inv={pvInv} elec={elec} frame={frame}
+          yieldInfo={yieldInfo} loc={siteLoc} weather={weather} />
       </div>
     </div>
   );
