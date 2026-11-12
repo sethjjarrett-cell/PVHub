@@ -4,6 +4,7 @@
 import { analyseTrenches, analyseMv, layoutToDxf, LAYOUT_LAYERS } from '../src/layoutDxf.js';
 import { parseDxf, closedPolygons, stitchLines, pickOutline, routeLengths } from '../src/dxfRead.js';
 import { roofToDxf, buildDxf, polyline3d, countEntities } from '../src/dxf.js';
+import { exportFrame } from '../src/geoExport.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log(`  PASS ${n}`); }
@@ -190,6 +191,25 @@ console.log('\n--- reader: other producers ---');
   let threw = null;
   try { const p = parseDxf(f); ok('a malformed line does not throw', p.entities.length >= 0); }
   catch (e) { threw = e; ok('a malformed line does not throw', false, e.message); } }
+
+console.log('\n--- where the drawing lands ---');
+{ /* A boundary as the DXF import stores it: (X, Y) -> (X - ox, -Y - oy). */
+  const src = [{ X: 637200, Y: 5762900 }, { X: 637400, Y: 5762900 }, { X: 637400, Y: 5763050 }];
+  const org = { x: 637200, y: -5763050 };
+  const local = src.map((q) => ({ x: q.X - org.x, y: -q.Y - org.y }));
+  const f = exportFrame({ geoOrigin: org });
+  const back = parseDxf(layoutToDxf({ boundary: local, toCad: f.fn, crsNote: f.label }));
+  const poly = back.entities.find((e) => e.layer === 'PV-BOUNDARY');
+  const same = poly && poly.points.every((q, i) => Math.abs(q.x - src[i].X) < 1e-3 && Math.abs(q.y - src[i].Y) < 1e-3);
+  ok('a DXF boundary exported goes back onto the source coordinates', same,
+     poly && JSON.stringify(poly.points.slice(0, 2)));
+  const north = parseDxf(layoutToDxf({ boundary: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: -50 }] }))
+    .entities.find((e) => e.layer === 'PV-BOUNDARY');
+  ok('by default, a point north on screen is north on the sheet', north && north.points[2].y === 50,
+     north && JSON.stringify(north.points[2]));
+  const t = layoutToDxf({ boundary: local, toCad: f.fn, crsNote: 'WGS 84 / UTM zone 30N (EPSG:32630)', title: 'T' });
+  ok('the coordinate system is written into the drawing', t.includes('EPSG:32630'));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

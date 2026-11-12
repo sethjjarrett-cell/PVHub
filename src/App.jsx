@@ -12,6 +12,8 @@ import { FaultStudyTab } from "./FaultTool.jsx";
 import { stationPlan, stationIndexer, describePlan, describeKva, STATION_MODES, parseKvaList, unitsByKva } from "./stations.js";
 import { planFeeders } from "./feeders.js";
 import { metresPerDegree, makeGeoRef, pullTerrain } from "./sitePull.js";
+import { exportFrame } from "./geoExport.js";
+import { toPvCollada, pvcMissing } from "./pvcollada.js";
 import { WeatherSource, BaselineSource } from "./SiteData.jsx";
 import { OsmPanel } from "./OsmPanel.jsx";
 import {
@@ -360,9 +362,14 @@ function generateBlockVariant(polygon, geo, cfg) {
   if (!(geo.planAcross > 0 && geo.alongLen > 0 && cfg.pitch > 0)) {
     return { frames: [], blocks: [], laneMid: 0, ms: 0 };
   }
-  // with terrain, search harder — the grid origin decides whether blocks
-  // land on flat ground or on a slope, and that is worth more than speed
-  const L_TR = cfg.terrain ? 6 : 3, S_TR = cfg.terrain ? 4 : 2;
+  /* Where the grid starts is arbitrary and it decides how many whole
+     rows fit, so it is swept, not trusted. The sweep used to be 3 × 2 on
+     flat ground and 6 × 4 only with terrain, on the idea that flat ground
+     cared less. It does not: on a 400 m site with 96 m frames the coarse
+     sweep left 38% of the capacity on the table, and loading any terrain
+     at all appeared to "add" it back. The finer sweep costs a few tens of
+     milliseconds and is used for both. */
+  const L_TR = 6, S_TR = 4;
   const rpc = cfg.rowsPerCorridor === 2 ? 2 : 1;
   const physSlot = cfg.framesDeep * geo.alongLen + (cfg.framesDeep - 1) * cfg.endGap;
   const period = rpc * physSlot + (rpc - 1) * cfg.endGap + cfg.gapSlot;
@@ -2715,6 +2722,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
      assumed from the site's coordinates and labelled as such. */
   const [geoRef, setGeoRef] = useState(null);
   const [pullMsg, setPullMsg] = useState(null);
+  const [pvcMsg, setPvcMsg] = useState("");
   const [zones, setZones] = useState([]);
   const [entrance, setEntrance] = useState(null);
   const [drawTarget, setDrawTarget] = useState("boundary");
@@ -3350,6 +3358,28 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   const mvTrenches = useMemo(
     () => (cabling ? analyseTrenches(cabling.mvPaths) : null), [cabling]);
 
+  /* Where an exported drawing lands: the source DXF's own coordinates,
+     UTM for a KML boundary, or local metres north up. */
+  const cadFrame = useMemo(() => exportFrame({ geoOrigin, geoRef }), [geoOrigin, geoRef]);
+  /* PVCollada 2.0: the physical plant in 3D for PVsyst, PVcase and the
+     rest. Nothing missing is filled in; the panel names it instead. */
+  const pvcFg = useMemo(() => ({ ...geo, orientation: frame.orientation }), [geo, frame.orientation]);
+  const exportPvc = () => {
+    const r = toPvCollada({
+      frames: active.frames, fg: pvcFg, module, geo: siteGeo, terrain,
+      acW: invAcKw > 0 ? active.inverters * invAcKw * 1000 : null,
+      project: { name: `PVhub layout ${fmt(active.dcMWp, 2)} MWp` },
+    });
+    if (!r.ok) return;
+    const blob = new Blob([r.xml], { type: "model/vnd.collada+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "pvhub-layout.pvc2";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setPvcMsg(`Written: ${fmt(r.counts.tables, 0)} tables, ${fmt(r.counts.modules, 0)} modules. `
+      + (r.notes.length ? r.notes.join(" ") : ""));
+  };
   const exportLayoutDxf = (withFrames) => {
     const v = active;
     const dxf = layoutToDxf({
@@ -3362,6 +3392,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       zones: prepped, entrance, access,
       includeFrames: !!withFrames,
       title: `PVHUB LAYOUT - ${v ? fmt(v.dcMWp, 2) : "0"} MWP DC`,
+      toCad: cadFrame.fn, crsNote: `COORDINATES: ${cadFrame.label.toUpperCase()}`,
     });
     const blob = new Blob([dxf], { type: "application/dxf" });
     const a = document.createElement("a");
@@ -3383,6 +3414,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     };
   }, [variants, capacity.kind, invAcKw]);
   const active = variants[Math.min(activeIdx, variants.length - 1)] || null;
+  const pvcGaps = pvcMissing({ frames: active?.frames, fg: pvcFg, module, geo: siteGeo });
 
   useEffect(() => {
     if (!onSummary) return;
@@ -3517,7 +3549,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
 
   if (reg) reg.current.layout = {
     get: () => ({ polygon, ss, align, alignLine, capacity, blockCfg, pitchCfg, site, slopeLim, terrainPts, showSlope,
-      zones, entrance, geoRef }),
+      zones, entrance, geoRef, geoOrigin }),
     set: (s) => {
       if (!s) return;
       if (s.polygon) setPolygonRaw(s.polygon);
@@ -3535,6 +3567,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       setZones(Array.isArray(s.zones) ? s.zones.map(makeZone) : []);
       setEntrance(s.entrance ?? null);
       setGeoRef(s.geoRef ?? null);
+      setGeoOrigin(s.geoOrigin ?? null);
       setFitToken((t) => t + 1);
     },
   };
@@ -3634,6 +3667,42 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                   middle of the site than as a factor in a table.</>}
                 {" "}Everything is flat at z = 0: a ground-mount plan is a plan, and a fabricated
                 z would imply a terrain model that is not in the export.
+                <span style={{ display: "block", marginTop: 5, color: cadFrame.kind === "local" ? C.warn : C.text }}>
+                  <b>Coordinates:</b> {cadFrame.note}
+                </span>
+              </div>
+            )}
+            {active && polygon.length > 0 && (
+              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
+                <button className="btn" disabled={pvcGaps.length > 0} onClick={exportPvc}
+                  title="PVCollada 2.0 — opens in PVsyst, PVcase and other tools that read the format">
+                  Export PVCollada (.pvc2)
+                </button>
+                <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+                  <b>PVCollada 2.0</b> is the open 3D exchange format (pvlib/pvcollada) that PVsyst and PVcase
+                  read: the module, every table as built — racks split at the centre gap, tilt or tracker
+                  axis, clearance — placed in East-North-Up metres about the site, on the terrain if one
+                  is loaded. It carries no electrical layout: strings are assigned by block here, not
+                  module by module, and drawing a string map nobody designed would be worse than none.
+                  {siteGeo && siteGeo.source !== "kml" && <span style={{ color: C.warn }}> The position is
+                    assumed from the site's coordinates; import the boundary as KML or KMZ to place it exactly.</span>}
+                  {!terrain && <span style={{ color: C.warn }}> No terrain is loaded, so the plant is flat and its
+                    altitude is written as 0 m: pull terrain above to carry the real ground.</span>}
+                </div>
+                {pvcGaps.length > 0 && (
+                  <div className="warn">⚠ Still needed: {pvcGaps.join("; ")}.</div>
+                )}
+                {pvcGaps.some((g) => /module/.test(g)) && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <label className="fld"><span className="fld-l">Module model</span><span className="fld-box">
+                      <input value={module.model || ""} onChange={(e) => setModule({ ...module, model: e.target.value })} /></span></label>
+                    <label className="fld"><span className="fld-l">Manufacturer</span><span className="fld-box">
+                      <input value={module.manufacturer || ""} onChange={(e) => setModule({ ...module, manufacturer: e.target.value })} /></span></label>
+                    <Num label="Depth" unit="mm" value={module.depth > 0 ? +(module.depth * 1000).toFixed(1) : 0} step={1} min={0}
+                      onChange={(v) => setModule({ ...module, depth: v > 0 ? v / 1000 : undefined })} />
+                  </div>
+                )}
+                {pvcMsg && <div className="readout">{pvcMsg}</div>}
               </div>
             )}
             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -5529,6 +5598,7 @@ function saveLib(lib) {
 const EXTRA_LABELS = {
   length: { label: "Length", unit: "m" },
   width: { label: "Width", unit: "m" },
+  depth: { label: "Depth (thickness)", unit: "m" },
   cells: { label: "Cells in series", unit: "" },
   ideality: { label: "Diode ideality γ", unit: "" },
   bifaciality: { label: "Bifaciality", unit: "" },
@@ -5611,6 +5681,12 @@ function DatasheetPanel({ kind, current, onApply, kindLabel }) {
   const apply = () => {
     const patch = {};
     for (const [k, v] of rows) patch[k] = valueOf(k, v);
+    /* A PVsyst file names its product; keep the name with the numbers so
+       an export can say which module it is, rather than "a 650 W module". */
+    if (pvsyst && kind === "module") {
+      if (pvsyst.manufacturer) patch.manufacturer = pvsyst.manufacturer;
+      if (pvsyst.model) patch.model = pvsyst.model;
+    }
     setPrev({ ...current });
     onApply(patch);
     setRes(null); setText(""); setPvsyst(null);

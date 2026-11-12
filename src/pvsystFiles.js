@@ -148,6 +148,10 @@ export function parsePan(text) {
     out.length = field(Math.max(w.v, h.v), `${w.line} / ${h.line}`);
     out.width = field(Math.min(w.v, h.v), `${w.line} / ${h.line}`);
   }
+  /* Thickness, in metres like the other two. A 3D export needs it and
+     a datasheet buries it in a drawing, so it is worth reading here. */
+  const dp = num(com, "Depth");
+  if (dp && dp.v > 0) out.depth = field(dp.v, dp.line);
 
   const vmax = num(m, "VMaxIEC", "VMaxUL");
   if (vmax) out.vSysMax = field(vmax.v, vmax.line);

@@ -157,43 +157,52 @@ export function layoutToDxf({
   zones = [], entrance = null, access = null,
   includeFrames = false, includeTrenchLoad = true,
   textHeight = 2.5, title = null,
+  /* Local metres run south down the screen; a drawing runs north up the
+     sheet. `toCad` takes a layout point to drawing coordinates — see
+     src/geoExport.js — and the default is local metres, north up. */
+  toCad = (p) => ({ ...p, y: -p.y }), crsNote = null,
 }) {
   const ents = [];
+  const T = (p) => { const q = toCad(p); return { x: q.x, y: q.y, z: p.z ?? 0 }; };
+  const P = (layer, pts, closed = true) => polyline3d(layer, pts.map(T), closed);
+  const L = (layer, a, b) => line3d(layer, T(a), T(b));
+  const X = (layer, at, h, txt) => text3d(layer, T(at), h, txt);
+  const O = (layer, at, r) => circle3d(layer, T(at), r);
 
-  if (boundary.length >= 3) ents.push(polyline3d("PV-BOUNDARY", boundary));
+  if (boundary.length >= 3) ents.push(P("PV-BOUNDARY", boundary));
 
   for (const r of roads) {
-    if (r.points?.length >= 2) ents.push(polyline3d("PV-ROAD", r.points, !!r.closed));
-    else if (r.x !== undefined) ents.push(polyline3d("PV-ROAD", asRect(r)));
+    if (r.points?.length >= 2) ents.push(P("PV-ROAD", r.points, !!r.closed));
+    else if (r.x !== undefined) ents.push(P("PV-ROAD", asRect(r)));
   }
 
   for (const b of blocks) {
     const pts = b.outline?.length >= 3 ? b.outline : asRect(b);
-    ents.push(polyline3d("PV-BLOCK", pts));
+    ents.push(P("PV-BLOCK", pts));
     if (b.inv !== undefined) {
-      ents.push(text3d("PV-TEXT", { x: b.x + 0.5, y: b.y + 0.5, z: 0 },
+      ents.push(X("PV-TEXT", { x: b.x + 0.5, y: b.y + 0.5, z: 0 },
         textHeight, `INV ${b.inv}`));
     }
   }
 
   if (includeFrames) {
-    for (const f of frames) ents.push(polyline3d("PV-FRAME", asRect(f)));
+    for (const f of frames) ents.push(P("PV-FRAME", asRect(f)));
   }
 
   if (cabling) {
     for (const p of cabling.paths || []) {
-      if (p.length >= 2) ents.push(polyline3d("PV-CABLE-LV", p, false));
+      if (p.length >= 2) ents.push(P("PV-CABLE-LV", p, false));
     }
     for (const p of cabling.mvPaths || []) {
-      if (p.length >= 2) ents.push(polyline3d("PV-CABLE-MV", p, false));
+      if (p.length >= 2) ents.push(P("PV-CABLE-MV", p, false));
     }
     for (const s of cabling.subs || []) {
-      ents.push(circle3d("PV-SUBSTATION", { x: s.x, y: s.y, z: 0 }, textHeight * 1.6));
-      ents.push(text3d("PV-TEXT", { x: s.x + textHeight * 2, y: s.y, z: 0 },
+      ents.push(O("PV-SUBSTATION", { x: s.x, y: s.y, z: 0 }, textHeight * 1.6));
+      ents.push(X("PV-TEXT", { x: s.x + textHeight * 2, y: s.y, z: 0 },
         textHeight, `SUB ${s.ways}W / ${s.used} USED`));
     }
     for (const m of cabling.markers || []) {
-      ents.push(circle3d("PV-INVERTER", { x: m.x, y: m.y, z: 0 }, textHeight * 0.7));
+      ents.push(O("PV-INVERTER", { x: m.x, y: m.y, z: 0 }, textHeight * 0.7));
     }
   }
 
@@ -204,12 +213,12 @@ export function layoutToDxf({
     const hot = trenches.maxCircuits;
     for (const s of trenches.segments) {
       if (s.count < hot) continue;
-      ents.push(line3d("PV-TRENCH-BUSY", { ...s.a, z: 0 }, { ...s.b, z: 0 }));
+      ents.push(L("PV-TRENCH-BUSY", { ...s.a, z: 0 }, { ...s.b, z: 0 }));
     }
     if (trenches.busiest) {
       const mid = { x: (trenches.busiest.a.x + trenches.busiest.b.x) / 2,
         y: (trenches.busiest.a.y + trenches.busiest.b.y) / 2, z: 0 };
-      ents.push(text3d("PV-TEXT", mid, textHeight, `${hot} CIRCUITS`));
+      ents.push(X("PV-TEXT", mid, textHeight, `${hot} CIRCUITS`));
     }
   }
 
@@ -220,37 +229,41 @@ export function layoutToDxf({
      distance, not a survey line. */
   for (const z of zones || []) {
     if (!z.pts || z.pts.length < 3) continue;
-    ents.push(polyline3d("PV-EXCLUSION", z.pts));
+    ents.push(P("PV-EXCLUSION", z.pts));
     const cx = z.pts.reduce((a, p) => a + p.x, 0) / z.pts.length;
     const cy = z.pts.reduce((a, p) => a + p.y, 0) / z.pts.length;
-    ents.push(text3d("PV-TEXT", { x: cx, y: cy, z: 0 }, textHeight,
+    ents.push(X("PV-TEXT", { x: cx, y: cy, z: 0 }, textHeight,
       `${String(z.name || "EXCLUSION").toUpperCase()}${z.buffer ? ` +${z.buffer}M` : ""}`));
     if (z.buffer > 0 && z.box) {
       const b = z.buffer;
-      ents.push(polyline3d("PV-EXCLUSION-BUFFER", asRect({
+      ents.push(P("PV-EXCLUSION-BUFFER", asRect({
         x: z.box.x0 - b, y: z.box.y0 - b, w: z.box.x1 - z.box.x0 + 2 * b, h: z.box.y1 - z.box.y0 + 2 * b })));
     }
   }
   if (access) {
-    for (const e of access.edges || []) ents.push(line3d("PV-ACCESS-ROAD", { ...e.a, z: 0 }, { ...e.b, z: 0 }));
+    for (const e of access.edges || []) ents.push(L("PV-ACCESS-ROAD", { ...e.a, z: 0 }, { ...e.b, z: 0 }));
     for (const pth of access.paths || []) {
-      if (pth.pts.length >= 2) ents.push(line3d("PV-ACCESS-ROAD", { ...pth.pts[0], z: 0 }, { ...pth.pts[1], z: 0 }));
+      if (pth.pts.length >= 2) ents.push(L("PV-ACCESS-ROAD", { ...pth.pts[0], z: 0 }, { ...pth.pts[1], z: 0 }));
     }
   }
   if (entrance) {
-    ents.push(circle3d("PV-ENTRANCE", { x: entrance.x, y: entrance.y, z: 0 }, textHeight * 2));
-    ents.push(text3d("PV-TEXT", { x: entrance.x + textHeight * 2.5, y: entrance.y, z: 0 }, textHeight, "ENTRANCE"));
+    ents.push(O("PV-ENTRANCE", { x: entrance.x, y: entrance.y, z: 0 }, textHeight * 2));
+    ents.push(X("PV-TEXT", { x: entrance.x + textHeight * 2.5, y: entrance.y, z: 0 }, textHeight, "ENTRANCE"));
   }
 
   if (poi) {
-    ents.push(circle3d("PV-POI", { x: poi.x, y: poi.y, z: 0 }, textHeight * 2));
-    ents.push(text3d("PV-TEXT", { x: poi.x + textHeight * 2.5, y: poi.y, z: 0 }, textHeight, "POI"));
+    ents.push(O("PV-POI", { x: poi.x, y: poi.y, z: 0 }, textHeight * 2));
+    ents.push(X("PV-TEXT", { x: poi.x + textHeight * 2.5, y: poi.y, z: 0 }, textHeight, "POI"));
   }
 
-  if (title) {
-    const ys = boundary.length ? Math.max(...boundary.map((p) => p.y)) : 0;
+  /* The title sits above the north edge, which in local metres is the
+     smallest y; the coordinate system goes beneath it, because a
+     drawing that does not say where it is gets placed by guesswork. */
+  if (title || crsNote) {
+    const ys = boundary.length ? Math.min(...boundary.map((p) => p.y)) : 0;
     const xs = boundary.length ? Math.min(...boundary.map((p) => p.x)) : 0;
-    ents.push(text3d("PV-TEXT", { x: xs, y: ys + textHeight * 3, z: 0 }, textHeight * 1.4, title));
+    if (title) ents.push(X("PV-TEXT", { x: xs, y: ys - textHeight * 5, z: 0 }, textHeight * 1.4, title));
+    if (crsNote) ents.push(X("PV-TEXT", { x: xs, y: ys - textHeight * 3, z: 0 }, textHeight * 0.8, crsNote));
   }
 
   return buildDxf(LAYOUT_LAYERS, ents);

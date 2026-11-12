@@ -30,6 +30,9 @@ src/handoff.js         what the layout offers each downstream tool, and what it 
 src/siteConstraints.js exclusion zones, the access-road tree, and the route-graph helpers
                        App.jsx used to hold — no React
 src/feeders.js         which stations share an MV feeder back to the grid point — no React
+src/geoExport.js      where an exported drawing lands: the source DXF's coordinates, UTM
+                       (Krüger series, tested against PROJ) for KML, or local north-up
+src/pvcollada.js       the PVCollada 2.0 writer: module, racks, tables, terrain — no React
 src/sitePull.js        the georeference (local metres to degrees and back) and terrain
                        pulled from open elevation tiles — no React but for the tile decode
 src/osmPull.js         OpenStreetMap: the Overpass question, and the answer read into
@@ -226,8 +229,14 @@ node tests/bess.test.mjs            # 103 assertions: the capacity chain against
                                     # energy, and the meter-file reader
 node tests/roof.test.mjs            # 93 assertions: polygon maths, the plane fit both
                                     # ways, the fill, and the DXF structure
-node tests/layoutDxf.test.mjs       # 51 assertions: trench occupancy, the layout export,
-                                    # and the reader against four producers
+node tests/layoutDxf.test.mjs       # 54 assertions: trench occupancy, the layout export,
+                                    # the reader against four producers, and that an export
+                                    # lands back on the coordinates its boundary came from
+node tests/geoExport.test.mjs       # 68 assertions: UTM against PROJ to a millimetre at
+                                    # eleven points, zones and their exceptions, and the three
+                                    # ways an export is placed
+node tests/pvcollada.test.mjs       # 48 assertions: the PVCollada file's structure, counts,
+                                    # tilt, azimuth by hemisphere, tracker height and terrain
 node tests/costing.test.mjs         # 79 assertions: the finance against closed forms, and
                                     # the quote handling against the cases that corrupt a
                                     # comparison silently
@@ -604,6 +613,32 @@ Deliberate engineering decisions, each stated in the UI's own text:
   one plane usually mean a hip or a valley caught in one outline, or a typo. The best-fit
   plane is used and the worst residual is shown in millimetres, because a few millimetres of
   survey noise is fine and 300 mm is two roof faces drawn as one.
+- **A layout DXF goes back where its boundary came from.** The import stores a DXF point as
+  `(X − ox, −Y − oy)`, flipping CAD's north-up y to the screen's south-down one, and the export
+  used to write the local numbers straight out — so every layout DXF opened mirrored north to
+  south and shifted off its source. `exportFrame` in `src/geoExport.js` now chooses: a DXF
+  boundary goes back to that drawing's own coordinates, a KML boundary goes to UTM with the
+  zone and EPSG code written into the drawing, and a drawn one goes out as local metres north
+  up, labelled as not placed. The panel says which before the button is pressed. `geoOrigin`
+  is saved with the project so a reopened DXF project still exports in place.
+- **The PVCollada export writes what the layout knows and stops there.** One rack per side of
+  the centre gap, a table per frame, East-North-Up metres about the georeference, terrain when
+  there is any. A fixed rack faces the equator. A tracker is drawn flat, its tube at the height
+  PVhub's own section drawing uses (low edge at the clearance at full rotation), and the file
+  says that height was derived. Model name and depth are required by the schema and are never
+  filled with a typical value: the panel asks for them, and a PAN file's `Depth`, `Model` and
+  `Manufacturer` are now kept when it is applied. The altitude must be absolute; with no
+  terrain it is written as 0 m and both the panel and the file say why. East-west frames are
+  withheld until GAPS G45 is settled, and no electrical layout is written (G44).
+  **Checking it against the official schema** is a manual step, because the schema files and
+  lxml are not dependencies: clone `pvlib/pvcollada`, load `pvcollada_schema_2.0.xsd` with an
+  lxml resolver that maps the remote MathML and `xml.xsd` imports to local stubs (PVCollada uses
+  neither), and run the three Schematron files with `lxml.isoschematron`. The official examples
+  pass that way, and so did every mounting this writer produces when it was added.
+- **The block grid's origin is swept 6 × 4, with or without terrain.** It used to be 3 × 2 on
+  flat ground, on the idea that only terrain made the origin matter. With 96 m frames on a
+  400 m site the coarse sweep left 38% of the capacity behind, and loading terrain appeared to
+  add capacity, which terrain can never do. The finer sweep costs a few tens of milliseconds.
 - **The DXF goes out in 3D, on named layers.** Every module corner carries the plane's height
   at that point — a flat export would throw away the one thing worth exporting. R12 (AC1009)
   because every reader opens it. A DXF carries geometry, layers and text; it does not carry

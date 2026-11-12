@@ -73,6 +73,24 @@ Vitest fits the existing Vite setup with essentially no configuration.
 
 ## Severity 2 — Correctness and trust
 
+### G45. An east-west frame is two faces in one place and one face in another
+
+The frame geometry gives an east-west frame a plan depth of `2 × acrossW × cos(tilt) + ridge`
+and a collector width of `2 × acrossW`, which is two faces each `nP` modules wide. The module
+count is `alongCount × nP`, which is one face. The section drawing splits one `acrossW` between
+the two faces, which is a third reading. Whichever is right, an east-west layout's capacity is
+either half what is drawn or its footprint is double what is built: on a fixed site that is the
+difference between a plant that fits and one that does not.
+
+Found while writing the PVCollada export, which has to put a definite number of modules on each
+face and then agree with the layout's MWp. That export withholds east-west frames, naming the
+reason, rather than pick one.
+
+**Recommendation.** Decide what `nP` means for an east-west frame (per face, or in all) and make
+the plan depth, collector width, module count and drawing follow it. Per face matches the way
+east-west systems are usually specified ("1P per side") and keeps every saved frame length
+unchanged; the capacity of saved east-west projects would double.
+
 ### G3. `Math.min(...)` over empty collections yields non-finite SVG geometry
 
 **Verified against the current build.** A fresh page load, before any user interaction,
@@ -535,6 +553,16 @@ ground. Only a KML or KMZ boundary is placed exactly.
 **Recommendation.** Read a georeference out of a DXF when the drawing is in a known
 projected system (UTM coordinates are recognisable by their size), and offer a survey
 import as the thing to use once the site is real.
+
+### G44. The PVCollada export carries no electrical layout
+
+`src/pvcollada.js` writes the module, racks, tables and terrain, which validate against the
+official XSD and all three Schematron files. It writes no inverters, strings or circuit: PVhub
+assigns strings to inverters by block, and the format's string map is module by module. Drawing
+one would be a design nobody made. PVsyst and PVcase both string a layout themselves.
+
+**Recommendation.** Add the inverters and transformers as components and 3D instances at the
+station markers, which PVhub does know, before any attempt at strings.
 
 ### G43. The OpenStreetMap pull has not been seen working live
 
