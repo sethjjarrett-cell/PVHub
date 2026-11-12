@@ -536,6 +536,22 @@ ground. Only a KML or KMZ boundary is placed exactly.
 projected system (UTM coordinates are recognisable by their size), and offer a survey
 import as the thing to use once the site is real.
 
+### G43. The OpenStreetMap pull has not been seen working live
+
+`src/osmPull.js` is tested against answers built in the shape Overpass returns, and the panel
+was driven in a browser with the request intercepted and answered. The development sandbox
+cannot reach `overpass-api.de`, so no real answer has passed through it yet; the first real
+site is the test. The hand-back path covers a network that blocks it.
+
+Three smaller things. A town-edge site can bring in dozens of buildings, each its own zone
+card, which makes section 1C long. A multipolygon's inner rings are dropped, so a clearing in
+a wood is excluded with the wood. And a protected area is offered like any other exclusion,
+when a site mostly inside one has a planning problem before a layout one; the panel says so
+above half the site, and does nothing more.
+
+**Recommendation.** Run it on a real site and compare the result with the map. Collapse a
+kind's zone cards into one group when there are more than a handful.
+
 ## Severity 4 — Polish
 
 ### G12. No favicon

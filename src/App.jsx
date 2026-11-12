@@ -13,6 +13,7 @@ import { stationPlan, stationIndexer, describePlan, describeKva, STATION_MODES, 
 import { planFeeders } from "./feeders.js";
 import { metresPerDegree, makeGeoRef, pullTerrain } from "./sitePull.js";
 import { WeatherSource, BaselineSource } from "./SiteData.jsx";
+import { OsmPanel } from "./OsmPanel.jsx";
 import {
   ZONE_KINDS, makeZone, prepareZones, rectClear, segmentBlocked, inBlockingZone,
   nearestNode, shortestFrom, pathPoints, routeTree, tightCrossings,
@@ -2736,6 +2737,14 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
 
   const [polygon, setPolygonRaw] = useState(EXAMPLE_BOUNDARY);
   const [ss, setSs] = useState(polygonCentroid(EXAMPLE_BOUNDARY));
+  /* The site on the earth: exact from a KML boundary, otherwise its
+     middle placed at the site's coordinates and marked as assumed. */
+  const siteGeo = useMemo(() => {
+    if (geoRef) return makeGeoRef(geoRef);
+    if (!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lon) || polygon.length < 3) return null;
+    const c = polygonCentroid(polygon);
+    return makeGeoRef({ lat: loc.lat, lon: loc.lon, x0: c.x, y0: c.y });
+  }, [geoRef, loc, polygon]);
   const [draft, setDraft] = useState([]);
   const [mode, setMode] = useState("edit");
   const [fitToken, setFitToken] = useState(0);
@@ -3710,14 +3719,10 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               )}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button className="btn" disabled={pullMsg?.busy || polygon.length < 3} onClick={async () => {
-                  const c = polygonCentroid(polygon);
-                  const geo = geoRef ? makeGeoRef(geoRef)
-                    : loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)
-                      ? makeGeoRef({ lat: loc.lat, lon: loc.lon, x0: c.x, y0: c.y })
-                      : null;
+                  const geo = siteGeo;
                   setPullMsg({ busy: true, text: "Pulling elevation tiles…" });
                   const r = await pullTerrain({ polygon, geo, spacing: 20 });
-                  if (!r.ok) { setPullMsg({ busy: false, warn: true, text: r.msg }); return; }
+                  if (!r.ok || !geo) { setPullMsg({ busy: false, warn: true, text: r.msg }); return; }
                   setTerrainPts(r.pts);
                   setPullMsg({ busy: false, warn: geo.source !== "kml", text:
                     `${fmt(r.pts.length, 0)} heights pulled from the open Terrarium elevation tiles (SRTM at about 30 m in `
@@ -3789,6 +3794,8 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               </button>
               {entrance && <button className="btn" onClick={() => setEntrance(null)}>Remove the entrance</button>}
             </div>
+            <OsmPanel polygon={polygon} geo={siteGeo} zones={zones} ss={ss} onGridPoint={setSs}
+              onAddZones={(list) => setZones((zs) => [...zs, ...list.map(makeZone)])} />
 
             {zones.map((z) => {
               const upd = (patch) => setZones((zs) => zs.map((x) => (x.id === z.id ? makeZone({ ...x, ...patch }) : x)));

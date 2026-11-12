@@ -61,6 +61,9 @@ export function makeZone(z = {}) {
     name: z.name || ZONE_KINDS[kind].name,
     kind, buffer, pts,
     crossable: typeof z.crossable === "boolean" ? z.crossable : ZONE_KINDS[kind].crossable,
+    /* Where it came from, when it was read from a map rather than drawn,
+       so the same feature is not added twice. */
+    ...(typeof z.osm === "string" ? { osm: z.osm } : {}),
   };
 }
 

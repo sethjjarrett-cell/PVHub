@@ -32,6 +32,9 @@ src/siteConstraints.js exclusion zones, the access-road tree, and the route-grap
 src/feeders.js         which stations share an MV feeder back to the grid point — no React
 src/sitePull.js        the georeference (local metres to degrees and back) and terrain
                        pulled from open elevation tiles — no React but for the tile decode
+src/osmPull.js         OpenStreetMap: the Overpass question, and the answer read into
+                       candidate exclusions and nearby substations — no React
+src/OsmPanel.jsx       the offer of those candidates in the layout's section 1C
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
 src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
@@ -247,6 +250,9 @@ node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 
 node tests/sitePull.test.mjs        # 37 assertions: metres to degrees and back, tile
                                     # addressing, Terrarium decoding, and bilinear heights
                                     # that come back null rather than zero
+node tests/osmPull.test.mjs         # 79 assertions: what each tag means, the box asked
+                                    # about, rings stitched, shapes clipped, lines as strips,
+                                    # and answers refused for being about somewhere else
 node tests/feeders.test.mjs         # 26 assertions: feeders chained on a known graph, the
                                     # limit respected, and the run table the MV tab reads
 node tests/siteConstraints.test.mjs # 62 assertions: a frame against a zone and its buffer,
@@ -292,6 +298,7 @@ rather than failing silently.
 | `archive-api.open-meteo.com` / `api.open-meteo.com` | ERA5 daily temperature extremes for string sizing; hourly temperature, and irradiance where the satellite record has none | a button |
 | `satellite-api.open-meteo.com` | EUMETSAT SARAH-3 hourly irradiance, ten years, reduced to a typical year | a button |
 | `s3.amazonaws.com/elevation-tiles-prod` | Terrarium elevation tiles (SRTM about 30 m), a screening terrain surface | a button |
+| `overpass-api.de/api/interpreter` | OpenStreetMap features round the site and substations near it | a button, or a link and the answer handed back |
 | `re.jrc.ec.europa.eu/api/v5_3/PVcalc` | PVGIS validated absolute yield baseline | a link, and the answer handed back |
 | `re.jrc.ec.europa.eu/api/v5_3/tmy` | PVGIS's own typical year, as an alternative to the one above | a link, and the answer handed back |
 
@@ -445,6 +452,21 @@ Deliberate engineering decisions, each stated in the UI's own text:
   the message says so in full, because a confident surface for the wrong hillside is worse
   than no surface. A point whose tile did not come back is dropped, never given a height of
   zero, and a site needing more than 64 tiles is refused rather than pulled slowly.
+- **OpenStreetMap offers candidates; it never draws exclusions by itself.** `readOverpass`
+  turns an answer into candidates by kind, and nothing becomes a zone until "Add" is pressed.
+  Each arrives with a buffer of zero, because OSM records where a line runs and not how wide
+  its easement is. A mapped line has no width, so it becomes a strip `LINE_STRIP` (1 m) wide
+  and its easement is the buffer. An empty answer is reported as unmapped, not clear, because
+  in open country that is what it usually means. An answer is checked against the box that
+  was asked about and refused if nothing in it is near the site, the same reading-back rule
+  as PVGIS. Overpass allows cross-origin requests, so the page asks directly, and the query is
+  also a link with a hand-back for networks that block it. A multipolygon's holes are not
+  kept (the cautious side, and stated); a ring that does not close is dropped, never closed
+  with a line OSM did not draw. The attribution is shown wherever the data is.
+- **A substation on the map is a direction, not a connection offer.** The panel lists the
+  substations within 20 km with their mapped voltage and the straight-line distance, and can
+  move the grid point to the edge of the boundary facing one. Whether it has capacity is the
+  network operator's answer, and the off-site run is not in the MV total; the panel says both.
 - **The access road is the tree of shortest routes from the entrance, counted once.**
   `routeTree` routes from the entrance to every station and to the grid point along the
   corridor graph the cable already uses, and its length is the union of the edges, the same

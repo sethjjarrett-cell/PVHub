@@ -35,11 +35,11 @@ const small = { font: "11px/1.5 system-ui", color: C.muted };
  * it can be middle-clicked, copied or sent to a colleague, and so a
  * popup blocker has nothing to object to.
  */
-function HandBack({ url, kind, expect, onRead, what }) {
+export function HandBack({ url, kind, expect, onRead, what, read, note = " — PVGIS answers there in a few seconds." }) {
   const [err, setErr] = useState("");
   const [over, setOver] = useState(false);
   const take = (text) => {
-    const r = readPvgis(kind, text, expect);
+    const r = read ? read(text) : readPvgis(kind, text, expect);
     if (!r.ok) { setErr(r.msg); return; }
     setErr("");
     onRead(r.data, r.warnings || []);
@@ -58,7 +58,7 @@ function HandBack({ url, kind, expect, onRead, what }) {
         <a href={url} target="_blank" rel="noreferrer" style={{ color: C.accent }}>
           Open {what} in a new tab
         </a>
-        <span style={{ color: C.muted }}> — PVGIS answers there in a few seconds.</span>
+        <span style={{ color: C.muted }}>{note}</span>
       </div>
       <div
         onDragOver={(e) => { e.preventDefault(); setOver(true); }}
