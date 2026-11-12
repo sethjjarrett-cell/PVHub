@@ -92,10 +92,21 @@ export function lvRunsFromLayout(L) {
  * they are: the layout has no view on either.
  */
 export function mvRunsFromLayout(L, st = {}) {
+  const kva = fin(L?.invAcKw) && L.invAcKw > 0 ? L.invAcKw : null;
+  /* Feeders, when the layout chained its stations: one branch each, far
+     end first, every run carrying the inverters joining at its own end. */
+  if (L?.feeders?.length) {
+    const runs = L.feeders.flatMap((f, b) => f.runs.map((r) => ({
+      branch: b + 1, from: `TS${r.from + 1}`, to: r.to === null || r.to === undefined ? "POC" : `TS${r.to + 1}`,
+      inv: r.used, install: st.refInstall || "duct", size: st.refSize || 150, dist: r0(r.len),
+    })));
+    return { kva, runs, total: r0(runs.reduce((a, r) => a + r.dist, 0)), feeders: L.feeders.length,
+      radial: fin(L.radialMv) ? r0(L.radialMv) : null };
+  }
   const ss = stationsOf(L).filter((s) => fin(s.mv) && s.mv > 0);
   if (!ss.length) return null;
   return {
-    kva: fin(L.invAcKw) && L.invAcKw > 0 ? L.invAcKw : null,
+    kva, feeders: 0,
     runs: ss.map((s, i) => ({
       branch: i + 1, from: `TS${i + 1}`, to: "POC", inv: s.used,
       install: st.refInstall || "duct", size: st.refSize || 150, dist: r0(s.mv),

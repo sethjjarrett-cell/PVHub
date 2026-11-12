@@ -506,19 +506,19 @@ does not take.
 Money now starts empty everywhere. The 25-year period and the row-shading coefficient do not,
 and the second is a calibration constant standing in for an hourly simulation.
 
-### G41. Stations are routed as radials, not as feeders
+### G41. Feeders are greedy, and their limit is typed in
 
-Every station gets its own MV run to the point of connection. A real collector daisy-chains
-stations along a feeder: less cable in total, and the last stretch carries every station on
-it, which is the run that sets the cable size. The MV tab is told this when it takes the
-runs, but it means the MV cable total from the layout is an upper bound and the per-run
-current is a lower bound.
+*Was: stations were routed as radials. With an MVA limit entered, they are now chained along
+feeders (`src/feeders.js`) and the MV tab takes them as branches.*
 
-**Recommendation.** Group stations into feeders by a limit on the feeder's current (the
-largest cable's derated rating at the MV voltage), order each feeder along the corridor
-graph from its far end to the point of connection, and route it as one chain. The MV tab's
-run table already takes a branch number and cumulative current per run, so it would read a
-feeder without change.
+Two things remain. The grouping is greedy — farthest first, least detour next — which is
+explainable and usually close, but not an optimum: a vehicle-routing solver would sometimes
+find a shorter set. And the limit is a number the user carries over from the MV tab by
+hand, so a cable change there does not regroup the feeders here until the limit is retyped.
+
+**Recommendation.** Have the MV tab offer its largest derated rating back to the layout as
+the limit, through the same offer panel the other hand-offs use, rather than linking them
+silently.
 
 ## Severity 4 — Polish
 

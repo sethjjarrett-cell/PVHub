@@ -10,6 +10,7 @@ import {
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { FaultStudyTab } from "./FaultTool.jsx";
 import { stationPlan, stationIndexer, describePlan, describeKva, STATION_MODES, parseKvaList, unitsByKva } from "./stations.js";
+import { planFeeders } from "./feeders.js";
 import { WeatherSource, BaselineSource } from "./SiteData.jsx";
 import {
   ZONE_KINDS, makeZone, prepareZones, rectClear, segmentBlocked, inBlockingZone,
@@ -1401,8 +1402,27 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
       mvPaths.push([{ x: s.x, y: s.y }, ...pathPoints(graph, prev, s.node), poi]);
     }
   }
+  /* With a feeder limit, stations are chained along shared feeders and
+     the MV figures become the feeders'. The radial total is kept beside
+     it, because the saving is the reason to chain at all. */
+  let feeders = null;
+  const radialMv = mv;
+  if (poi && subs.length && elec?.feederMva > 0 && elec?.invKva > 0) {
+    const pn = nearestNode(graph, poi);
+    feeders = planFeeders({
+      graph, poiNode: pn.i, poiStub: pn.d, limitMva: elec.feederMva,
+      stations: subs.map((x) => ({ node: x.node, used: x.used, mva: (x.used * elec.invKva) / 1000 })),
+    });
+    if (feeders) {
+      mv = feeders.total;
+      mvPaths.length = 0;
+      for (const f of feeders.feeders) {
+        f.paths.forEach((pth, k) => mvPaths.push(k === f.paths.length - 1 ? [...pth, poi] : pth));
+      }
+    }
+  }
   return { subs, lv, mv, paths, mvPaths, markers, graph, combo: plan.combo, spare: plan.spare,
-    kva: plan.kva || null, planMiss: plan.miss || null, unreachable, mvUnreachable };
+    kva: plan.kva || null, planMiss: plan.miss || null, unreachable, mvUnreachable, feeders, radialMv };
 }
 
 /* ---------------- formatting ---------------- */
@@ -3376,6 +3396,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       invVac: inv?.vAc ?? null,
       stations: (cabling?.subs || []).map((x) => ({
         ways: x.ways, used: x.used, kva: x.kva ?? null, lv: x.lvLens || [], mv: x.mvLen ?? null })),
+      feeders: cabling?.feeders ? cabling.feeders.feeders.map((f) => ({
+        mva: f.mva, runs: f.runs.map((r) => ({ from: r.from, to: r.to, len: r.len, used: r.used })) })) : null,
+      radialMv: cabling?.radialMv ?? null,
       zones: zones.length,
       access: access ? { length: access.length, crossings: access.tight.count,
         throughGaps: access.tight.length, width: blockCfg.gapSlot, unreachable: access.unreachable } : null,
@@ -4098,6 +4121,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               <Num label="Inverters per transformer (ways)" value={elec.invertersPerTx} step={1} min={1}
                 onChange={(v) => setElec({ ...elec, invertersPerTx: Math.round(v) })} />
             )}
+            <NumO label="MV feeder limit" unit="MVA" value={elec.feederMva ?? null} step={0.5}
+              ph="none: each station on its own run"
+              onChange={(v) => setElec({ ...elec, feederMva: v })} />
             {elec.stationMode === "kva" && (
               <label className="fld" style={{ width: "100%" }}>
                 <span className="fld-l">Transformer sizes available (kVA)</span>
@@ -4139,6 +4165,26 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                 : null}
               {" "}The outline, the station marker and the cable routed to it are all read off this
               one plan.
+            </div>
+            <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+              {!(elec.feederMva > 0)
+                ? <>With no feeder limit every station has its own MV run to the grid point. Enter the
+                    capacity of the largest MV cable the project will lay — its derated rating at the MV
+                    voltage, from the MV tab — and stations are chained along feeders instead.</>
+                : !cabling?.feeders
+                ? <>A feeder limit is set, but there is no routed layout with a grid point to chain to yet.</>
+                : <>
+                    <b>{cabling.feeders.feeders.length}</b> feeder{cabling.feeders.feeders.length === 1 ? "" : "s"} at up to
+                    {" "}{fmt(elec.feederMva, 1)} MVA:{" "}
+                    {cabling.feeders.feeders.map((f) => `${f.chain.map((i) => `TS${i + 1}`).join(" → ")} → POC (${fmt(f.mva, 1)} MVA)`).join("; ")}.
+                    {" "}MV cable <b>{fmtKm(cabling.mv)}</b>, against {fmtKm(cabling.radialMv)} as radials.
+                    {" "}Each feeder starts at the station farthest from the grid point and picks up the others it
+                    passes, while it stays inside the limit and a detour costs less than that station&apos;s own run.
+                    It is a grouping that can be explained in a sentence, not an optimum.
+                    {cabling.feeders.over.length > 0 && <> <span style={{ color: C.warn }}>
+                      {cabling.feeders.over.map((i) => `TS${i + 1}`).join(", ")} alone exceed{cabling.feeders.over.length === 1 ? "s" : ""} the
+                      limit, and run on {cabling.feeders.over.length === 1 ? "its" : "their"} own.</span></>}
+                  </>}
             </div>
             <WarnList items={elecWarnings} />
           </Section>

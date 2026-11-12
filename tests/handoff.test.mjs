@@ -172,5 +172,20 @@ console.log("\n--- stations sized from real transformers ---");
   ok(guidedFromLayout(mixedKva).notes.length > 0, "and say why");
 }
 
+console.log("\n--- feeders, when the layout chained its stations ---");
+{
+  const F = { ...L, radialMv: 288, feeders: [{ mva: 8.75, runs: [
+    { from: 1, to: 0, len: 180.4, used: 11 }, { from: 0, to: null, len: 100.2, used: 14 }] }] };
+  const m = mvRunsFromLayout(F, { refInstall: "direct", refSize: 300 });
+  eq(m.feeders, 1, "the hand-over says it is one feeder");
+  eq(m.runs, [
+    { branch: 1, from: "TS2", to: "TS1", inv: 11, install: "direct", size: 300, dist: 180 },
+    { branch: 1, from: "TS1", to: "POC", inv: 14, install: "direct", size: 300, dist: 100 },
+  ], "as one branch, far end first, each run carrying the inverters that join at its own end");
+  eq(m.total, 280, "with its own total");
+  eq(m.radial, 288, "and the radial total beside it, for comparison");
+  eq(mvRunsFromLayout(L).feeders, 0, "a layout with no feeders still hands over radials");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1295,12 +1295,18 @@ export function CableMvTab({ st, set, layout = null }) {
               now: fmt(st.kva, 0), next: fmt(mvRuns.kva, 0), differs: st.kva !== mvRuns.kva }] : []),
           ]}
           notes={[mvRuns.runs.map((r) => `${r.from} → ${r.to}: ${r.inv} inverters, ${r.dist} m`).join("  ·  "),
-            "This replaces the run table below. Each station is on its own radial to the grid "
-            + "point, because that is what the layout routes today. A real collector chains "
-            + "stations along a feeder, which is shorter in total and loads its last stretch with "
-            + "all of them: read the length here as an upper bound and each run's current as the "
-            + "least a shared feeder would carry. Sizes and installation method stay as chosen on "
-            + "this tab."]}
+            mvRuns.feeders
+              ? `This replaces the run table below with the layout's ${mvRuns.feeders} feeder`
+                + `${mvRuns.feeders === 1 ? "" : "s"}, one branch each, far end first, so the current builds `
+                + "up towards the grid point and the last run of each carries every station on it — the run "
+                + `that sets the cable size.${mvRuns.radial ? ` As radials the same stations would need ${mvRuns.radial} m.` : ""}`
+                + " Sizes and installation method stay as chosen on this tab."
+              : "This replaces the run table below. Each station is on its own radial to the grid "
+                + "point, because no feeder limit is set on the Layout tab. Chained along feeders "
+                + "the total would be shorter and the last stretch of each would carry all of its "
+                + "stations: read the length here as an upper bound and each run's current as the "
+                + "least a shared feeder would carry. Sizes and installation method stay as chosen on "
+                + "this tab."]}
           button="Replace the run table with these" taken="The run table already matches the layout"
           onTake={() => set({ ...st, runs: mvRuns.runs, ...(mvRuns.kva !== null ? { kva: mvRuns.kva } : {}) })} />
       )}

@@ -29,6 +29,7 @@ src/stations.js        which inverters share a transformer station — no React
 src/handoff.js         what the layout offers each downstream tool, and what it declines to
 src/siteConstraints.js exclusion zones, the access-road tree, and the route-graph helpers
                        App.jsx used to hold — no React
+src/feeders.js         which stations share an MV feeder back to the grid point — no React
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
 src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
@@ -241,6 +242,8 @@ node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 
                                     # reproduced from the Annex A formula, Table 54.2, the
                                     # cascade, and the checks that decide whether a
                                     # conductor survives a fault
+node tests/feeders.test.mjs         # 26 assertions: feeders chained on a known graph, the
+                                    # limit respected, and the run table the MV tab reads
 node tests/siteConstraints.test.mjs # 62 assertions: a frame against a zone and its buffer,
                                     # what a cable may cross, the road tree on a hand-built
                                     # graph, and which crossings really squeeze between blocks
@@ -469,12 +472,24 @@ Deliberate engineering decisions, each stated in the UI's own text:
   sees the lowest and is where the device is least likely to operate. Every other feeder of
   that station lies between them, and the station chosen is the one with the most inverters
   on it, which has the largest transformer and the highest fault level.
-- **The AC tab takes the longest LV run; the MV tab takes one radial per station.** Volt
-  drop is a limit and a limit is checked on the run that reaches it first, so the losses
-  shown are then for that run and overstate the average one, which the panel says. The MV
-  runs are each station straight to the grid point because that is what the layout routes
-  today; a real collector chains stations along a feeder, so the total is an upper bound on
-  cable and each run's current a lower bound on what a shared feeder would carry (GAPS §G41).
+- **The AC tab takes the longest LV run; the MV tab takes the layout's feeders or radials.**
+  Volt drop is a limit and a limit is checked on the run that reaches it first, so the losses
+  shown are then for that run and overstate the average one, which the panel says. With a
+  feeder limit set, the MV tab gets one branch per feeder, far end first, each run carrying
+  the inverters joining at its own end, so its current builds up towards the grid point as
+  the tab already expects. With none, each station is its own radial and the panel says the
+  total is an upper bound.
+- **Feeders are grouped greedily, and the limit is entered, never assumed.** `planFeeders`
+  starts each feeder at the station farthest from the grid point and picks up the station
+  costing the least detour on the way home, while the feeder stays inside its MVA limit and
+  the detour is shorter than that station's own run would be. Ties go to the nearer station:
+  two stations on the way home both cost nothing extra, and taking the farther first stranded
+  the nearer one behind the feeder, which is how the first version produced two feeders
+  where one would do. The limit is the derated rating of the largest MV cable the project
+  will lay at its voltage — the MV tab's number, not this file's — and with no limit the
+  stations stay radial. The radial total is always shown beside the feeder total, because
+  the saving is the only reason to chain. It is a grouping that can be explained in a
+  sentence, not an optimum.
 - **The Summary and the pitch trade-off carry no prices either.** Both used to open with a
   rate card, and the trade-off also assumed 1,000 kWh/kWp when no baseline was loaded, so it
   always named a "best value" pitch from prices nobody entered and a yield nobody pulled. A
