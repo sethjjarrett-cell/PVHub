@@ -895,8 +895,10 @@ enough to say *that fits* or *that doesn't*, not good enough to build from.
   blocks, but it means the layout cannot dodge steep patches smaller than a
   block. Where terrain is interleaved at a finer scale than the block, the
   answer is the grading-tolerance variants, not a cleverer grid.
-- **Substations** are a placeholder pending a proper multi-substation layer:
-  clustering inverters per substation, placing them, and routing MV between
-  them.
-- **No exclusion zones** yet, no earthworks cut/fill volumes, no access routing
-  from a site entrance.
+- **Substations** are clustered from contiguous blocks and placed on the
+  corridor graph, sized by a modular catalogue, by one entered size, or from the
+  transformer sizes a supplier offers in kVA. Each is still routed to the grid
+  point on its own radial rather than chained along a feeder.
+- **Exclusion zones** keep modules out with a buffer each, and the access road
+  is routed from a site entrance to every station and the grid point. There
+  are no earthworks cut/fill volumes.

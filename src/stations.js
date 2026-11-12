@@ -25,7 +25,38 @@ export const MODULAR_WAYS = [10, 14, 20];
 export const STATION_MODES = {
   modular: { name: "Modular units: 10, 14 or 20 ways" },
   fixed: { name: "One size: the number of ways entered" },
+  kva: { name: "Transformer units by kVA" },
 };
+
+/** "3150, 4000; 5000 kVA" -> [3150, 4000, 5000]. Anything that is not a
+ *  positive number is dropped rather than read as zero. */
+export function parseKvaList(text) {
+  /* Numbers are matched with their sign, so "-5" is minus five and is
+     dropped, rather than the minus being taken for a separator and five
+     kept. */
+  return [...new Set((String(text ?? "").match(/-?\d+(?:\.\d+)?/g) || []).map(Number).filter((v) => v > 0))]
+    .sort((a, b) => a - b);
+}
+
+/**
+ * How many inverters each available transformer can take.
+ *
+ * A unit takes as many inverters as fit inside its rating, floored: one
+ * more would load it past its nameplate at full export. Units that
+ * cannot take even one inverter are dropped, and so are two units that
+ * work out to the same number of ways, keeping the smaller — it carries
+ * the same inverters for less transformer.
+ */
+export function unitsByKva(kvaList, invKva) {
+  if (!(invKva > 0)) return [];
+  const out = [];
+  for (const kva of [...kvaList].sort((a, b) => a - b)) {
+    const ways = Math.floor(kva / invKva + 1e-9);
+    if (ways < 1 || out.some((u) => u.ways === ways)) continue;
+    out.push({ kva, ways });
+  }
+  return out;
+}
 
 /** Fewest units first, then fewest spare ways. 26 -> 14+14, 34 -> 20+14. */
 export function chooseSubstations(nInv, sizes) {
@@ -64,8 +95,23 @@ export function chooseSubstations(nInv, sizes) {
  * reads as modular, because that is what its stations were.
  */
 export function stationPlan(nInv, cfg = {}) {
-  const mode = cfg.stationMode === "fixed" ? "fixed" : "modular";
+  const mode = cfg.stationMode === "fixed" ? "fixed" : cfg.stationMode === "kva" ? "kva" : "modular";
   if (!(nInv > 0)) return { mode, units: 0, spare: 0, combo: [] };
+  if (mode === "kva") {
+    /* By kVA: each available unit becomes a number of ways for this
+       inverter, and the plan is chosen over those exactly as it is for
+       the modular catalogue. The kVA of each unit chosen travels with
+       the plan, so the summary can say how hard each one is loaded. */
+    const units = unitsByKva(parseKvaList(cfg.unitKva), cfg.invKva);
+    if (!units.length) {
+      return { mode, units: 0, spare: 0, combo: [],
+        miss: !(cfg.invKva > 0) ? "the inverter's rating"
+          : "a transformer size at least as large as one inverter" };
+    }
+    const plan = chooseSubstations(nInv, units.map((u) => u.ways));
+    const kva = plan.combo.map((w) => units.find((u) => u.ways === w).kva);
+    return { mode, ...plan, kva };
+  }
   if (mode === "fixed") {
     const ways = Math.max(1, Math.round(Number(cfg.invertersPerTx) || 1));
     const units = Math.ceil(nInv / ways);
@@ -97,4 +143,11 @@ export function describePlan(plan) {
   const c = plan?.combo || [];
   if (!c.length) return "—";
   return c.every((w) => w === c[0]) && c.length > 1 ? `${c.length} × ${c[0]}` : c.join(" + ");
+}
+
+/** The same, in transformer sizes: "2 × 4000 kVA" or "4000 + 3150 kVA". */
+export function describeKva(plan) {
+  const k = plan?.kva || [];
+  if (!k.length) return null;
+  return (k.every((v) => v === k[0]) && k.length > 1 ? `${k.length} × ${k[0]}` : k.join(" + ")) + " kVA";
 }

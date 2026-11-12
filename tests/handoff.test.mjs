@@ -162,5 +162,15 @@ console.log("\n--- the fault study ---");
      "an inverter with no AC voltage leaves the study's own and says so");
 }
 
+console.log("\n--- stations sized from real transformers ---");
+{
+  const K = { ...L, stations: L.stations.map((s) => ({ ...s, kva: 5000 })) };
+  eq(guidedFromLayout(K).patch.transformerKva, 5000, "the transformer's own rating is handed over, not ways × inverter");
+  eq(networkFromLayout(K, {}).net.source.kva, 5000, "and the fault study is built on it");
+  const mixedKva = { ...L, stations: [{ ...L.stations[0], kva: 5000 }, { ...L.stations[1], kva: 4000 }] };
+  ok(!("transformerKva" in guidedFromLayout(mixedKva).patch), "two sizes of unit hand over no single size");
+  ok(guidedFromLayout(mixedKva).notes.length > 0, "and say why");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

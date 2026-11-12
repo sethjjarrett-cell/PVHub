@@ -124,6 +124,10 @@ export const LAYOUT_LAYERS = [
   { name: "PV-SUBSTATION", colour: ACI.yellow },
   { name: "PV-INVERTER", colour: ACI.orange },
   { name: "PV-POI", colour: ACI.red },
+  { name: "PV-EXCLUSION", colour: ACI.red },
+  { name: "PV-EXCLUSION-BUFFER", colour: ACI.ltGrey },
+  { name: "PV-ACCESS-ROAD", colour: ACI.orange },
+  { name: "PV-ENTRANCE", colour: ACI.orange },
   { name: "PV-TEXT", colour: ACI.yellow },
 ];
 
@@ -150,6 +154,7 @@ const asRect = (r) => [
 export function layoutToDxf({
   boundary = [], blocks = [], frames = [], roads = [],
   cabling = null, poi = null, trenches = null,
+  zones = [], entrance = null, access = null,
   includeFrames = false, includeTrenchLoad = true,
   textHeight = 2.5, title = null,
 }) {
@@ -206,6 +211,35 @@ export function layoutToDxf({
         y: (trenches.busiest.a.y + trenches.busiest.b.y) / 2, z: 0 };
       ents.push(text3d("PV-TEXT", mid, textHeight, `${hot} CIRCUITS`));
     }
+  }
+
+  /* Exclusions as drawn, and the buffer each one keeps modules back by,
+     on a layer of its own so it can be switched off. The buffer is
+     drawn as the rectangle-grown outline the generator actually tested
+     against at the zone's own bounding box — it is a marker of the
+     distance, not a survey line. */
+  for (const z of zones || []) {
+    if (!z.pts || z.pts.length < 3) continue;
+    ents.push(polyline3d("PV-EXCLUSION", z.pts));
+    const cx = z.pts.reduce((a, p) => a + p.x, 0) / z.pts.length;
+    const cy = z.pts.reduce((a, p) => a + p.y, 0) / z.pts.length;
+    ents.push(text3d("PV-TEXT", { x: cx, y: cy, z: 0 }, textHeight,
+      `${String(z.name || "EXCLUSION").toUpperCase()}${z.buffer ? ` +${z.buffer}M` : ""}`));
+    if (z.buffer > 0 && z.box) {
+      const b = z.buffer;
+      ents.push(polyline3d("PV-EXCLUSION-BUFFER", asRect({
+        x: z.box.x0 - b, y: z.box.y0 - b, w: z.box.x1 - z.box.x0 + 2 * b, h: z.box.y1 - z.box.y0 + 2 * b })));
+    }
+  }
+  if (access) {
+    for (const e of access.edges || []) ents.push(line3d("PV-ACCESS-ROAD", { ...e.a, z: 0 }, { ...e.b, z: 0 }));
+    for (const pth of access.paths || []) {
+      if (pth.pts.length >= 2) ents.push(line3d("PV-ACCESS-ROAD", { ...pth.pts[0], z: 0 }, { ...pth.pts[1], z: 0 }));
+    }
+  }
+  if (entrance) {
+    ents.push(circle3d("PV-ENTRANCE", { x: entrance.x, y: entrance.y, z: 0 }, textHeight * 2));
+    ents.push(text3d("PV-TEXT", { x: entrance.x + textHeight * 2.5, y: entrance.y, z: 0 }, textHeight, "ENTRANCE"));
   }
 
   if (poi) {

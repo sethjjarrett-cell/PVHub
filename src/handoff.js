@@ -147,10 +147,16 @@ export function guidedFromLayout(L, loc = null) {
   if (L.mounting !== "tracker" && fin(L.tilt)) p.tiltDeg = L.tilt;
   p.moduleCount = L.modules;
   const ways = [...new Set(stationsOf(L).map((s) => s.ways))];
+  /* A station sized from a real transformer carries that rating; one
+     sized in ways is taken as the inverters it serves, the least the
+     transformer could be. */
+  const kvas = [...new Set(stationsOf(L).map((s) => s.kva).filter((v) => fin(v) && v > 0))];
   const notes = [];
-  if (ways.length === 1 && fin(L.invAcKw) && L.invAcKw > 0) {
+  if (kvas.length === 1 && stationsOf(L).every((s) => s.kva === kvas[0])) {
+    p.transformerKva = kvas[0];
+  } else if (ways.length === 1 && kvas.length === 0 && fin(L.invAcKw) && L.invAcKw > 0) {
     p.transformerKva = r0(ways[0] * L.invAcKw);
-  } else if (ways.length > 1) {
+  } else if (ways.length > 1 || kvas.length > 1) {
     notes.push(`The layout uses stations of ${ways.sort((a, b) => a - b).join(" and ")} ways, so `
       + "there is no single transformer size to hand over. Enter the one being bought.");
   }
@@ -262,7 +268,7 @@ export function networkFromLayout(L, { ac = {}, source = {} } = {}) {
   return {
     net: {
       source: {
-        kind: "tx", kva: r0(pick.ways * L.invAcKw),
+        kind: "tx", kva: fin(pick.kva) && pick.kva > 0 ? pick.kva : r0(pick.ways * L.invAcKw),
         ukPct: source.ukPct ?? null, xOverR: source.xOverR ?? 10,
         uSecV: u ?? source.uSecV ?? null,
         u0V: u ? r0(u / Math.sqrt(3)) : source.u0V ?? null,

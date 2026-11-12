@@ -27,6 +27,8 @@ src/pvgis.js           site data: Open-Meteo pulls, the typical year, and PVGIS'
 src/SiteData.jsx       the one set of weather and baseline controls both yield tabs use
 src/stations.js        which inverters share a transformer station — no React
 src/handoff.js         what the layout offers each downstream tool, and what it declines to
+src/siteConstraints.js exclusion zones, the access-road tree, and the route-graph helpers
+                       App.jsx used to hold — no React
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
 src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
@@ -239,13 +241,17 @@ node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 
                                     # reproduced from the Annex A formula, Table 54.2, the
                                     # cascade, and the checks that decide whether a
                                     # conductor survives a fault
-node tests/handoff.test.mjs         # 79 assertions: what the layout hands each tool, that the
+node tests/siteConstraints.test.mjs # 62 assertions: a frame against a zone and its buffer,
+                                    # what a cable may cross, the road tree on a hand-built
+                                    # graph, and which crossings really squeeze between blocks
+node tests/handoff.test.mjs         # 83 assertions: what the layout hands each tool, that the
                                     # BOM and the sweep built from it are the layout's plant,
                                     # and that nothing the layout does not know is filled in
 node tests/worldMap.test.mjs        # 47 assertions: which country a point is in, what each
                                     # view frames, and sites that overlap at a given zoom
-node tests/stations.test.mjs        # 26 assertions: one station plan, and the indexer that
-                                    # stamps it on every block agreeing with it
+node tests/stations.test.mjs        # 52 assertions: one station plan in three modes, units by
+                                    # kVA floored to the inverters that fit, and the indexer
+                                    # that stamps it on every block agreeing with it
 node tests/pvgis.test.mjs           # 94 assertions: the typical year against a record with a
                                     # known answer, and PVGIS answers read back from real
                                     # files, including the one the old tracker query got
@@ -404,6 +410,44 @@ Deliberate engineering decisions, each stated in the UI's own text:
   ignored it. `planCabling` groups by the stamped `tx`, never by slicing the list again,
   because two slicings that happen to agree is how they came apart. The modular sizes are
   one maker's range and the interface says so.
+- **An exclusion zone carries its own buffer, and none is assumed.** The network operator
+  sets an easement's width, a drainage authority a watercourse margin, an ecologist a
+  hedgerow's root protection; `ZONE_KINDS` carries labels and whether cable may cross, and
+  no distances. A buffer left at zero keeps modules out of the shape as drawn and no
+  further. The generator grows each *frame* by the zone's buffer rather than offsetting the
+  zone outward, because growing a rectangle is exact and offsetting a long thin easement is
+  precisely the deep-offset case `offsetPolygon` goes degenerate on. A square grow is a
+  little more cautious at the zone's corners, which is the safe side. Touching is not
+  crossing here either: a frame exactly at the buffer distance is clear.
+- **Whether a cable or road may cross a zone is per zone, and the buffer does not apply to
+  it.** Buried cable and a road usually may pass under an overhead line with consent, and
+  may not go through a pond. `segmentBlocked` tests the zone itself, not the buffer — the
+  buffer keeps modules back, and staying out of the pond is the question for a cable. The
+  cable graph drops nodes and edges a blocking zone covers, so routes detour round it.
+- **What an exclusion cuts off is listed, never dropped.** An inverter its station can no
+  longer reach used to be skipped by `planCabling` without a word, shrinking the LV total;
+  it is now in `unreachable` and the layout says so. The same for a station the grid point
+  cannot reach, and a destination the entrance cannot. A grid point or an entrance placed
+  inside a zone is flagged too — the grid point starts at the boundary's centroid, which is
+  often exactly where the pond is.
+- **The access road is the tree of shortest routes from the entrance, counted once.**
+  `routeTree` routes from the entrance to every station and to the grid point along the
+  corridor graph the cable already uses, and its length is the union of the edges, the same
+  rule as trench against cable. Every other corridor is spacing between rows, not built
+  road, and that distinction is the civils quantity.
+- **A road crossing is squeezed only where there is a block on both sides.** A crossing
+  edge goes from one corridor to the next along a block's edge, and often spans two rows:
+  open ground beside one, a 3 m gap beside the other. `tightCrossings` measures only the
+  stretch with a block on each side, so a route through ground an exclusion has cleared is
+  not reported as a gap to open up. Counting the whole edge overstated the work by a factor
+  of four on the first site it was tried on.
+- **Stations can be sized from real transformers.** In the kVA mode each unit on offer takes
+  the inverters that fit inside its rating, floored — one more would load it past its
+  nameplate at full export — and the plan is chosen over those exactly as for the modular
+  catalogue. The sizes are typed from a supplier's list and none is supplied. A station
+  sized this way carries its kVA through the summary and the hand-offs, so the fault study
+  and the guided flow get the transformer's own rating rather than ways × inverter, which
+  is only the least it could be.
 - **The layout offers; it never pushes.** The AC and MV cable tabs, the fault study, the
   PVsyst sweep builder and the guided flow each show a `FromLayout` panel when there is a
   layout: what is entered now, struck through, against what the layout says, and a button.

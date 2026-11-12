@@ -9,8 +9,12 @@ import {
 } from "./ui.jsx";
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { FaultStudyTab } from "./FaultTool.jsx";
-import { stationPlan, stationIndexer, describePlan, STATION_MODES } from "./stations.js";
+import { stationPlan, stationIndexer, describePlan, describeKva, STATION_MODES, parseKvaList, unitsByKva } from "./stations.js";
 import { WeatherSource, BaselineSource } from "./SiteData.jsx";
+import {
+  ZONE_KINDS, makeZone, prepareZones, rectClear, segmentBlocked, inBlockingZone,
+  nearestNode, shortestFrom, pathPoints, routeTree, tightCrossings,
+} from "./siteConstraints.js";
 import { defaultNetwork } from "./faultNetwork.js";
 import { BessTab } from "./BessTool.jsx";
 import { RoofDesignerTab, ROOF_PLANE_DEFAULT } from "./RoofDesigner.jsx";
@@ -300,6 +304,9 @@ function placeBlockGrid(polygon, geo, cfg, offL, offS) {
                 if (!rectFits(x - cfg.setback, y - cfg.setback,
                               rw + 2 * cfg.setback, rh + 2 * cfg.setback, polygon)) {
                   ok = false;
+                } else if (!rectClear(x, y, rw, rh, cfg.zones)) {
+                  // an exclusion zone, grown by its own buffer
+                  ok = false;
                 } else {
                   const sc2 = frameSlopeCheck(cfg.terrain, x, y, rw, rh, vertical);
                   if (sc2.hardFail) ok = false;
@@ -375,7 +382,7 @@ function generateBlockVariant(polygon, geo, cfg) {
 }
 
 /* ---------------- free-fill layout (density reference) ---------------- */
-function generateFreeFill(polygon, geo, pitch, endGap, setback, stagger = 0, terrainCtx = null) {
+function generateFreeFill(polygon, geo, pitch, endGap, setback, stagger = 0, terrainCtx = null, zones = null) {
   const t0 = performance.now();
   if (!polygon || polygon.length < 3) return { frames: [], ms: 0 };
   if (!(geo.alongLen > 0 && geo.planAcross > 0 && pitch > 0)) return { frames: [], ms: 0 };
@@ -400,7 +407,8 @@ function generateFreeFill(polygon, geo, pitch, endGap, setback, stagger = 0, ter
         for (let x = bb.minX - fw + off1; x < bb.maxX; x += pitch, lane++) {
           const shift = stagger * (x + fw / 2 - laneMid);
           for (let y = bb.minY - fh - pad + off2 + shift; y < bb.maxY + pad; y += slot) {
-            if (rectFits(x - setback, y - setback, fw + 2 * setback, fh + 2 * setback, polygon)) {
+            if (rectFits(x - setback, y - setback, fw + 2 * setback, fh + 2 * setback, polygon)
+                && rectClear(x, y, fw, fh, zones)) {
               const sc2 = frameSlopeCheck(terrainCtx, x, y, fw, fh, true);
               if (!sc2.hardFail) frames.push({ x, y, w: fw, h: fh, lane, pos: y, pen: sc2.pen });
             }
@@ -411,7 +419,8 @@ function generateFreeFill(polygon, geo, pitch, endGap, setback, stagger = 0, ter
         for (let y = bb.minY - fh + off1; y < bb.maxY; y += pitch, lane++) {
           const shift = stagger * (y + fh / 2 - laneMid);
           for (let x = bb.minX - fw - pad + off2 + shift; x < bb.maxX + pad; x += slot) {
-            if (rectFits(x - setback, y - setback, fw + 2 * setback, fh + 2 * setback, polygon)) {
+            if (rectFits(x - setback, y - setback, fw + 2 * setback, fh + 2 * setback, polygon)
+                && rectClear(x, y, fw, fh, zones)) {
               const sc2 = frameSlopeCheck(terrainCtx, x, y, fw, fh, false);
               if (!sc2.hardFail) frames.push({ x, y, w: fw, h: fh, lane, pos: x, pen: sc2.pen });
             }
@@ -1238,7 +1247,7 @@ function buildRoads(blocks, stagger, laneMid, roadW, vertical) {
 
 /** Graph of legal cable routes: along corridors, and down the gaps between
     blocks. Never across a block, never outside the boundary. */
-function buildCableGraph(blocks, polygon, stagger, laneMid, vertical) {
+function buildCableGraph(blocks, polygon, stagger, laneMid, vertical, zones = null) {
   const m = stagger || 0;
   const corrMap = new Map();
   for (const b of blocks) {
@@ -1266,6 +1275,7 @@ function buildCableGraph(blocks, polygon, stagger, laneMid, vertical) {
     for (let ui = 0; ui < channels.length; ui++) {
       const p = pos(ci, ui);
       if (!pointInPolygon(p, polygon)) continue;
+      if (inBlockingZone(p, zones)) continue;
       index.set(`${ci}:${ui}`, nodes.length);
       nodes.push({ ...p, ci, ui, adj: [] });
     }
@@ -1275,6 +1285,7 @@ function buildCableGraph(blocks, polygon, stagger, laneMid, vertical) {
     const p = nodes[a], q = nodes[b];
     const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
     if (!pointInPolygon(mid, polygon)) return;
+    if (segmentBlocked(p, q, zones)) return;
     const d = Math.hypot(q.x - p.x, q.y - p.y);
     p.adj.push([b, d]); q.adj.push([a, d]);
   };
@@ -1291,49 +1302,14 @@ function buildCableGraph(blocks, polygon, stagger, laneMid, vertical) {
   return { nodes, corridors, channels };
 }
 
-function nearestNode(graph, p) {
-  let best = -1, bd = Infinity;
-  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return { i: -1, d: Infinity };
-  for (let i = 0; i < graph.nodes.length; i++) {
-    const n = graph.nodes[i];
-    const d = Math.hypot(n.x - p.x, n.y - p.y);
-    if (d < bd) { bd = d; best = i; }
-  }
-  return { i: best, d: bd };
-}
-
-/** Dijkstra from one source over the route graph. */
-function shortestFrom(graph, src) {
-  const n = graph.nodes.length;
-  const dist = new Float64Array(n).fill(Infinity);
-  const prev = new Int32Array(n).fill(-1);
-  const seen = new Uint8Array(n);
-  dist[src] = 0;
-  for (let it = 0; it < n; it++) {
-    let u = -1, bd = Infinity;
-    for (let i = 0; i < n; i++) if (!seen[i] && dist[i] < bd) { bd = dist[i]; u = i; }
-    if (u < 0) break;
-    seen[u] = 1;
-    for (const [v, w] of graph.nodes[u].adj) {
-      if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; prev[v] = u; }
-    }
-  }
-  return { dist, prev };
-}
-
-function pathPoints(graph, prev, from) {
-  const pts = [];
-  let c = from, guard = 0;
-  while (c >= 0 && guard++ < 5000) { pts.push({ x: graph.nodes[c].x, y: graph.nodes[c].y }); c = prev[c]; }
-  return pts;
-}
+/* nearestNode, shortestFrom and pathPoints live in src/siteConstraints.js. */
 
 /** Assign inverter blocks to modular substations, place each on the route
     graph near its group, and route LV to it and MV on to the grid point. */
-function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides, elec) {
+function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides, elec, zones = null) {
   const empty = { subs: [], lv: 0, mv: 0, paths: [], mvPaths: [], graph: null, combo: [] };
   if (!blocks.length || polygon.length < 3) return empty;
-  const graph = buildCableGraph(blocks, polygon, stagger, laneMid, vertical);
+  const graph = buildCableGraph(blocks, polygon, stagger, laneMid, vertical, zones);
   if (!graph || graph.nodes.length < 2) return empty;
 
   const plan = stationPlan(blocks.length, elec);
@@ -1357,7 +1333,7 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
     const idx = nn.i >= 0 ? nn.i : nearestNode(graph, { x: cxs, y: cys }).i;
     if (idx < 0) return;
     subs.push({
-      ways, used: take, spare: ways - take, group,
+      ways, used: take, spare: ways - take, group, kva: plan.kva ? plan.kva[gi] : null,
       node: idx, x: graph.nodes[idx].x, y: graph.nodes[idx].y,
       /* Each inverter's own routed length back to this station, and the
          station's own run to the grid point. The totals alone cannot
@@ -1388,6 +1364,10 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
   let lv = 0;
   const paths = [];
   const markers = [];
+  /* An inverter its station cannot reach — cut off behind a pond, say —
+     used to be skipped without a word, and the LV total quietly shrank.
+     It is listed instead: it is a finding about the layout. */
+  const unreachable = [];
   for (const s of subs) {
     const { dist, prev } = shortestFrom(graph, s.node);
     for (const b of s.group) {
@@ -1399,7 +1379,7 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
         const total = d + nn.d;
         if (!best || total < best.total) best = { total, p, nn };
       }
-      if (!best) continue;
+      if (!best) { unreachable.push(b.inv); continue; }
       lv += best.total;
       s.lvLens.push(best.total);
       markers.push({ inv: b.inv, x: best.p.x, y: best.p.y });
@@ -1409,18 +1389,20 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
 
   let mv = 0;
   const mvPaths = [];
+  const mvUnreachable = [];
   if (poi && subs.length) {
     const pn = nearestNode(graph, poi);
     const { dist, prev } = shortestFrom(graph, pn.i);
     for (const s of subs) {
       const d = dist[s.node];
-      if (!Number.isFinite(d)) continue;
+      if (!Number.isFinite(d)) { mvUnreachable.push(subs.indexOf(s) + 1); continue; }
       mv += d + pn.d;
       s.mvLen = d + pn.d;
       mvPaths.push([{ x: s.x, y: s.y }, ...pathPoints(graph, prev, s.node), poi]);
     }
   }
-  return { subs, lv, mv, paths, mvPaths, markers, graph, combo: plan.combo, spare: plan.spare };
+  return { subs, lv, mv, paths, mvPaths, markers, graph, combo: plan.combo, spare: plan.spare,
+    kva: plan.kva || null, planMiss: plan.miss || null, unreachable, mvUnreachable };
 }
 
 /* ---------------- formatting ---------------- */
@@ -1947,7 +1929,12 @@ function SiteCanvas({
   variant, geo, viewFitToken, ss, setSs, alignEdge, showSs,
   alignLine, setAlignLine, alineDraft, setAlineDraft, heatCells, onBeforeEdit,
   cabling, setSsOver, bg, calib, onCalibPick,
+  zones = [], entrance = null, setEntrance = null, access = null, roadW = 0, onCloseDraft = null,
+  drawWhat = "boundary",
 }) {
+  /* A closed draft is a boundary unless the layout says it is drawing
+     something else — an exclusion zone — in which case it goes there. */
+  const closeDraft = (pts) => (onCloseDraft ? onCloseDraft(pts) : setPolygon(pts));
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
   const [vb, setVbRaw] = useState({ x: -50, y: -50, w: 620, h: 700 });
@@ -2085,6 +2072,12 @@ function SiteCanvas({
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
+    if (mode === "edit" && entrance && setEntrance
+        && Math.hypot(entrance.x - p.x, entrance.y - p.y) < pxTol(TOUCH_TOL.snap)) {
+      dragRef.current = { kind: "entrance" };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
     // align-line handles: ends rotate/reshape, middle moves the whole line
     if (mode === "edit" && alignLine) {
       const tol = pxTol(TOUCH_TOL.grab);
@@ -2133,7 +2126,7 @@ function SiteCanvas({
         dragRef.current = { kind: "pan", start: p, vb0: { ...vbRef.current } };
       }
       e.currentTarget.setPointerCapture(e.pointerId);
-    } else if (mode === "draw" || mode === "aline") {
+    } else if (mode === "draw" || mode === "aline" || mode === "entrance") {
       dragRef.current = { kind: "clickcheck", sx: e.clientX, sy: e.clientY };
     }
   };
@@ -2177,6 +2170,9 @@ function SiteCanvas({
     } else if (d.kind === "ss") {
       const p = world(e);
       if (p) setSs(p);
+    } else if (d.kind === "entrance") {
+      const p = world(e);
+      if (p && setEntrance) setEntrance(p);
     } else if (d.kind === "alineEnd") {
       const p = world(e);
       if (!p) return;
@@ -2218,12 +2214,15 @@ function SiteCanvas({
       if (!p) { dragRef.current = null; return; }
       if (mode === "draw") {
         if (draft.length >= 3 && Math.hypot(p.x - draft[0].x, p.y - draft[0].y) < pxTol(TOUCH_TOL.snap)) {
-          setPolygon(draft);
+          closeDraft(draft);
           setDraft([]);
           setMode("edit");
         } else {
           setDraft((dd) => [...dd, p]);
         }
+      } else if (mode === "entrance") {
+        if (setEntrance) setEntrance(p);
+        setMode("edit");
       } else if (mode === "aline") {
         if (!alineDraft) {
           setAlineDraft(p);
@@ -2239,7 +2238,7 @@ function SiteCanvas({
 
   const onDblClick = (e) => {
     if (mode === "draw") {
-      if (draft.length >= 3) { setPolygon(draft); setDraft([]); setMode("edit"); }
+      if (draft.length >= 3) { closeDraft(draft); setDraft([]); setMode("edit"); }
       return;
     }
     if (mode !== "edit" || polygon.length <= 3) return;
@@ -2273,7 +2272,8 @@ function SiteCanvas({
 
   const spacing = Math.max(geo.dAlong + geo.gapAlong, 0.05);
   const vertical = geo.mounting !== "fixed";
-  const cursor = mode === "draw" || mode === "aline" ? "crosshair" : mode === "pan" ? "grab" : "default";
+  const cursor = mode === "draw" || mode === "aline" || mode === "entrance" ? "crosshair"
+    : mode === "pan" ? "grab" : "default";
   const frames = variant?.frames || [];
   const blocks = variant?.blocks || [];
   const txBoxes = variant?.txBoxes || [];
@@ -2293,7 +2293,7 @@ function SiteCanvas({
         onContextMenu={(e) => {
           e.preventDefault();
           if (mode === "draw" && draft.length >= 3) {
-            setPolygon(draft); setDraft([]); setMode("edit");
+            closeDraft(draft); setDraft([]); setMode("edit");
           } else if (mode === "draw") { setDraft([]); setMode("edit"); }
         }}
       >
@@ -2463,7 +2463,7 @@ function SiteCanvas({
                 fill="#12304d" stroke={C.transformer} strokeWidth="2" vectorEffect="non-scaling-stroke" />
               <text x={s.x} y={s.y + pxTol(3)} textAnchor="middle" fill="#8fc4f5"
                 style={{ font: `700 ${pxTol(7)}px system-ui, sans-serif` }}>{s.ways}</text>
-              <title>{`${s.ways}-way substation · ${s.used} inverters connected · ${s.spare} spare way(s)`}</title>
+              <title>{`${s.kva ? `${s.kva} kVA station, ` : ""}${s.ways}-way substation · ${s.used} inverters connected · ${s.spare} spare way(s)`}</title>
             </g>
           );
         })}
@@ -2478,6 +2478,52 @@ function SiteCanvas({
             </rect>
             <text x={ss.x} y={ss.y + pxTol(3)} textAnchor="middle" fill="#ffffff"
               style={{ font: `600 ${pxTol(8)}px system-ui, sans-serif` }}>POI</text>
+          </g>
+        )}
+
+        {/* exclusion zones: the buffer as a wide translucent band, then the
+            zone itself. A zone cable may cross is outlined dashed. */}
+        {zones.map((z) => (
+          <g key={z.id}>
+            {z.buffer > 0 && (
+              <polygon points={z.pts.map((q) => `${q.x},${q.y}`).join(" ")}
+                fill="rgba(214,90,90,0.07)" stroke="rgba(214,90,90,0.16)" strokeWidth={2 * z.buffer}
+                strokeLinejoin="miter" />
+            )}
+            <polygon points={z.pts.map((q) => `${q.x},${q.y}`).join(" ")}
+              fill="rgba(214,90,90,0.22)" stroke="#d65a5a" strokeWidth="1.6"
+              strokeDasharray={z.crossable ? "6 4" : undefined} vectorEffect="non-scaling-stroke">
+              <title>{`${z.name}${z.buffer ? `, ${z.buffer} m buffer` : ", no buffer"}${z.crossable ? ", cable and roads may cross" : ", nothing may cross"}`}</title>
+            </polygon>
+          </g>
+        ))}
+
+        {/* the access road to build: every edge of the route tree once,
+            drawn at the road's own width */}
+        {access && (
+          <g style={{ pointerEvents: "none" }}>
+            {access.edges.map((e2, i) => (
+              <line key={`ar${i}`} x1={e2.a.x} y1={e2.a.y} x2={e2.b.x} y2={e2.b.y}
+                stroke={e2.crossing ? "rgba(240,180,60,0.85)" : "rgba(232,130,12,0.6)"}
+                strokeWidth={Math.max(roadW, pxTol(2.5))} strokeLinecap="round" />
+            ))}
+            {access.paths[0] && access.paths[0].pts.length >= 2 && (
+              <line x1={access.paths[0].pts[0].x} y1={access.paths[0].pts[0].y}
+                x2={access.paths[0].pts[1].x} y2={access.paths[0].pts[1].y}
+                stroke="rgba(232,130,12,0.6)" strokeWidth={Math.max(roadW, pxTol(2.5))} strokeLinecap="round" />
+            )}
+          </g>
+        )}
+
+        {entrance && (
+          <g>
+            <path d={`M ${entrance.x} ${entrance.y - pxTol(9)} L ${entrance.x + pxTol(8)} ${entrance.y}
+              L ${entrance.x} ${entrance.y + pxTol(9)} L ${entrance.x - pxTol(8)} ${entrance.y} Z`}
+              fill={C.accent} stroke="#ffffff" strokeWidth="1.5" vectorEffect="non-scaling-stroke">
+              <title>Site entrance — drag to move in Edit; the access road follows</title>
+            </path>
+            <text x={entrance.x} y={entrance.y - pxTol(12)} textAnchor="middle" fill={C.accent}
+              style={{ font: `600 ${pxTol(9)}px system-ui, sans-serif` }}>GATE</text>
           </g>
         )}
 
@@ -2607,9 +2653,9 @@ function SiteCanvas({
           border: `1px solid ${C.gridMajor}`,
         }}>
           {draft.length === 0
-            ? (COARSE ? "Tap to place the first corner" : "Click to place the first vertex")
+            ? (COARSE ? `Tap to place the first corner of the ${drawWhat}` : `Click to place the first vertex of the ${drawWhat}`)
             : COARSE
-              ? `${draft.length} corners — tap the first one, or use Close boundary above`
+              ? `${draft.length} corners — tap the first one, or use Close ${drawWhat} above`
               : `${draft.length} vertices — click the first one, double-click, or right-click to finish · Esc to cancel`}
         </div>
       )}
@@ -2642,6 +2688,15 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   const [showSlope, setShowSlope] = useState(true);
   const [showSs, setShowSs] = useState(true);
   const [ssOver, setSsOver] = useState({});
+  /* What the site will not allow, and where traffic comes in. Both live
+     in the same local metre grid as the boundary. */
+  /* The electrical grouping as the station plan reads it: the inputs
+     from section 06 plus the inverter rating, which sizing a station by
+     kVA cannot do without and which lives on the Inverter tab. */
+  const elecSt = useMemo(() => ({ ...elec, invKva: invAcKw }), [elec, invAcKw]);
+  const [zones, setZones] = useState([]);
+  const [entrance, setEntrance] = useState(null);
+  const [drawTarget, setDrawTarget] = useState("boundary");
   const [priority, setPriority] = useState("balanced");
   const [importMsg, setImportMsg] = useState("");
   const [view3d, setView3d] = useState(false);
@@ -2701,6 +2756,18 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     setDraft([]);
     if (pts.length >= 3) setSs(polygonCentroid(pts));
     setFitToken((t) => t + 1);
+  };
+  const addZone = (pts, extra = {}) => {
+    if (!pts || pts.length < 3) return;
+    setZones((zs) => [...zs, makeZone({ kind: "other", ...extra, pts,
+      name: extra.name || `Exclusion ${zs.length + 1}` })]);
+  };
+  /* A closed draft is the boundary, or an exclusion when that is what
+     is being drawn. Drawing an exclusion then drops back to drawing a
+     boundary, so the next Draw is not silently the other kind. */
+  const closeDraftAs = (pts) => {
+    if (drawTarget === "zone") { addZone(pts); setDraft([]); setDrawTarget("boundary"); }
+    else replaceBoundary(pts);
   };
 
   const geo = useMemo(() => computeFrameGeometry(module, frame), [module, frame]);
@@ -2976,6 +3043,12 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   }, [align, alignCands, frame.mounting, alignLine]);
 
   /* ---- variant generation (debounced, heavy) ---- */
+  /* Zones made safe to test against, once per edit rather than once per
+     frame. A zone's whole definition is the key, so changing a buffer
+     regenerates and moving the view does not. */
+  const zonesKey = JSON.stringify(zones);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const prepped = useMemo(() => prepareZones(zones), [zonesKey]);
   const [rawVariants, setRawVariants] = useState([]);
   useEffect(() => {
     const id = setTimeout(() => {
@@ -3018,8 +3091,8 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           const mS = cfg.stagger || 0;
           const cfgF = { ...cfg, gapSlot: cfg.gapSlot * Math.sqrt(1 + mS * mS), terrain: terrainCtx };
           const r = generateBlockVariant(polygon, geo, cfgF);
-          const ann = annotateBlockVariant(r, geo, elec, cfgF.gapSlot);
-          const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elec);
+          const ann = annotateBlockVariant(r, geo, elecSt, cfgF.gapSlot);
+          const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elecSt);
           out.push({
             name, tags, kind: "block", ...capped, ms: r.ms,
             stagger: mS, roadW: cfg.gapSlot,
@@ -3030,6 +3103,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           pitch: pitchCfg.rowPitch, endGap: pitchCfg.endGap, setback: site.setback,
           gapLane: blockCfg.gapLane, gapSlot: blockCfg.gapSlot,
           rowsPerCorridor: blockCfg.rowsPerCorridor, stagger: m0,
+          zones: prepped,
         };
 
         pairs.forEach((p) => {
@@ -3047,8 +3121,8 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
             const ctx = { ...terrainCtx, lim: { ...terrainCtx.lim, maxPen } };
             const cfgF = { ...cfg, gapSlot: cfg.gapSlot * Math.sqrt(1 + mS * mS), terrain: ctx };
             const r = generateBlockVariant(polygon, geo, cfgF);
-            const ann = annotateBlockVariant(r, geo, elec, cfgF.gapSlot);
-            const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elec);
+            const ann = annotateBlockVariant(r, geo, elecSt, cfgF.gapSlot);
+            const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elecSt);
             out.push({ name, tags, kind: "block", ...capped, ms: r.ms, stagger: mS, roadW: cfg.gapSlot });
           };
           for (const p of pairs.slice(0, 2)) {
@@ -3064,10 +3138,10 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           const mS = cfg.stagger || 0;
           const cfgF = { ...cfg, gapSlot: cfg.gapSlot * Math.sqrt(1 + mS * mS), terrain: terrainCtx };
           const r = generateBlockVariant(polygon, geo, cfgF);
-          const ann = annotateBlockVariant(r, geo, elec, cfgF.gapSlot);
-          const rect = trimToRectangle(ann, elec);
+          const ann = annotateBlockVariant(r, geo, elecSt, cfgF.gapSlot);
+          const rect = trimToRectangle(ann, elecSt);
           if (rect) {
-            const capped = applyCapacityTarget(rect, cap, geo.modules, mS, ss, elec);
+            const capped = applyCapacityTarget(rect, cap, geo.modules, mS, ss, elecSt);
             out.push({
               name: `${p.w}×${p.d} uniform bands (${rect.blocks.length} blocks)`,
               tags: ["uniform", "buildability"], kind: "block", ...capped,
@@ -3101,9 +3175,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
         }
 
         // free fill reference (upper bound on density) at the chosen stagger
-        const ff = generateFreeFill(polygon, geo, pitchCfg.rowPitch, pitchCfg.endGap, site.setback, m0, terrainCtx);
-        const annF = annotateFreeFill(ff, geo, elec);
-        const cappedF = applyCapacityTarget(annF, cap, geo.modules, m0, ss, elec);
+        const ff = generateFreeFill(polygon, geo, pitchCfg.rowPitch, pitchCfg.endGap, site.setback, m0, terrainCtx, prepped);
+        const annF = annotateFreeFill(ff, geo, elecSt);
+        const cappedF = applyCapacityTarget(annF, cap, geo.modules, m0, ss, elecSt);
         out.push({
           name: "Free fill (max density)", tags: ["density", "reference"],
           kind: "free", ...cappedF, ms: ff.ms, stagger: m0, roadW: 0,
@@ -3115,7 +3189,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
     }, 300);
     return () => clearTimeout(id);
   }, [polygon, geo, pitchCfg, site.setback, elec, blockCfg, fpi, resolvedAlign, alignCands,
-      capacity, module.power, terrainCtx, invAcKw,
+      capacity, module.power, terrainCtx, invAcKw, prepped,
       // substation moves re-run selection only when a target is active
       capacity.kind === "none" ? 0 : `${Math.round(ss.x)}:${Math.round(ss.y)}`]);
 
@@ -3215,8 +3289,28 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   const cabling = useMemo(() => {
     const v = variants[Math.min(activeIdx, variants.length - 1)];
     if (!v || v.kind !== "block" || !v.blocks.length) return null;
-    return planCabling(v.blocks, polygon, v.stagger, v.laneMid, v.vertical, ss, ssOver, elec);
-  }, [variants, activeIdx, polygon, ss, ssOver, elec.stationMode, elec.invertersPerTx]);
+    return planCabling(v.blocks, polygon, v.stagger, v.laneMid, v.vertical, ss, ssOver, elecSt, prepped);
+  }, [variants, activeIdx, polygon, ss, ssOver, elecSt, prepped]);
+
+  /* The road that has to be built: shortest routes from the entrance to
+     every station and to the grid point, along the corridor graph the
+     cable already uses, shared stretches counted once. */
+  const access = useMemo(() => {
+    if (!entrance || !cabling?.graph) return null;
+    const targets = cabling.subs.map((x, i) => ({ key: `TS${i + 1}`, node: x.node }));
+    if (ss) targets.push({ key: "Grid point", node: nearestNode(cabling.graph, ss).i });
+    const r = routeTree(cabling.graph, entrance, targets);
+    if (!r) return null;
+    /* Only the crossings with a block on both sides squeeze through a gap;
+       one beside open ground already has room. */
+    const v = variants[Math.min(activeIdx, variants.length - 1)];
+    return { ...r, tight: tightCrossings(r.edges, v?.blocks || [], v?.vertical ?? true, blockCfg.gapLane) };
+  }, [entrance, cabling, ss, variants, activeIdx, blockCfg.gapLane]);
+  /* The two points a person places, checked against what they drew: a
+     grid point or an entrance inside an exclusion is a stub of cable or
+     road straight across it. */
+  const ssInZone = !!ss && prepped.some((z) => pointInPolygon(ss, z.pts));
+  const gateInZone = !!entrance && prepped.some((z) => pointInPolygon(entrance, z.pts));
 
   /* What the routed layout says about cable grouping. The cable tools
      have always asked how many circuits share a trench; the layout has
@@ -3235,6 +3329,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       cabling: showSs ? cabling : null,
       poi: showSs ? ss : null,
       trenches,
+      zones: prepped, entrance, access,
       includeFrames: !!withFrames,
       title: `PVHUB LAYOUT - ${v ? fmt(v.dcMWp, 2) : "0"} MWP DC`,
     });
@@ -3280,12 +3375,16 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       modulesPerString: elec.modulesPerString, stringsPerInverter: elec.stringsPerInverter,
       invVac: inv?.vAc ?? null,
       stations: (cabling?.subs || []).map((x) => ({
-        ways: x.ways, used: x.used, lv: x.lvLens || [], mv: x.mvLen ?? null })),
+        ways: x.ways, used: x.used, kva: x.kva ?? null, lv: x.lvLens || [], mv: x.mvLen ?? null })),
+      zones: zones.length,
+      access: access ? { length: access.length, crossings: access.tight.count,
+        throughGaps: access.tight.length, width: blockCfg.gapSlot, unreachable: access.unreachable } : null,
+      unreachableInv: cabling?.unreachable?.length || 0,
     } : null);
     // eslint-disable-next-line
   }, [variants, activeIdx, cabling, areaM2, invAcKw, pitchCfg.rowPitch,
       geo.collectW, frame.mounting, frame.tilt, module.power,
-      elec.modulesPerString, elec.stringsPerInverter, inv?.vAc]);
+      elec.modulesPerString, elec.stringsPerInverter, inv?.vAc, access, zones.length, blockCfg.gapSlot]);
 
   const applyImport = () => {
     const pts = [];
@@ -3384,7 +3483,8 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   `;
 
   if (reg) reg.current.layout = {
-    get: () => ({ polygon, ss, align, alignLine, capacity, blockCfg, pitchCfg, site, slopeLim, terrainPts, showSlope }),
+    get: () => ({ polygon, ss, align, alignLine, capacity, blockCfg, pitchCfg, site, slopeLim, terrainPts, showSlope,
+      zones, entrance }),
     set: (s) => {
       if (!s) return;
       if (s.polygon) setPolygonRaw(s.polygon);
@@ -3398,6 +3498,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       if (s.slopeLim) setSlopeLim(s.slopeLim);
       setTerrainPts(s.terrainPts ?? null);
       if (s.showSlope !== undefined) setShowSlope(s.showSlope);
+      // A project saved before zones existed has none, which is what it had.
+      setZones(Array.isArray(s.zones) ? s.zones.map(makeZone) : []);
+      setEntrance(s.entrance ?? null);
       setFitToken((t) => t + 1);
     },
   };
@@ -3613,6 +3716,133 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                 </button>
               </div>
             </details>
+          </Section>
+
+          {/* 1C EXCLUSIONS AND ACCESS */}
+          <Section code="1C" title="Exclusions and access">
+            <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+              Ground inside the boundary that modules may not occupy — an easement, a pond, a
+              building, a hedgerow, an ecology area — each with the buffer the body responsible
+              for it sets. None is assumed: a buffer left at zero keeps modules out of the shape
+              as drawn and no further. Then the entrance, from which the road to every station and
+              to the grid point is routed along the corridors.
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", width: "100%" }}>
+              <button className="btn" onClick={() => {
+                setMode("draw"); setDrawTarget("zone"); setDraft([]); if (narrow) setPanelOpen(false);
+              }}>Draw an exclusion</button>
+              <button className="btn" onClick={() => { setMode("entrance"); if (narrow) setPanelOpen(false); }}>
+                {entrance ? "Move the entrance" : "Place the entrance"}
+              </button>
+              {entrance && <button className="btn" onClick={() => setEntrance(null)}>Remove the entrance</button>}
+            </div>
+
+            {zones.map((z) => {
+              const upd = (patch) => setZones((zs) => zs.map((x) => (x.id === z.id ? makeZone({ ...x, ...patch }) : x)));
+              const hint = ZONE_KINDS[z.kind]?.hint;
+              return (
+                <div key={z.id} style={{ width: "100%", border: "1px solid rgba(214,90,90,0.4)",
+                  borderRadius: 5, padding: "8px 9px", display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <label className="fld" style={{ width: "100%" }}>
+                    <span className="fld-l">Name</span>
+                    <span className="fld-box">
+                      <input value={z.name} onChange={(e) => upd({ name: e.target.value })} />
+                    </span>
+                  </label>
+                  <Sel label="Kind" value={z.kind}
+                    options={Object.entries(ZONE_KINDS).map(([k, v]) => ({ value: k, label: v.name }))}
+                    onChange={(v) => upd({ kind: v, crossable: ZONE_KINDS[v].crossable })} />
+                  <Num label="Buffer" unit="m" value={z.buffer} step={1} min={0}
+                    onChange={(v) => upd({ buffer: v })} />
+                  <label style={{ display: "flex", gap: 7, alignItems: "center", width: "100%",
+                    font: "11.5px system-ui", color: C.text }}>
+                    <input type="checkbox" checked={!!z.crossable}
+                      onChange={(e) => upd({ crossable: e.target.checked })} />
+                    Buried cable and the access road may cross it
+                  </label>
+                  <div style={{ font: "10.5px/1.5 system-ui", color: C.muted, flex: 1, minWidth: 160 }}>
+                    {fmtArea(Math.abs(polygonArea(z.pts)))} as drawn, {z.pts.length} corners.
+                    {hint ? ` ${hint}` : ""}
+                  </div>
+                  <button className="btn" onClick={() => setZones((zs) => zs.filter((x) => x.id !== z.id))}>
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+
+            {dxfBoundaries && dxfBoundaries.length > 1 && (
+              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 5 }}>
+                <div className="tbl">Other shapes in the imported file</div>
+                {dxfBoundaries.filter((b) => b.pts !== polygon).map((b, i) => (
+                  <button key={i} className="btn" style={{ textAlign: "left" }}
+                    onClick={() => addZone(b.pts, { name: b.layer || `Imported ${i + 1}` })}>
+                    Add as exclusion: <b>{b.layer || "(no layer)"}</b> · {fmtArea(Math.abs(polygonArea(b.pts)))}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {ssInZone && (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ The grid connection point sits inside an exclusion, so every MV run ends in a straight
+                stub across it. Drag it out in Edit — it starts at the middle of the boundary, which is
+                often exactly where the pond is.
+              </div>
+            )}
+            {gateInZone && (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ The entrance sits inside an exclusion. Move it to where the road actually comes in.
+              </div>
+            )}
+            {entrance && !access && (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ The entrance is placed, but there is no routed layout for a road to reach yet.
+              </div>
+            )}
+            {access && (
+              <div className="readout">
+                Access road to build: <b>{fmt(access.length, 0)} m</b> at {fmt(blockCfg.gapSlot, 1)} m wide,
+                {" "}<b>{fmt(access.length * blockCfg.gapSlot, 0)} m²</b>, from the entrance to{" "}
+                {access.reached.join(", ") || "nothing"}. Shared stretches are counted once.
+                {access.tight.count > 0 && <>
+                  {" "}It passes between blocks <b>{access.tight.count}</b> time{access.tight.count === 1 ? "" : "s"}
+                  {" "}({fmt(access.tight.length, 0)} m of it)
+                  {blockCfg.gapLane < blockCfg.gapSlot
+                    ? `, through gaps ${fmt(blockCfg.gapLane, 1)} m wide: each needs opening up to road width, which costs the frames either side.`
+                    : ", through gaps already as wide as the road."}
+                </>}
+                {access.crossings > access.tight.count && <>
+                  {" "}{access.crossings - access.tight.count} more crossing{access.crossings - access.tight.count === 1 ? "" : "s"} of
+                  {" "}a block row {access.crossings - access.tight.count === 1 ? "runs beside open ground and needs" : "run beside open ground and need"} nothing widened.
+                </>}
+                {" "}Every other corridor is spacing between rows, not built road.
+              </div>
+            )}
+            {access && access.unreachable.length > 0 && (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ The entrance cannot reach {access.unreachable.join(", ")} without crossing an exclusion
+                that nothing may cross. Either the entrance is on the wrong side, or that zone needs a
+                crossing agreed and its box ticked.
+              </div>
+            )}
+            {cabling && cabling.unreachable && cabling.unreachable.length > 0 && (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ {cabling.unreachable.length} inverter{cabling.unreachable.length === 1 ? "" : "s"} cannot be
+                cabled to {cabling.unreachable.length === 1 ? "its" : "their"} station without crossing an
+                exclusion nothing may cross, and {cabling.unreachable.length === 1 ? "is" : "are"} left out of
+                the LV total rather than counted at a length nobody could lay. Inverters{" "}
+                {cabling.unreachable.slice(0, 8).map((n) => n + 1).join(", ")}
+                {cabling.unreachable.length > 8 ? "…" : ""}.
+              </div>
+            )}
+            {cabling && cabling.mvUnreachable && cabling.mvUnreachable.length > 0 && (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ Station{cabling.mvUnreachable.length === 1 ? "" : "s"} {cabling.mvUnreachable.map((n) => `TS${n}`).join(", ")}
+                {" "}cannot reach the grid point without crossing an exclusion nothing may cross, and{" "}
+                {cabling.mvUnreachable.length === 1 ? "has" : "have"} no MV run.
+              </div>
+            )}
           </Section>
 
           {uiMode === "stupid" && (
@@ -3868,6 +4098,15 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               <Num label="Inverters per transformer (ways)" value={elec.invertersPerTx} step={1} min={1}
                 onChange={(v) => setElec({ ...elec, invertersPerTx: Math.round(v) })} />
             )}
+            {elec.stationMode === "kva" && (
+              <label className="fld" style={{ width: "100%" }}>
+                <span className="fld-l">Transformer sizes available (kVA)</span>
+                <span className="fld-box">
+                  <input value={elec.unitKva ?? ""} placeholder="the sizes your supplier offers, e.g. from their datasheet"
+                    onChange={(e) => setElec({ ...elec, unitKva: e.target.value })} />
+                </span>
+              </label>
+            )}
             <div className="readout">
               <b>{fmt(spf, 2)}</b> strings per frame → inverter block of <b>{fpi}</b> frames
               <br />
@@ -3875,7 +4114,18 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               {invAcKw > 0 && <> · DC/AC <b>{fmt(inverterDcKwp / invAcKw, 2)}</b></>}
             </div>
             <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
-              {elec.stationMode === "fixed"
+              {elec.stationMode === "kva"
+                ? (() => {
+                    const units = unitsByKva(parseKvaList(elec.unitKva), invAcKw);
+                    if (!(invAcKw > 0)) return <>Set the inverter&apos;s AC rating first: a station is sized by
+                      how many inverters fit inside the transformer.</>;
+                    if (!units.length) return <>Enter the transformer sizes on offer. None is assumed: a
+                      size that is not on a supplier&apos;s list is not a station anyone can buy.</>;
+                    return <>At {fmt(invAcKw, 0)} kVA per inverter:{" "}
+                      {units.map((u) => `${u.kva} kVA takes ${u.ways}`).join(", ")} — floored, because one more
+                      inverter would load the unit past its nameplate at full export.</>;
+                  })()
+                : elec.stationMode === "fixed"
                 ? <>Every station takes <b>{elec.invertersPerTx}</b> inverters, and the last one
                     is left short.</>
                 : <>Units of 10, 14 or 20 ways: fewest units first, then fewest spare ways. Those
@@ -3884,6 +4134,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
                     is a different one.</>}
               {cabling && cabling.combo.length
                 ? <> This layout takes <b>{describePlan(cabling)}</b>
+                    {cabling.kva ? <> ways — <b>{describeKva(cabling)}</b></> : null}
                     {cabling.spare ? `, with ${cabling.spare} way${cabling.spare === 1 ? "" : "s"} spare` : ", with none spare"}.</>
                 : null}
               {" "}The outline, the station marker and the cable routed to it are all read off this
@@ -4183,12 +4434,19 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           {narrow && (
             <button className="btn" onClick={() => setPanelOpen(true)}>☰ Inputs</button>
           )}
-          {["draw", "edit", "pan"].map((m) => (
-            <button key={m} className={`btn ${mode === m ? "on" : ""}`}
-              onClick={() => { setMode(m); setDraft([]); setAlineDraft(null); }}>
-              {m === "draw" ? "Draw boundary" : m === "edit" ? "Edit" : "Pan"}
+          {[["draw", "boundary", "Draw boundary"], ["draw", "zone", "Draw exclusion"],
+            ["edit", null, "Edit"], ["pan", null, "Pan"]].map(([m, target, label]) => (
+            <button key={label}
+              className={`btn ${mode === m && (!target || drawTarget === target) ? "on" : ""}`}
+              style={target === "zone" && !(mode === "draw" && drawTarget === "zone") ? { borderColor: "#d65a5a" } : undefined}
+              onClick={() => { setMode(m); if (target) setDrawTarget(target); setDraft([]); setAlineDraft(null); }}>
+              {label}
             </button>
           ))}
+          <button className={`btn ${mode === "entrance" ? "on" : ""}`}
+            onClick={() => { setMode("entrance"); setDraft([]); setAlineDraft(null); }}>
+            {entrance ? "Move entrance" : "Place entrance"}
+          </button>
           <button className={`btn ${mode === "aline" ? "on" : ""}`}
             style={{ borderColor: mode === "aline" ? undefined : "#7a2bd6" }}
             onClick={() => { setMode("aline"); setAlineDraft(null); }}>
@@ -4214,9 +4472,14 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           )}
           {mode === "draw" && draft.length >= 3 && (
             <button className="btn primary"
-              onClick={() => { replaceBoundary(draft); setMode("edit"); }}>
-              Close boundary
+              onClick={() => { closeDraftAs(draft); setMode("edit"); }}>
+              {drawTarget === "zone" ? "Close exclusion" : "Close boundary"}
             </button>
+          )}
+          {mode === "entrance" && (
+            <span style={{ font: "11px system-ui", color: C.accent }}>
+              Click where traffic enters the site
+            </span>
           )}
           <div style={{ flex: 1 }} />
           <span className="hide-narrow" style={{ font: "11px system-ui, sans-serif", color: C.muted }}>
@@ -4245,6 +4508,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           cabling={cabling} setSsOver={setSsOver}
           bg={bg} calib={calib}
           onCalibPick={(p) => setCalib((c) => ({ ...c, pts: [...c.pts.slice(-1), p].slice(-2) }))}
+          zones={prepped} entrance={entrance} setEntrance={setEntrance} access={access}
+          roadW={blockCfg.gapSlot} onCloseDraft={closeDraftAs}
+          drawWhat={drawTarget === "zone" ? "exclusion" : "boundary"}
         />
         )}
 
@@ -6916,7 +7182,13 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
   }
   const lv = s.lv || 0, mv = s.mv || 0;
   const invKva = s.invAcKw || 0;
-  const stationKva = (s.combo || []).reduce((a, w) => a + w * invKva, 0);
+  /* Station kVA: the transformer's own rating when the plan was sized by
+     kVA, otherwise the inverters it can take, which is the least it
+     could be. */
+  const unitKvas = (s.stations || []).map((x) => x.kva).filter((v) => v > 0);
+  const stationKva = unitKvas.length === (s.stations || []).length && unitKvas.length
+    ? unitKvas.reduce((a, v) => a + v, 0)
+    : (s.combo || []).reduce((a, w) => a + w * invKva, 0);
   /* Quantity, rate, cost — and the cost only where a rate was entered.
      A line with no rate is listed as not priced, never shown as zero,
      because a zero in a column of money moves the total without anyone
@@ -6969,6 +7241,14 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
             <Row k="On flat ground" v={`${fmt((s.flatShare ?? 1) * 100, 0)}%`} sub="rest needs grading" />
             <Row k="LV cable (routed)" v={fmtKm(lv)} sub="inverter → station" />
             <Row k="MV cable (routed)" v={fmtKm(mv)} sub="station → grid point" />
+            <Row k="Access road to build" v={s.access ? fmtKm(s.access.length) : "—"}
+              sub={s.access
+                ? `${fmt(s.access.length * s.access.width, 0)} m² at ${fmt(s.access.width, 1)} m wide`
+                  + (s.access.crossings ? ` · ${s.access.crossings} row crossing${s.access.crossings === 1 ? "" : "s"} to open` : "")
+                : "place the entrance on the Layout tab"} />
+            {s.zones > 0 && <Row k="Exclusion zones" v={fmt(s.zones, 0)} sub="modules kept out, each with its own buffer" />}
+            {s.unreachableInv > 0 && <Row k="Inverters not cabled" v={fmt(s.unreachableInv, 0)}
+              sub="cut off by an exclusion nothing may cross" />}
           </tbody></table>
         </div>
 

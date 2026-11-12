@@ -3,6 +3,7 @@
 
 import {
   MODULAR_WAYS, chooseSubstations, stationPlan, stationIndexer, describePlan,
+  parseKvaList, unitsByKva, describeKva,
 } from "../src/stations.js";
 
 let pass = 0, fail = 0;
@@ -74,6 +75,51 @@ eq(describePlan(stationPlan(24, {})), "14 + 10", "mixed sizes are listed");
 eq(describePlan(stationPlan(24, { stationMode: "fixed", invertersPerTx: 4 })), "6 × 4", "equal sizes are multiplied");
 eq(describePlan(stationPlan(10, {})), "10", "one station is just its size");
 eq(describePlan({ combo: [] }), "—", "no stations is a dash, not a zero");
+
+console.log("\n--- transformer units by kVA ---");
+{
+  eq(parseKvaList("3150, 4000; 5000 kVA"), [3150, 4000, 5000], "a typed list reads, whatever separates it");
+  eq(parseKvaList("4000, 0, -5, x, 4000"), [4000], "zeros, negatives, words and repeats are dropped");
+  eq(parseKvaList(""), [], "an empty list is empty");
+
+  const u = unitsByKva([3150, 4000, 5000], 350);
+  eq(u, [{ kva: 3150, ways: 9 }, { kva: 4000, ways: 11 }, { kva: 5000, ways: 14 }],
+     "each unit takes the inverters that fit inside its rating, floored");
+  eq(unitsByKva([3500], 350), [{ kva: 3500, ways: 10 }], "exactly ten inverters fit a 3500 kVA unit");
+  eq(unitsByKva([200, 4000], 350), [{ kva: 4000, ways: 11 }], "a unit smaller than one inverter is dropped");
+  eq(unitsByKva([3600, 3800], 350), [{ kva: 3600, ways: 10 }], "two sizes giving the same ways keep the smaller");
+  eq(unitsByKva([3800, 3900], 350).map((x) => x.ways), [10, 11], "while 3900 kVA does take an eleventh");
+  eq(unitsByKva([4000], 0), [], "no inverter rating, no units");
+
+  const p = stationPlan(25, { stationMode: "kva", unitKva: "3150, 4000, 5000", invKva: 350 });
+  eq(p.mode, "kva", "the mode is kept");
+  eq(p.combo.reduce((a, b) => a + b, 0) >= 25, true, "the plan covers all 25 inverters");
+  eq(p.kva.length, p.combo.length, "and carries a kVA for every station");
+  eq(p.combo, [14, 11], "25 inverters take one 14-way and one 11-way unit");
+  eq(describeKva(p), "5000 + 4000 kVA", "which are 5000 and 4000 kVA");
+  eq(p.spare, 0, "with nothing spare");
+
+  const one = stationPlan(18, { stationMode: "kva", unitKva: "4000", invKva: 350 });
+  eq(describeKva(one), "2 × 4000 kVA", "one size, repeated, reads as a multiple");
+  eq(one.spare, 4, "and the spare ways are counted");
+
+  ok(/inverter's rating/.test(stationPlan(10, { stationMode: "kva", unitKva: "4000" }).miss),
+     "with no inverter rating the plan names what is missing");
+  ok(/at least as large as one inverter/.test(stationPlan(10, { stationMode: "kva", unitKva: "200", invKva: 350 }).miss),
+     "and with only units too small, says so");
+  eq(stationPlan(10, { stationMode: "kva", unitKva: "200", invKva: 350 }).combo, [], "rather than inventing a station");
+
+  /* The indexer agrees with the plan in this mode too. */
+  const cfg = { stationMode: "kva", unitKva: "3150, 5000", invKva: 350 };
+  for (const n of [1, 9, 13, 23, 40]) {
+    const plan = stationPlan(n, cfg), at = stationIndexer(n, cfg);
+    const counts = plan.combo.map(() => 0);
+    for (let i = 0; i < n; i++) counts[at(i)]++;
+    ok(counts.every((c, i) => c <= plan.combo[i]) && counts.reduce((a, b) => a + b, 0) === n,
+       `${n} inverters are spread over the kVA plan without overloading a unit`);
+  }
+  eq(describeKva(stationPlan(10, {})), null, "a plan with no kVA has no kVA description");
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

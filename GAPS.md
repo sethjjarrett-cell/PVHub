@@ -492,14 +492,14 @@ free serverless tier — would restore the button. It is the first thing in this
 that is not a static file, which is why it is a decision rather than a default: it needs an
 account, it is a thing that can go down, and its address becomes a setting.
 
-### G39. The modular station sizes are one maker's catalogue
+### G39. Stations sized by kVA take one inverter rating
 
-The 10, 14 and 20-way units are the Sungrow MVS3200, 4480 and 6400. A station is properly
-sized in kVA from the inverters behind it, against whatever unit sizes are actually on offer.
+*Was: the modular station sizes were one maker's catalogue. Stations can now be sized from
+the transformer sizes a supplier offers, in kVA.*
 
-**Recommendation.** Take the available unit sizes in kVA, derive the ways from the inverter
-rating, and let `stationPlan` choose from those. The plan, the indexer and the routing
-already take a list of sizes; only the input is missing.
+The conversion to ways uses the one inverter rating on the Inverter tab. A site mixing two
+inverter models, or a station with an auxiliary load, needs a per-station figure the tool
+does not take.
 
 ### G40. The Yield report still defaults its appraisal period and shading coefficient
 
