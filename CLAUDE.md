@@ -26,6 +26,7 @@ src/pvgis.js           site data: Open-Meteo pulls, the typical year, and PVGIS'
                        and answer (which a page cannot fetch, only be handed)
 src/SiteData.jsx       the one set of weather and baseline controls both yield tabs use
 src/stations.js        which inverters share a transformer station — no React
+src/handoff.js         what the layout offers each downstream tool, and what it declines to
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
 src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
@@ -238,6 +239,9 @@ node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 
                                     # reproduced from the Annex A formula, Table 54.2, the
                                     # cascade, and the checks that decide whether a
                                     # conductor survives a fault
+node tests/handoff.test.mjs         # 79 assertions: what the layout hands each tool, that the
+                                    # BOM and the sweep built from it are the layout's plant,
+                                    # and that nothing the layout does not know is filled in
 node tests/worldMap.test.mjs        # 47 assertions: which country a point is in, what each
                                     # view frames, and sites that overlap at a given zoom
 node tests/stations.test.mjs        # 26 assertions: one station plan, and the indexer that
@@ -400,6 +404,33 @@ Deliberate engineering decisions, each stated in the UI's own text:
   ignored it. `planCabling` groups by the stamped `tx`, never by slicing the list again,
   because two slicings that happen to agree is how they came apart. The modular sizes are
   one maker's range and the interface says so.
+- **The layout offers; it never pushes.** The AC and MV cable tabs, the fault study, the
+  PVsyst sweep builder and the guided flow each show a `FromLayout` panel when there is a
+  layout: what is entered now, struck through, against what the layout says, and a button.
+  Nothing changes until the button is pressed. A value that moves because a different tab
+  moved is how a design stops being trusted, and a hand-built network or run table may be
+  the one somebody wants to keep. A tool opened on its own, with no layout behind it, shows
+  no panel and works as it always did.
+- **Only what the layout actually knows is handed over.** `src/handoff.js` returns a patch
+  and a list of what it declined. The transformer size goes to the guided flow only when
+  every station is the same size, because the BOM divides by one unit and a mixed site has
+  none. A tracker hands over no tilt. The fault study gets the transformer's kVA (the
+  station's ways × the inverter rating), the voltage, the routed lengths and the AC tab's
+  cable, and is given no impedance, no protective conductor and no protective device: those
+  feeders draw grey until somebody decides them, because a network filled with typical
+  values passes on inputs nobody chose. A layout with no routed cable hands over no lengths,
+  since zero metres is a length and it is the wrong one.
+- **The fault study takes the shortest and the longest feeder, not all of them.** The
+  shortest sees the highest fault current and stresses the conductor hardest; the longest
+  sees the lowest and is where the device is least likely to operate. Every other feeder of
+  that station lies between them, and the station chosen is the one with the most inverters
+  on it, which has the largest transformer and the highest fault level.
+- **The AC tab takes the longest LV run; the MV tab takes one radial per station.** Volt
+  drop is a limit and a limit is checked on the run that reaches it first, so the losses
+  shown are then for that run and overstate the average one, which the panel says. The MV
+  runs are each station straight to the grid point because that is what the layout routes
+  today; a real collector chains stations along a feeder, so the total is an upper bound on
+  cable and each run's current a lower bound on what a shared feeder would carry (GAPS §G41).
 - **The Summary and the pitch trade-off carry no prices either.** Both used to open with a
   rate card, and the trade-off also assumed 1,000 kWh/kWp when no baseline was loaded, so it
   always named a "best value" pitch from prices nobody entered and a yield nobody pulled. A

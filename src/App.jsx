@@ -1359,6 +1359,11 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
     subs.push({
       ways, used: take, spare: ways - take, group,
       node: idx, x: graph.nodes[idx].x, y: graph.nodes[idx].y,
+      /* Each inverter's own routed length back to this station, and the
+         station's own run to the grid point. The totals alone cannot
+         size anything: volt drop is checked on the longest run and a
+         fault study needs the shortest and the longest. */
+      lvLens: [], mvLen: null,
     });
   });
 
@@ -1396,6 +1401,7 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
       }
       if (!best) continue;
       lv += best.total;
+      s.lvLens.push(best.total);
       markers.push({ inv: b.inv, x: best.p.x, y: best.p.y });
       paths.push([best.p, ...pathPoints(graph, prev, best.nn.i)]);
     }
@@ -1410,6 +1416,7 @@ function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides
       const d = dist[s.node];
       if (!Number.isFinite(d)) continue;
       mv += d + pn.d;
+      s.mvLen = d + pn.d;
       mvPaths.push([{ x: s.x, y: s.y }, ...pathPoints(graph, prev, s.node), poi]);
     }
   }
@@ -3268,10 +3275,17 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
       dcAvg: v.dc?.avg ?? null, dcTotal: v.dc?.total ?? null,
       mounting: frame.mounting, tilt: frame.tilt,
       modPower: module.power,
+      // what the cable tabs, the fault study, the guided flow and the
+      // PVsyst sweep would otherwise each ask to have typed in again
+      modulesPerString: elec.modulesPerString, stringsPerInverter: elec.stringsPerInverter,
+      invVac: inv?.vAc ?? null,
+      stations: (cabling?.subs || []).map((x) => ({
+        ways: x.ways, used: x.used, lv: x.lvLens || [], mv: x.mvLen ?? null })),
     } : null);
     // eslint-disable-next-line
   }, [variants, activeIdx, cabling, areaM2, invAcKw, pitchCfg.rowPitch,
-      geo.collectW, frame.mounting, frame.tilt, module.power]);
+      geo.collectW, frame.mounting, frame.tilt, module.power,
+      elec.modulesPerString, elec.stringsPerInverter, inv?.vAc]);
 
   const applyImport = () => {
     const pts = [];
@@ -7912,16 +7926,16 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cac" ? "flex" : "none" }}>
         <CableAcTab inv={pvInv} setInv={setPvInv} st={cables.ac} set={setCable("ac")}
-          standalone={workspace === "cable"} />
+          standalone={workspace === "cable"} layout={summary} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cmv" ? "flex" : "none" }}>
-        <CableMvTab st={cables.mv} set={setCable("mv")} />
+        <CableMvTab st={cables.mv} set={setCable("mv")} layout={summary} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "csc" ? "flex" : "none" }}>
         <ShortCircuitTab mod={pvMod} inv={pvInv} elec={elec} st={cables.sc} set={setCable("sc")} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cnet" ? "flex" : "none" }}>
-        <FaultStudyTab st={cables.net} set={setCable("net")} />
+        <FaultStudyTab st={cables.net} set={setCable("net")} layout={summary} ac={cables.ac} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "report" ? "flex" : "none" }}>
         <YieldReportTab loc={siteLoc} setLoc={setSiteLoc} mod={pvMod} inv={pvInv} elec={elec}
@@ -7929,10 +7943,10 @@ export default function App() {
           weather={weather} onWeather={setWeather} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
-        <BatchAnalyserTab st={batch} set={setBatch} />
+        <BatchAnalyserTab st={batch} set={setBatch} layout={summary} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "guided" ? "flex" : "none" }}>
-        <BdFlowTab st={guided} set={setGuided} />
+        <BdFlowTab st={guided} set={setGuided} layout={summary} loc={siteLoc} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "track" ? "flex" : "none" }}>
         <ProjectTrackerTab />

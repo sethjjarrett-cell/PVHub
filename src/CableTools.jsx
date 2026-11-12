@@ -21,7 +21,8 @@
    ===================================================================== */
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { fmt, C, Num, Sel, Section, Page, Working, Rows } from "./ui.jsx";
+import { fmt, C, Num, Sel, Section, Page, Working, Rows, FromLayout } from "./ui.jsx";
+import { lvRunsFromLayout, mvRunsFromLayout } from "./handoff.js";
 import { parseDxf, routeLengths } from "./dxfRead.js";
 import { analyseTrenches } from "./layoutDxf.js";
 import {
@@ -1032,7 +1033,11 @@ export function CableDcTab({ mod, elec, st, set, standalone = false }) {
 /* =====================================================================
    2.  AC — inverter to transformer feeder
    ===================================================================== */
-export function CableAcTab({ inv, setInv, st, set, standalone = false }) {
+export function CableAcTab({ inv, setInv, st, set, standalone = false, layout = null }) {
+  /* The routed inverter-to-station runs, when there is a layout. The
+     length that matters here is the longest: volt drop is a limit, and
+     a limit is checked on the run that reaches it first. */
+  const lvRuns = lvRunsFromLayout(layout);
   const linkedI = inv.acKva && inv.vAc ? (inv.acKva * 1000) / (Math.sqrt(3) * inv.vAc) : null;
   const iDesign = st.iOv ?? (Number.isFinite(linkedI) ? linkedI : 0);
 
@@ -1057,6 +1062,19 @@ export function CableAcTab({ inv, setInv, st, set, standalone = false }) {
       <div className="tbl" style={{ marginBottom: 10 }}>
         CABLE SIZING — AC INVERTER TO TRANSFORMER (ALUMINIUM XLPE, THREE SINGLE-CORES IN TREFOIL)
       </div>
+
+      {lvRuns && (
+        <FromLayout title="Run length, as the layout routed it"
+          rows={[{ key: "length", label: "Longest run", unit: "m",
+            now: fmt(st.length, 0), next: fmt(lvRuns.longest, 0),
+            differs: Math.round(st.length) !== lvRuns.longest }]}
+          notes={[`${lvRuns.count} inverter runs, from ${lvRuns.shortest} m to ${lvRuns.longest} m, `
+            + `mean ${lvRuns.mean} m, ${fmt(lvRuns.total, 0)} m in all. Volt drop is checked on the `
+            + "longest, because that is the run that fails first; the losses on this tab are then "
+            + "for that run and overstate the average one."]}
+          button="Use the longest run" taken="Already on the longest run"
+          onTake={() => set({ ...st, length: lvRuns.longest })} />
+      )}
 
       <Section code="C1" title={standalone ? "The circuit" : "Imported values and design current"}>
         {standalone ? (
@@ -1160,7 +1178,12 @@ export function CableAcTab({ inv, setInv, st, set, standalone = false }) {
 /* =====================================================================
    3.  MV — collector ring
    ===================================================================== */
-export function CableMvTab({ st, set }) {
+export function CableMvTab({ st, set, layout = null }) {
+  const mvRuns = mvRunsFromLayout(layout, st);
+  const sameRuns = mvRuns && st.runs.length === mvRuns.runs.length
+    && mvRuns.runs.every((r, i) => st.runs[i].inv === r.inv && Math.round(st.runs[i].dist) === r.dist
+      && st.runs[i].from === r.from && st.runs[i].to === r.to)
+    && (mvRuns.kva === null || st.kva === mvRuns.kva);
   const table = useMemo(() => mvTable(st.safety), [st.safety]);
   const iInv = st.kv > 0 ? st.kva / (Math.sqrt(3) * st.kv) : 0;
 
@@ -1259,6 +1282,28 @@ export function CableMvTab({ st, set }) {
       <div className="tbl" style={{ marginBottom: 10 }}>
         CABLE SIZING — MV COLLECTOR RING (3 × 1c ALUMINIUM XLPE 19/33 kV, IEC 60502-2, TREFOIL)
       </div>
+
+      {mvRuns && (
+        <FromLayout title="The MV runs, as the layout routed them"
+          rows={[
+            { key: "runs", label: "Runs", now: `${st.runs.length} entered by hand`,
+              next: `${mvRuns.runs.length} from the layout`, differs: !sameRuns },
+            { key: "len", label: "Route length", unit: "m",
+              now: fmt(st.runs.reduce((a, r) => a + (r.dist || 0), 0), 0), next: fmt(mvRuns.total, 0),
+              differs: !sameRuns },
+            ...(mvRuns.kva !== null ? [{ key: "kva", label: "Inverter rating", unit: "kVA",
+              now: fmt(st.kva, 0), next: fmt(mvRuns.kva, 0), differs: st.kva !== mvRuns.kva }] : []),
+          ]}
+          notes={[mvRuns.runs.map((r) => `${r.from} → ${r.to}: ${r.inv} inverters, ${r.dist} m`).join("  ·  "),
+            "This replaces the run table below. Each station is on its own radial to the grid "
+            + "point, because that is what the layout routes today. A real collector chains "
+            + "stations along a feeder, which is shorter in total and loads its last stretch with "
+            + "all of them: read the length here as an upper bound and each run's current as the "
+            + "least a shared feeder would carry. Sizes and installation method stay as chosen on "
+            + "this tab."]}
+          button="Replace the run table with these" taken="The run table already matches the layout"
+          onTake={() => set({ ...st, runs: mvRuns.runs, ...(mvRuns.kva !== null ? { kva: mvRuns.kva } : {}) })} />
+      )}
 
       <Section code="C1" title="Design current">
         <Num label="MV voltage level" unit="kV" value={st.kv} step={1}

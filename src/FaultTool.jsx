@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { C, Num, Sel, Section, Page, Rows, useNarrow } from "./ui.jsx";
+import { C, Num, Sel, Section, Page, Rows, useNarrow, FromLayout } from "./ui.jsx";
+import { networkFromLayout } from "./handoff.js";
 import { RefCard, HL } from "./CableRefTables.jsx";
 import { SIZES } from "./cableData.js";
 import {
@@ -510,8 +511,9 @@ function PeTableCard({ used }) {
    The tab
    --------------------------------------------------------------- */
 
-export function FaultStudyTab({ st, set }) {
+export function FaultStudyTab({ st, set, layout = null, ac = null }) {
   const net = st && st.nodes ? st : defaultNetwork();
+  const built = networkFromLayout(layout, { ac: ac || {}, source: net.source });
   const narrow = useNarrow(760);
   const [openNode, setOpenNode] = useState(net.nodes[0]?.id ?? null);
   const [sel, setSel] = useState(net.nodes[0]?.id ?? null);
@@ -619,6 +621,29 @@ export function FaultStudyTab({ st, set }) {
         The last one catches what the others miss — a long circuit can be thermally safe and still
         never disconnect.
       </div>
+
+      {built && (() => {
+        /* A study of the real plant, offered rather than imposed: it
+           replaces the network below, which may be a hand-built one
+           somebody wants to keep. */
+        const src = built.net.source;
+        const lens = (n) => n.nodes.map((x) => Math.round(x.cable?.lengthM ?? -1)).join(",");
+        const same = net.source.kva === src.kva && net.source.uSecV === src.uSecV
+          && lens(net) === lens(built.net) && net.nodes.length === built.net.nodes.length;
+        const row = (key, label, now, next, unit = "") => ({ key, label, unit, now, next, differs: !same && now !== next });
+        return (
+          <FromLayout title="A study of the plant on the Layout tab"
+            rows={[
+              row("kva", "Transformer", `${net.source.kva ?? "—"}`, `${src.kva}`, "kVA"),
+              row("u", "Voltage", `${net.source.uSecV ?? "—"}`, `${src.uSecV ?? "—"}`, "V"),
+              row("nodes", "Feeders", net.nodes.map((n) => n.name || n.id).join(", ") || "none",
+                built.net.nodes.map((n) => n.name).join(", ")),
+            ]}
+            notes={built.notes}
+            button="Replace the network below with this" taken="The network below is this plant"
+            onTake={() => { set(built.net); setSel(built.net.nodes[0].id); setOpenNode(built.net.nodes[0].id); }} />
+        );
+      })()}
 
       <Section code="F1" title="The source">
         <Sel label="Supply is" value={net.source.kind || "tx"}

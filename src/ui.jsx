@@ -253,8 +253,58 @@ function Page({ children, wide }) {
     <div style={{ maxWidth: wide ? 1500 : 860 }}>{children}</div></div>;
 }
 
+/* An offer to take figures from the layout, shown on the tool that
+   would otherwise ask for them to be typed again.
+
+   It is an offer and not a link. Each row sets what is entered now
+   against what the layout says, and nothing changes until the button
+   is pressed: a value that moves underneath someone because another
+   tab moved is how a design stops being trusted. A tool opened on its
+   own, with no layout behind it, renders nothing here and works as it
+   always did. */
+function FromLayout({ title, rows, notes, onTake, button, taken, children }) {
+  if (!rows || !rows.length) return null;
+  const n = rows.filter((r) => r.differs).length;
+  return (
+    <div style={{ width: "100%", background: C.panel2, borderRadius: 6, padding: "9px 11px",
+      border: `1px solid ${n ? C.accent : C.line}`, marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span style={{ font: "600 12px system-ui", color: C.text }}>{title}</span>
+        <span style={{ font: "10.5px system-ui", color: n ? C.accent : C.muted }}>
+          {n ? `${n} of ${rows.length} differ from what is entered here`
+            : "in step with what is entered here"}
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(96px, auto) 1fr",
+        gap: "3px 12px", marginTop: 7 }}>
+        {rows.map((r) => (
+          <React.Fragment key={r.key}>
+            <span style={{ font: "11px system-ui", color: C.muted }}>{r.label}</span>
+            <span style={{ font: "12px var(--mono)", color: C.text, overflowWrap: "anywhere" }}>
+              {r.differs ? (
+                <>
+                  <span style={{ color: C.muted, textDecoration: "line-through" }}>{r.now}</span>
+                  {" → "}<b style={{ color: C.accent }}>{r.next}</b>
+                </>
+              ) : r.next}
+              {r.unit ? <span style={{ color: C.muted }}> {r.unit}</span> : null}
+            </span>
+          </React.Fragment>
+        ))}
+      </div>
+      {children}
+      {(notes || []).map((t, i) => (
+        <div key={i} style={{ font: "10.5px/1.55 system-ui", color: C.muted, marginTop: 6 }}>{t}</div>
+      ))}
+      <button className="btn primary" disabled={!n} onClick={onTake} style={{ marginTop: 8 }}>
+        {n ? (button || "Take these from the layout") : (taken || "Nothing to take")}
+      </button>
+    </div>
+  );
+}
+
 export {
   fmt, fmtDim, fmtKm, fmtArea, areaUnit, areaVal,
   C, Num, Sel, Section, WarnList, useNarrow, COARSE,
-  Working, NumS, NumO, Page, Rows,
+  Working, NumS, NumO, Page, Rows, FromLayout,
 };

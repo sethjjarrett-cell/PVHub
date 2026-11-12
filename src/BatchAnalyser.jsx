@@ -15,7 +15,8 @@
    ===================================================================== */
 
 import React, { useState, useMemo, useRef } from "react";
-import { fmt, C, Num, Section, Page, Rows, WarnList } from "./ui.jsx";
+import { fmt, C, Num, Section, Page, Rows, WarnList, FromLayout } from "./ui.jsx";
+import { sweepFromLayout, offerRows, SWEEP_ROWS } from "./handoff.js";
 import {
   BATCH_PARAMS, paramById, range, sweepRows, buildBatchParamsCsv, runInstructions,
   DELIMITERS, MOUNTS, mountById, GAP_DEFAULT, buildSweep,
@@ -450,7 +451,7 @@ function Txt({ label, value, onChange, placeholder, width = 210 }) {
   );
 }
 
-function SweepBuilder({ st, set }) {
+function SweepBuilder({ st, set, layout = null }) {
   const sw = st.sweep || {};
   const upd = (patch) => set({ ...st, sweep: { ...sw, ...patch } });
   const g = (k, d) => (sw[k] === undefined ? d : sw[k]);
@@ -560,6 +561,28 @@ function SweepBuilder({ st, set }) {
         does is write the file that makes PVsyst run every case unattended: build one variant by
         hand, point its batch mode at this file, and it works through the lot on its own.</p>
       </div>
+
+      {(() => {
+        /* The base variant has to be built around a plant, and the layout
+           is where the plant comes from. What the form shows now is set
+           against what the layout drew, defaults included, so a sweep
+           built on the form's starting figures is visibly not this site. */
+        const h = sweepFromLayout(layout);
+        if (!h) return null;
+        const now = { mount: mount.id, moduleWp: sys.moduleWp, modulesInSeries: sys.modulesInSeries,
+          nParallel: sys.nParallel, inverterKwac: sys.inverterKwac, nInverter: sys.nInverter,
+          collectorWidthM: sys.collectorWidthM, baseTilt: g("baseTilt", 20) };
+        return (
+          <FromLayout title="The plant on the Layout tab"
+            rows={offerRows(SWEEP_ROWS, now, h.patch)}
+            notes={[...h.notes,
+              "Build the PVsyst base variant to match these, so that the sweep simulates the plant "
+              + "that was laid out. PVsyst's scene is a regular field, so take its kWh/kWp and "
+              + "multiply by the capacity the layout achieved, not by PVsyst's own total."]}
+            onTake={() => set({ ...st, sweep: { ...sw, ...h.patch },
+              ...(h.patch.collectorWidthM ? { collectorWidthM: h.patch.collectorWidthM } : {}) })} />
+        );
+      })()}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0" }}>
         <label className="fld" style={{ width: 250 }}>
@@ -847,7 +870,7 @@ function ExtraCard({ p, g, upd }) {
   );
 }
 
-export function BatchAnalyserTab({ st, set }) {
+export function BatchAnalyserTab({ st, set, layout = null }) {
   const [file, setFile] = useState(null);      // { name, parsed } or { name, error }
   const [busy, setBusy] = useState(false);
 
@@ -894,7 +917,7 @@ export function BatchAnalyserTab({ st, set }) {
       </div>
 
       <Section code="B0" title="Build the sweep for PVsyst">
-        <SweepBuilder st={st} set={set} />
+        <SweepBuilder st={st} set={set} layout={layout} />
       </Section>
 
       <Section code="B1" title="Batch results file">

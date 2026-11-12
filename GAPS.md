@@ -189,17 +189,17 @@ file does by hand.
 
 ---
 
-### G15. Cable sizing and the layout do not talk to each other
+### G15. Cable sizing and the layout now talk, by offer
 
-The MV tab sizes ring runs from route distances typed in by hand, while the layout generator
-already computes cable routes for exactly those runs and reports their lengths. Nothing
-carries one into the other, so the cable schedule can silently describe a different plant
-from the layout beside it.
+*Was: the MV tab sized runs from distances typed by hand while the layout computed the same
+runs. Now the AC tab offers the longest routed LV run, the MV tab offers one run per station
+with its inverter count, and the fault study, the sweep builder and the guided flow each
+offer what the layout knows (`src/handoff.js`).*
 
-**Recommendation.** Feed `planCabling`'s segments into the MV runs table as a starting set,
-the way `onAdopt` already carries a string length from string sizing into the electrical
-config. The layout knows the inverter count per run too, which is the other column being
-typed by hand.
+What remains is that the offer is one-way and one-off: take it, move the layout, and the
+cable tab is out of step again until the button is pressed a second time. The panel says so
+by turning orange, which is the intended behaviour — a cable schedule that silently followed
+the layout would also silently follow a mistake made on it.
 
 ### G16. MV ratings above 400 mm² are extrapolated
 
@@ -505,6 +505,20 @@ already take a list of sizes; only the input is missing.
 
 Money now starts empty everywhere. The 25-year period and the row-shading coefficient do not,
 and the second is a calibration constant standing in for an hourly simulation.
+
+### G41. Stations are routed as radials, not as feeders
+
+Every station gets its own MV run to the point of connection. A real collector daisy-chains
+stations along a feeder: less cable in total, and the last stretch carries every station on
+it, which is the run that sets the cable size. The MV tab is told this when it takes the
+runs, but it means the MV cable total from the layout is an upper bound and the per-run
+current is a lower bound.
+
+**Recommendation.** Group stations into feeders by a limit on the feeder's current (the
+largest cable's derated rating at the MV voltage), order each feeder along the corridor
+graph from its far end to the point of connection, and route it as one chain. The MV tab's
+run table already takes a branch number and cumulative current per run, so it would read a
+feeder without change.
 
 ## Severity 4 — Polish
 

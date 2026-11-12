@@ -9,7 +9,8 @@
    ===================================================================== */
 
 import React, { useState } from "react";
-import { fmt, C, Num, Section, Page, Working, WarnList, Rows } from "./ui.jsx";
+import { fmt, C, Num, Section, Page, Working, WarnList, Rows, FromLayout } from "./ui.jsx";
+import { guidedFromLayout, offerRows, GUIDED_ROWS } from "./handoff.js";
 import { buildBom, bomToCsv, BOM_INPUTS, BOM_EXCLUSIONS } from "./bom.js";
 import {
   STEPS, assess, stepState, nextStep, derive, summarise, sanityChecks,
@@ -44,7 +45,7 @@ const Big = ({ label, value, unit, how, tone }) => (
   </div>
 );
 
-export function BdFlowTab({ st, set }) {
+export function BdFlowTab({ st, set, layout = null, loc = null }) {
   const p = st || {};
   const upd = (patch) => set({ ...p, ...patch });
   const g = (k, d) => (p[k] === undefined || p[k] === null ? d : p[k]);
@@ -158,6 +159,24 @@ export function BdFlowTab({ st, set }) {
   return (
     <Page wide>
       <div className="tbl">GUIDED FLOW — FROM A MAP PIN TO A QUOTABLE NUMBER</div>
+
+      {(() => {
+        /* When the Layout tab has a plant on it, everything below that the
+           layout already knows is offered rather than asked for: the
+           module count, the inverters, the string length, the pitch, and
+           the transformer size where every station is the same. */
+        const h = guidedFromLayout(layout, loc);
+        if (!h) return null;
+        return (
+          <FromLayout title="The plant on the Layout tab"
+            rows={offerRows(GUIDED_ROWS, p, h.patch)}
+            notes={[...h.notes,
+              "The layout is the first pass: its pitch is the one it was drawn at, which is a rule "
+              + "of thumb until the PVsyst sweep settles it. Take these, run the sweep, then move the "
+              + "layout to the chosen pitch and take them again."]}
+            onTake={() => upd(h.patch)} />
+        );
+      })()}
 
       <Section code="G0" title="Where this gets to">
         {sum.ready || d.dcKwp !== null ? (
