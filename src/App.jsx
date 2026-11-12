@@ -9,6 +9,8 @@ import {
 } from "./ui.jsx";
 import { CableDcTab, CableAcTab, CableMvTab, ShortCircuitTab } from "./CableTools.jsx";
 import { FaultStudyTab } from "./FaultTool.jsx";
+import { stationPlan, stationIndexer, describePlan, STATION_MODES } from "./stations.js";
+import { WeatherSource, BaselineSource } from "./SiteData.jsx";
 import { defaultNetwork } from "./faultNetwork.js";
 import { BessTab } from "./BessTool.jsx";
 import { RoofDesignerTab, ROOF_PLANE_DEFAULT } from "./RoofDesigner.jsx";
@@ -434,9 +436,12 @@ function annotateBlockVariant(res, geo, elec, gapSlot) {
         : (vertical ? b.x - a.x : b.y - a.y))
   );
   const byId = new Map();
+  /* One plan for the whole variant: the outline, the station that is
+     placed and the cable routed to it are all read off this. */
+  const txOf = stationIndexer(sorted.length, elec);
   sorted.forEach((b, i) => {
     b.inv = i;
-    b.tx = Math.floor(i / Math.max(1, elec.invertersPerTx));
+    b.tx = txOf(i);
     b.strings = b.nFrames * spf;
     const off = Math.max(0.5, gapSlot / 2);
     // marker on the block's middle lane, on the corridor side —
@@ -465,10 +470,14 @@ function annotateFreeFill(res, geo, elec) {
   let inv = 0, acc = 0;
   for (const f of arr) {
     if (acc > 0 && acc + spf > elec.stringsPerInverter + 1e-9) { inv++; acc = 0; }
-    f.inv = inv; f.tx = Math.floor(inv / Math.max(1, elec.invertersPerTx));
+    f.inv = inv;
     f.modules = geo.modules; f.strings = spf;
     acc += spf;
   }
+  // The station plan needs the inverter count, which is only known once
+  // the walk above has finished — hence a second pass.
+  const txOf = stationIndexer(arr.length ? inv + 1 : 0, elec);
+  for (const f of arr) f.tx = txOf(f.inv);
   // pseudo-blocks: bbox + centroid marker per inverter group (no AC bands)
   const map = new Map();
   for (const f of arr) {
@@ -562,7 +571,7 @@ function dcStats(frames, blocks) {
 /** Tidy a placed layout into clean, uniform bands: within each row keep only
     the longest unbroken run of full blocks, then drop stub rows. Removes the
     ragged protrusions without gutting the capacity a strict rectangle would. */
-function trimToRectangle(ann, invertersPerTx) {
+function trimToRectangle(ann, elec) {
   const full = ann.blocks.filter((b) => b.full);
   if (full.length < 3) return null;
   const vertical = ann.vertical;
@@ -597,7 +606,8 @@ function trimToRectangle(ann, invertersPerTx) {
   const best = { rows: kept.length, cols: Math.max(...kept.map((r) => r.length)) };
   const chosen = ann.blocks.filter((b) => keep.has(b.id)).sort((a, b) => a.inv - b.inv);
   const remap = new Map();
-  chosen.forEach((b, i) => remap.set(b.id, { inv: i, tx: Math.floor(i / Math.max(1, invertersPerTx)) }));
+  const txOf = stationIndexer(chosen.length, elec);
+  chosen.forEach((b, i) => remap.set(b.id, { inv: i, tx: txOf(i) }));
   return {
     vertical, laneMid: ann.laneMid,
     blocks: chosen.map((b) => ({ ...b, ...remap.get(b.id) })),
@@ -614,7 +624,7 @@ function trimToRectangle(ann, invertersPerTx) {
    staying within a corridor over jumping corridors, and full blocks
    over narrow ones. Candidates scored by achieved modules first,
    then AC extent.                                                   */
-function applyCapacityTarget(ann, cap, modsPerFrame, stagger, ss, invertersPerTx) {
+function applyCapacityTarget(ann, cap, modsPerFrame, stagger, ss, elec) {
   if (!cap || cap.kind === "none" || !ann.blocks.length) return { ...ann, capInfo: null };
   const blocks = ann.blocks;
   const blockMods = (b) => b.nFrames * modsPerFrame;
@@ -760,8 +770,9 @@ function applyCapacityTarget(ann, cap, modsPerFrame, stagger, ss, invertersPerTx
 
   const chosen = [...best.sel].sort((a, b) => a.inv - b.inv); // keep snake order
   const remap = new Map();
+  const txOf = stationIndexer(chosen.length, elec);
   chosen.forEach((b, i) => {
-    remap.set(b.id, { inv: i, tx: Math.floor(i / Math.max(1, invertersPerTx)) });
+    remap.set(b.id, { inv: i, tx: txOf(i) });
   });
   const blocks2 = chosen.map((b) => ({ ...b, ...remap.get(b.id) }));
   const frames2 = ann.frames
@@ -1220,33 +1231,10 @@ function buildRoads(blocks, stagger, laneMid, roadW, vertical) {
 }
 
 /* ---------------- substations, cable routing and cost ----------------
-   Substations are modular single-transformer units of 10, 14 or 20 ways.
-   Cables cannot cross module rows, so routing is restricted to a graph of
-   the road corridors and the gaps between blocks, clipped to the site.  */
-const SS_SIZES = [10, 14, 20];
-
-/** Fewest units first, then fewest spare ways. 26 -> 14+14, 34 -> 20+14. */
-function chooseSubstations(nInv, sizes = SS_SIZES) {
-  if (nInv <= 0) return { units: 0, spare: 0, combo: [] };
-  const big = Math.max(...sizes);
-  let best = null;
-  for (let units = 1; units <= Math.ceil(nInv / Math.min(...sizes)) + 1; units++) {
-    if (units * big < nInv) continue;
-    const rec = (i, left, acc, sum) => {
-      if (left === 0) {
-        if (sum >= nInv) {
-          const spare = sum - nInv;
-          if (!best || spare < best.spare) best = { units, spare, combo: [...acc].sort((a, b) => b - a) };
-        }
-        return;
-      }
-      for (let k = i; k < sizes.length; k++) { acc.push(sizes[k]); rec(k, left - 1, acc, sum + sizes[k]); acc.pop(); }
-    };
-    rec(0, units, [], 0);
-    if (best) break;
-  }
-  return best || { units: 0, spare: 0, combo: [] };
-}
+   Which inverters share a station is decided once, in src/stations.js,
+   and stamped on every block as `tx`. Cables cannot cross module rows,
+   so routing is restricted to a graph of the road corridors and the
+   gaps between blocks, clipped to the site.  */
 
 /** Graph of legal cable routes: along corridors, and down the gaps between
     blocks. Never across a block, never outside the boundary. */
@@ -1342,21 +1330,22 @@ function pathPoints(graph, prev, from) {
 
 /** Assign inverter blocks to modular substations, place each on the route
     graph near its group, and route LV to it and MV on to the grid point. */
-function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides) {
+function planCabling(blocks, polygon, stagger, laneMid, vertical, poi, overrides, elec) {
   const empty = { subs: [], lv: 0, mv: 0, paths: [], mvPaths: [], graph: null, combo: [] };
   if (!blocks.length || polygon.length < 3) return empty;
   const graph = buildCableGraph(blocks, polygon, stagger, laneMid, vertical);
   if (!graph || graph.nodes.length < 2) return empty;
 
-  const plan = chooseSubstations(blocks.length);
+  const plan = stationPlan(blocks.length, elec);
   const ordered = [...blocks].sort((a, b) => a.inv - b.inv);   // already a snake walk
   const subs = [];
-  let k = 0;
   plan.combo.forEach((ways, gi) => {
-    const take = Math.min(ways, ordered.length - k);
+    /* Grouped by the station already stamped on each block, not by
+       slicing the list again here. Two slicings that happen to agree
+       are how the outline and the station came apart before. */
+    const group = ordered.filter((b) => b.tx === gi);
+    const take = group.length;
     if (take <= 0) return;
-    const group = ordered.slice(k, k + take);
-    k += take;
     const cxs = group.reduce((s, b) => s + b.mx, 0) / group.length;
     const cys = group.reduce((s, b) => s + b.my, 0) / group.length;
     const ov = overrides && overrides[gi];
@@ -3023,7 +3012,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           const cfgF = { ...cfg, gapSlot: cfg.gapSlot * Math.sqrt(1 + mS * mS), terrain: terrainCtx };
           const r = generateBlockVariant(polygon, geo, cfgF);
           const ann = annotateBlockVariant(r, geo, elec, cfgF.gapSlot);
-          const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elec.invertersPerTx);
+          const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elec);
           out.push({
             name, tags, kind: "block", ...capped, ms: r.ms,
             stagger: mS, roadW: cfg.gapSlot,
@@ -3052,7 +3041,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
             const cfgF = { ...cfg, gapSlot: cfg.gapSlot * Math.sqrt(1 + mS * mS), terrain: ctx };
             const r = generateBlockVariant(polygon, geo, cfgF);
             const ann = annotateBlockVariant(r, geo, elec, cfgF.gapSlot);
-            const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elec.invertersPerTx);
+            const capped = applyCapacityTarget(ann, cap, geo.modules, mS, ss, elec);
             out.push({ name, tags, kind: "block", ...capped, ms: r.ms, stagger: mS, roadW: cfg.gapSlot });
           };
           for (const p of pairs.slice(0, 2)) {
@@ -3069,9 +3058,9 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
           const cfgF = { ...cfg, gapSlot: cfg.gapSlot * Math.sqrt(1 + mS * mS), terrain: terrainCtx };
           const r = generateBlockVariant(polygon, geo, cfgF);
           const ann = annotateBlockVariant(r, geo, elec, cfgF.gapSlot);
-          const rect = trimToRectangle(ann, elec.invertersPerTx);
+          const rect = trimToRectangle(ann, elec);
           if (rect) {
-            const capped = applyCapacityTarget(rect, cap, geo.modules, mS, ss, elec.invertersPerTx);
+            const capped = applyCapacityTarget(rect, cap, geo.modules, mS, ss, elec);
             out.push({
               name: `${p.w}×${p.d} uniform bands (${rect.blocks.length} blocks)`,
               tags: ["uniform", "buildability"], kind: "block", ...capped,
@@ -3107,7 +3096,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
         // free fill reference (upper bound on density) at the chosen stagger
         const ff = generateFreeFill(polygon, geo, pitchCfg.rowPitch, pitchCfg.endGap, site.setback, m0, terrainCtx);
         const annF = annotateFreeFill(ff, geo, elec);
-        const cappedF = applyCapacityTarget(annF, cap, geo.modules, m0, ss, elec.invertersPerTx);
+        const cappedF = applyCapacityTarget(annF, cap, geo.modules, m0, ss, elec);
         out.push({
           name: "Free fill (max density)", tags: ["density", "reference"],
           kind: "free", ...cappedF, ms: ff.ms, stagger: m0, roadW: 0,
@@ -3219,8 +3208,8 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
   const cabling = useMemo(() => {
     const v = variants[Math.min(activeIdx, variants.length - 1)];
     if (!v || v.kind !== "block" || !v.blocks.length) return null;
-    return planCabling(v.blocks, polygon, v.stagger, v.laneMid, v.vertical, ss, ssOver);
-  }, [variants, activeIdx, polygon, ss, ssOver]);
+    return planCabling(v.blocks, polygon, v.stagger, v.laneMid, v.vertical, ss, ssOver, elec);
+  }, [variants, activeIdx, polygon, ss, ssOver, elec.stationMode, elec.invertersPerTx]);
 
   /* What the routed layout says about cable grouping. The cable tools
      have always asked how many circuits share a trench; the layout has
@@ -3857,13 +3846,34 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               onChange={(v) => setElec({ ...elec, modulesPerString: Math.round(v) })} />
             <Num label="Strings per inverter" value={elec.stringsPerInverter} step={1} min={1}
               onChange={(v) => setElec({ ...elec, stringsPerInverter: Math.round(v) })} />
-            <Num label="Inverters per transformer (ways)" value={elec.invertersPerTx} step={1} min={1}
-              onChange={(v) => setElec({ ...elec, invertersPerTx: Math.round(v) })} />
+            <Sel label="Transformer stations" width="100%"
+              value={elec.stationMode === "fixed" ? "fixed" : "modular"}
+              onChange={(v) => setElec({ ...elec, stationMode: v })}
+              options={Object.entries(STATION_MODES).map(([k, m]) => ({ value: k, label: m.name }))} />
+            {elec.stationMode === "fixed" && (
+              <Num label="Inverters per transformer (ways)" value={elec.invertersPerTx} step={1} min={1}
+                onChange={(v) => setElec({ ...elec, invertersPerTx: Math.round(v) })} />
+            )}
             <div className="readout">
               <b>{fmt(spf, 2)}</b> strings per frame → inverter block of <b>{fpi}</b> frames
               <br />
               block DC <b>{fmt(fpi * spf * elec.modulesPerString * module.power / 1000, 0)} kWp</b>
               {invAcKw > 0 && <> · DC/AC <b>{fmt(inverterDcKwp / invAcKw, 2)}</b></>}
+            </div>
+            <div className="readout" style={{ font: "10.5px/1.6 system-ui" }}>
+              {elec.stationMode === "fixed"
+                ? <>Every station takes <b>{elec.invertersPerTx}</b> inverters, and the last one
+                    is left short.</>
+                : <>Units of 10, 14 or 20 ways: fewest units first, then fewest spare ways. Those
+                    are the Sungrow MVS3200, 4480 and 6400 sizes, which is one maker&apos;s range
+                    rather than a standard. Choose one size instead if the station being bought
+                    is a different one.</>}
+              {cabling && cabling.combo.length
+                ? <> This layout takes <b>{describePlan(cabling)}</b>
+                    {cabling.spare ? `, with ${cabling.spare} way${cabling.spare === 1 ? "" : "s"} spare` : ", with none spare"}.</>
+                : null}
+              {" "}The outline, the station marker and the cable routed to it are all read off this
+              one plan.
             </div>
             <WarnList items={elecWarnings} />
           </Section>
@@ -4286,7 +4296,7 @@ function LayoutTool({ module, setModule, frame, setFrame, elec, setElec, invAcKw
               <div className="tbcell">
                 <div className="tbl">Substations</div>
                 <div className="tbv" style={{ fontSize: 12.5 }}>
-                  {cabling && cabling.combo.length ? cabling.combo.join("+") : "—"}
+                  {cabling && cabling.combo.length ? describePlan(cabling) : "—"}
                 </div>
               </div>
               <div className="tbcell" title="Circuits sharing the busiest stretch of trench, measured off the routed layout">
@@ -6142,24 +6152,6 @@ function pitchSweep(env, opt, pitches, refPitch) {
 }
 
 /** Parse a PVGIS TMY payload into the compact form buildEnv expects. */
-function parseTmy(json) {
-  const rows = json?.outputs?.tmy_hourly;
-  if (!Array.isArray(rows) || !rows.length) throw new Error("no hourly data in response");
-  const cum = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
-  const out = [];
-  for (const r of rows) {
-    const t = String(r.time || r["time(UTC)"] || "");
-    const m = t.match(/^(\d{4})(\d{2})(\d{2}):(\d{2})/);
-    if (!m) continue;
-    const mon = Number(m[2]), day = Number(m[3]), hour = Number(m[4]);
-    const doy = cum[mon - 1] + day;
-    const ghi = r["G(h)"], dni = r["Gb(n)"], dhi = r["Gd(h)"], temp = r.T2m;
-    if (!(ghi >= 0) || !(dni >= 0) || !(dhi >= 0)) continue;
-    out.push({ doy, hour, ghi, dni, dhi, temp: temp ?? 25 });
-  }
-  if (out.length < 4000) throw new Error(`only ${out.length} usable hours`);
-  return out;
-}
 
 
 /** Specific yield against pitch, with the reference pitch marked. */
@@ -6595,7 +6587,7 @@ function RoofAreaTab({ mod, inv, elec, st, set, onAdopt }) {
   );
 }
 
-function ShadeTab({ frame, mod, elec, reg, loc, onTmy }) {
+function ShadeTab({ frame, mod, elec, reg, loc, weather, onWeather, baseline, onBaseline }) {
   const geo = computeFrameGeometry(mod, frame);
   const cw = geo.collectW;
   const [metric, setMetric] = useState("yield");
@@ -6607,70 +6599,19 @@ function ShadeTab({ frame, mod, elec, reg, loc, onTmy }) {
   useEffect(() => { if (loc?.lat !== undefined) setLat(loc.lat); }, [loc?.lat]);
   const [pitch, setPitch] = useState(5.5);
 
-  // ---- PVGIS-driven pitch model ----
-  const [tmy, setTmy] = useState(null);
-  const [wx, setWx] = useState({ state: "idle", msg: "", url: "" });
+  // ---- the pitch model, on whatever weather the shell holds ----
+  /* The year and the baseline are loaded once, on this tab or on the
+     Yield report, and both tabs read the same ones. They used to pull
+     a copy each, which is how one could be running on a real year
+     while the other was still on the clear-sky model. */
+  const tmy = weather?.rows || null;
+  const pvc = { ey: baseline?.specYield || null };
   const [mp, setMp] = useState({
     albedo: 0.2, bifaciality: 0.8, bos: 12, maxRot: 60, backtrack: true,
     mismatch: 2, kRear: 0.9, steps: 8,
   });
   const [range, setRange] = useState(null);
   const rng = range || { lo: +(cw * 1.15).toFixed(1), hi: +(cw * 2.6).toFixed(1) };
-
-  const fetchTmy = async () => {
-    setWx({ state: "busy", msg: "Requesting typical meteorological year…", url: "" });
-    const qs = `?lat=${loc?.lat ?? lat}&lon=${loc?.lon ?? 0}&outputformat=json`;
-    const hosts = [
-      "https://re.jrc.ec.europa.eu/api/v5_3/tmy",
-      "https://re.jrc.ec.europa.eu/api/tmy",
-    ];
-    let last = null;
-    for (const h of hosts) {
-      try {
-        const res = await fetch(h + qs);
-        if (!res.ok) { last = new Error(`HTTP ${res.status}`); continue; }
-        const rows = parseTmy(await res.json());
-        setTmy(rows);
-        onTmy?.(rows);
-        setWx({ state: "ok", msg: `${fmt(rows.length, 0)} hours of PVGIS TMY loaded.`, url: h + qs });
-        return;
-      } catch (e) { last = e; }
-    }
-    const offline = /failed to fetch|networkerror|load failed/i.test(last?.message || "");
-    setWx({
-      state: "err", url: hosts[0] + qs,
-      msg: offline
-        ? "The browser blocked the request before it reached PVGIS."
-        : `PVGIS returned an error: ${last?.message || "unknown"}`,
-    });
-  };
-
-  const [pvc, setPvc] = useState({ state: "idle", ey: null, msg: "", url: "" });
-  const fetchPvcalc = async () => {
-    setPvc({ state: "busy", ey: null, msg: "Asking PVGIS PVcalc…", url: "" });
-    const tracking = frame.mounting === "fixed" ? 0 : 1;   // 1 = horizontal N-S axis
-    const qs = `?lat=${loc?.lat ?? lat}&lon=${loc?.lon ?? 0}&peakpower=1&loss=${mp.bos}` +
-      `&pvtechchoice=crystSi&mountingplace=free&trackingtype=${tracking}` +
-      (tracking === 0 ? `&angle=${frame.tilt}` : "") + `&usehorizon=1&outputformat=json`;
-    const hosts = ["https://re.jrc.ec.europa.eu/api/v5_3/PVcalc", "https://re.jrc.ec.europa.eu/api/PVcalc"];
-    let last = null;
-    for (const h of hosts) {
-      try {
-        const res = await fetch(h + qs);
-        if (!res.ok) { last = new Error(`HTTP ${res.status}`); continue; }
-        const d = await res.json();
-        const ey = d?.outputs?.totals?.fixed?.E_y ?? d?.outputs?.totals?.tracking?.E_y
-          ?? Object.values(d?.outputs?.totals || {})[0]?.E_y;
-        if (!(ey > 0)) throw new Error("no E_y in response");
-        setPvc({ state: "ok", ey, msg: `PVGIS unshaded baseline ${fmt(ey, 0)} kWh/kWp (their validated PV model, horizon included).`, url: h + qs });
-        return;
-      } catch (e) { last = e; }
-    }
-    setPvc({ state: "err", ey: null, url: hosts[0] + qs,
-      msg: /failed to fetch|networkerror/i.test(last?.message || "")
-        ? "The browser blocked the request (file:// page or network block)."
-        : `PVcalc error: ${last?.message}` });
-  };
 
   const env = useMemo(
     () => buildEnv(loc?.lat ?? lat, loc?.lon ?? 0, tmy),
@@ -6803,58 +6744,32 @@ function ShadeTab({ frame, mod, elec, reg, loc, onTmy }) {
 
       <div className="tbl" style={{ margin: "6px 0" }}>QUICK GEOMETRIC SCREEN (NO SIMULATION)</div>
       <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 6 }}>
-        <Section code="6C" title="Modelled pitch comparison (PVGIS irradiance + row geometry)">
+        <Section code="6C" title="Modelled pitch comparison (pulled irradiance + row geometry)">
         <div className="readout">
-          PVGIS has no pitch, GCR or row-spacing parameter, so it supplies the irradiance only.
+          No public service takes a pitch, GCR or row spacing, so the pulls supply irradiance only.
           Everything to do with rows is computed here: backtracking rotation and its cosine
           penalty, beam shading, the sky view factor cut by the row in front, ground reflection,
           and a simplified bifacial rear gain. <b>Absolute yield is indicative; the differences
           between pitches are the trustworthy output</b>, because they follow from geometry
           rather than from the irradiance dataset. PVsyst remains the number of record.
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", width: "100%" }}>
-          <button className="btn primary" onClick={fetchTmy} disabled={wx.state === "busy"}>
-            {wx.state === "busy" ? "Fetching…" : "Fetch PVGIS TMY"}
-          </button>
-          <span style={{ font: "11px system-ui", color: tmy ? "#7fd694" : C.warn }}>
-            {tmy ? `✓ ${wx.msg}` : "Using a clear-sky model — geometry is right, absolute yield runs high"}
-          </span>
-          {tmy && <button className="btn" onClick={() => { setTmy(null); onTmy?.(null); setWx({ state: "idle", msg: "", url: "" }); }}>
-            Back to clear-sky</button>}
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", width: "100%" }}>
-          <button className="btn primary" onClick={fetchPvcalc} disabled={pvc.state === "busy"}>
-            {pvc.state === "busy" ? "Fetching…" : "Fetch PVGIS yield baseline (PVcalc)"}
-          </button>
-          <span style={{ font: "11px system-ui", color: pvc.ey ? "#7fd694" : C.muted }}>
-            {pvc.ey ? `✓ ${pvc.msg}` : "Absolute yields below come from this tool's own model until fetched"}
-          </span>
-        </div>
-        {pvc.state === "err" && (
-          <div className="warn" style={{ width: "100%" }}>⚠ {pvc.msg}
-            <br /><a href={pvc.url} target="_blank" rel="noreferrer"
-              style={{ color: C.accent, wordBreak: "break-all" }}>{pvc.url}</a>
-          </div>
-        )}
-        {pvc.ey > 0 && (
+        <WeatherSource loc={{ lat: loc?.lat ?? lat, lon: loc?.lon ?? 0 }}
+          weather={weather} onWeather={onWeather} />
+        <BaselineSource loc={{ lat: loc?.lat ?? lat, lon: loc?.lon ?? 0 }}
+          mounting={frame.mounting} tilt={frame.tilt} loss={mp.bos}
+          baseline={baseline} onBaseline={onBaseline} />
+        {pvc.ey > 0 ? (
           <div className="readout">
             Absolute yields in the table are now <b>PVGIS's validated model × this tool's
-            geometric ratio</b>: PVcalc supplies the unshaded single-row baseline (their
+            geometric ratio</b>: PVGIS supplies the unshaded single-row baseline (their
             temperature, reflection, spectral and horizon handling), and the row geometry here
             supplies only the pitch-to-pitch ratio — where its approximations largely cancel.
             Bifacial rear gain remains this tool's addition; PVGIS has no bifacial model.
           </div>
-        )}
-        {wx.state === "err" && (
-          <div className="warn" style={{ width: "100%" }}>
-            ⚠ {wx.msg}
-            <br /><br />Usual causes: the page is open from a local <b>file://</b> path (browsers
-            block cross-site requests from local files — host it and it works), or the network
-            blocks the EU JRC domain. Open this in a new tab to tell them apart:
-            <br /><a href={wx.url} target="_blank" rel="noreferrer"
-              style={{ color: C.accent, wordBreak: "break-all" }}>{wx.url}</a>
-            <br /><br />The clear-sky model below still works offline, and the pitch
-            differences from it remain usable.
+        ) : (
+          <div className="readout">
+            Until a PVGIS baseline is loaded, the absolute yields below come from this tool's own
+            model. The differences between pitches do not depend on it.
           </div>
         )}
 
@@ -6965,7 +6880,19 @@ function ShadeTab({ frame, mod, elec, reg, loc, onTmy }) {
   );
 }
 
-const SS_COST = { 10: 95000, 14: 125000, 20: 165000 };
+/* The rates this tab used to open with. They are kept only so that a
+   project saved while they were the defaults can be recognised on the
+   way back in: a file carrying exactly this set never had a rate typed
+   into it, and restoring it would put the placeholder prices straight
+   back on screen as though somebody had entered them. */
+const LEGACY_DEFAULT_RATES = { lv: 38, mv: 62, modWp: 0.13, mountWp: 0.09, invKw: 32 };
+const NO_RATES = { cur: "£", lv: null, mv: null, modWp: null, mountWp: null, invKw: null, stationKva: null };
+function ratesFromSaved(saved) {
+  if (!saved) return NO_RATES;
+  const untouched = Object.entries(LEGACY_DEFAULT_RATES).every(([k, v]) => saved[k] === v);
+  return untouched ? { ...NO_RATES, cur: saved.cur || "£" } : { ...NO_RATES, ...saved };
+}
+const hasRate = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(+v);
 
 function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
   if (!s) {
@@ -6974,22 +6901,37 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
     </div></Page>;
   }
   const lv = s.lv || 0, mv = s.mv || 0;
-  const cLv = (lv * rates.lv) / 1000;
-  const cMv = (mv * rates.mv) / 1000;
-  const cSub = (s.combo || []).reduce((a, w) => a + (SS_COST[w] || 0), 0) / 1000;
-  const cMod = (s.modules * mod.power * rates.modWp) / 1000;
-  const cMount = (s.modules * mod.power * rates.mountWp) / 1000;
-  const cInv = (s.inverters * (s.invAcKw || 0) * rates.invKw) / 1000;
-  const total = cLv + cMv + cSub + cMod + cMount + cInv;
-  const perW = s.dcMWp > 0 ? (total * 1000) / (s.dcMWp * 1e6) : 0;
-  const Row = ({ k, v, sub }) => (
+  const invKva = s.invAcKw || 0;
+  const stationKva = (s.combo || []).reduce((a, w) => a + w * invKva, 0);
+  /* Quantity, rate, cost — and the cost only where a rate was entered.
+     A line with no rate is listed as not priced, never shown as zero,
+     because a zero in a column of money moves the total without anyone
+     having decided that it should. */
+  const lines = [
+    { k: "Modules", qty: s.modules * mod.power, rate: rates.modWp, per: "Wp" },
+    { k: "Mounting & install", qty: s.modules * mod.power, rate: rates.mountWp, per: "Wp" },
+    { k: "Inverters", qty: s.inverters * invKva, rate: rates.invKw, per: "kW" },
+    { k: "LV cable", qty: lv, rate: rates.lv, per: "m" },
+    { k: "MV cable", qty: mv, rate: rates.mv, per: "m" },
+    { k: "Transformer stations", qty: stationKva, rate: rates.stationKva, per: "kVA" },
+  ].map((l) => ({ ...l, cost: hasRate(l.rate) ? (l.qty * l.rate) / 1000 : null }));
+  const priced = lines.filter((l) => l.cost !== null);
+  const unpriced = lines.filter((l) => l.cost === null);
+  const total = priced.reduce((a, l) => a + l.cost, 0);
+  const complete = unpriced.length === 0;
+  const perW = complete && s.dcMWp > 0 ? (total * 1000) / (s.dcMWp * 1e6) : null;
+  const Row = ({ k, v, sub, dim }) => (
     <tr>
       <td style={{ padding: "6px 12px", color: C.muted, font: "11.5px system-ui" }}>{k}</td>
-      <td style={{ padding: "6px 12px", font: "600 12.5px var(--mono)", color: C.text, textAlign: "right" }}>{v}</td>
+      <td style={{ padding: "6px 12px", font: dim ? "11.5px system-ui" : "600 12.5px var(--mono)",
+        color: dim ? C.muted : C.text, textAlign: "right" }}>{v}</td>
       <td style={{ padding: "6px 12px", color: C.muted, font: "10.5px system-ui" }}>{sub}</td>
     </tr>
   );
   const money = (k) => `${rates.cur} ${fmt(k, 0)}k`;
+  const qtyText = (l) => (l.per === "m" ? fmtKm(l.qty)
+    : l.per === "Wp" ? `${fmt(l.qty / 1e6, 2)} MWp`
+    : l.per === "kW" ? `${fmt(l.qty, 0)} kW` : `${fmt(l.qty, 0)} kVA`);
   return (
     <Page wide>
       <div className="tbl" style={{ marginBottom: 10 }}>STEP 8 — SUMMARY</div>
@@ -7001,42 +6943,44 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
             <Row k="DC capacity" v={`${fmt(s.dcMWp, 2)} MWp`} sub={`${fmt(s.modules, 0)} × ${mod.power} W`} />
-            <Row k="AC capacity" v={`${fmt((s.inverters * (s.invAcKw || 0)) / 1000, 2)} MVA`}
-              sub={`${s.inverters} × ${fmt(s.invAcKw || 0, 0)} kVA`} />
-            <Row k="DC/AC ratio" v={s.invAcKw ? fmt((s.dcMWp * 1000) / (s.inverters * s.invAcKw), 2) : "—"} sub="" />
+            <Row k="AC capacity" v={`${fmt((s.inverters * invKva) / 1000, 2)} MVA`}
+              sub={`${s.inverters} × ${fmt(invKva, 0)} kVA`} />
+            <Row k="DC/AC ratio" v={invKva ? fmt((s.dcMWp * 1000) / (s.inverters * invKva), 2) : "—"} sub="" />
             <Row k="Strings" v={fmt(s.strings, 0)} sub={`${elec.modulesPerString} modules each`} />
             <Row k="Frames" v={fmt(s.frames, 0)} sub={`${frame.config}P mounting`} />
-            <Row k="Substations" v={(s.combo || []).join(" + ") || "—"}
-              sub={`${s.spare} spare way${s.spare === 1 ? "" : "s"}`} />
+            <Row k="Transformer stations" v={describePlan({ combo: s.combo })}
+              sub={`ways each · ${s.spare} spare way${s.spare === 1 ? "" : "s"}`
+                + (stationKva > 0 ? ` · ${fmt(stationKva / 1000, 2)} MVA of station` : "")} />
             <Row k="Site area" v={fmtArea(s.areaM2)} sub={`${fmt((s.dcMWp * 1e6) / Math.max(1, s.areaM2), 1)} MW/km²`} />
             <Row k="On flat ground" v={`${fmt((s.flatShare ?? 1) * 100, 0)}%`} sub="rest needs grading" />
-            <Row k="LV cable (routed)" v={fmtKm(lv)} sub="inverter → substation" />
-            <Row k="MV cable (routed)" v={fmtKm(mv)} sub="substation → grid point" />
+            <Row k="LV cable (routed)" v={fmtKm(lv)} sub="inverter → station" />
+            <Row k="MV cable (routed)" v={fmtKm(mv)} sub="station → grid point" />
           </tbody></table>
         </div>
 
         <div style={{ flex: "1 1 420px", minWidth: 340, background: C.panel,
           border: `1px solid ${C.line}`, borderRadius: 6, overflow: "hidden" }}>
           <div className="tbl" style={{ padding: "9px 12px", borderBottom: `1px solid ${C.line}` }}>
-            INDICATIVE COST — PLACEHOLDER RATES, REPLACE WITH YOUR OWN
+            COST AT YOUR RATES — NONE ARE SUPPLIED
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
-            <Row k="Modules" v={money(cMod)} sub={`${rates.cur}${rates.modWp}/Wp`} />
-            <Row k="Mounting & install" v={money(cMount)} sub={`${rates.cur}${rates.mountWp}/Wp`} />
-            <Row k="Inverters" v={money(cInv)} sub={`${rates.cur}${rates.invKw}/kW`} />
-            <Row k="LV cable" v={money(cLv)} sub={`${rates.cur}${rates.lv}/m × ${fmtKm(lv)}`} />
-            <Row k="MV cable" v={money(cMv)} sub={`${rates.cur}${rates.mv}/m × ${fmtKm(mv)}`} />
-            <Row k="Substations" v={money(cSub)} sub={((s.combo || []).join(" + ") || "—") + " way"} />
+            {lines.map((l) => (l.cost !== null
+              ? <Row key={l.k} k={l.k} v={money(l.cost)}
+                  sub={`${qtyText(l)} × ${rates.cur}${l.rate}/${l.per}`} />
+              : <Row key={l.k} k={l.k} v="no rate entered" dim sub={qtyText(l)} />))}
           </tbody></table>
           <div style={{ padding: "10px 12px", borderTop: `1px solid ${C.line}`,
             display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span className="tbl">TOTAL</span>
-            <span style={{ font: "700 17px var(--mono)", color: C.accent }}>
-              {rates.cur} {fmt(total / 1000, 2)} m
+            <span className="tbl">{complete ? "TOTAL" : "TOTAL OF THE LINES PRICED"}</span>
+            <span style={{ font: "700 17px var(--mono)", color: priced.length ? C.accent : C.muted }}>
+              {priced.length ? `${rates.cur} ${fmt(total / 1000, 2)} m` : "—"}
             </span>
           </div>
           <div style={{ padding: "0 12px 10px", font: "11px system-ui", color: C.muted }}>
-            ≈ {rates.cur} {fmt(perW, 2)} per Wp installed
+            {complete
+              ? `≈ ${rates.cur} ${fmt(perW, 2)} per Wp installed`
+              : `Not priced: ${unpriced.map((l) => l.k.toLowerCase()).join(", ")}. `
+                + "A per-watt figure appears once every line has a rate, and not before."}
           </div>
         </div>
       </div>
@@ -7044,25 +6988,28 @@ function SummaryTab({ s, rates, setRates, mod, inv, elec, frame }) {
       <div className="tbl" style={{ margin: "16px 0 8px" }}>RATES</div>
       <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 6 }}>
         <Section code="8A" title="Unit rates">
-          <Num label="LV cable" unit="/m" value={rates.lv} step={1} min={0}
+          <NumO label="LV cable" unit="/m" value={rates.lv} step={1} ph="your rate"
             onChange={(v) => setRates({ ...rates, lv: v })} />
-          <Num label="MV cable" unit="/m" value={rates.mv} step={1} min={0}
+          <NumO label="MV cable" unit="/m" value={rates.mv} step={1} ph="your rate"
             onChange={(v) => setRates({ ...rates, mv: v })} />
-          <Num label="Modules" unit="/Wp" value={rates.modWp} step={0.01} min={0}
+          <NumO label="Modules" unit="/Wp" value={rates.modWp} step={0.01} ph="your rate"
             onChange={(v) => setRates({ ...rates, modWp: v })} />
-          <Num label="Mounting & install" unit="/Wp" value={rates.mountWp} step={0.01} min={0}
+          <NumO label="Mounting & install" unit="/Wp" value={rates.mountWp} step={0.01} ph="your rate"
             onChange={(v) => setRates({ ...rates, mountWp: v })} />
-          <Num label="Inverters" unit="/kW" value={rates.invKw} step={1} min={0}
+          <NumO label="Inverters" unit="/kW" value={rates.invKw} step={1} ph="your rate"
             onChange={(v) => setRates({ ...rates, invKw: v })} />
+          <NumO label="Transformer stations" unit="/kVA" value={rates.stationKva} step={1} ph="your rate"
+            onChange={(v) => setRates({ ...rates, stationKva: v })} />
           <div className="readout">
-            <b>These are placeholders, not quotations.</b> Substation units map to the
-            Sungrow MVS range from the datasheets — MVS3200 (10-way), MVS4480 (14-way),
-            MVS6400 (20-way), all 0.8 kV LV — costed at {rates.cur}95k / {rates.cur}125k /
-            {" "}{rates.cur}165k until real prices replace them.
-            Replace every rate with your own before any number leaves the office. Cable
-            lengths are routed along corridors and block gaps so they include the detour
-            around modules, but they remain centre-line lengths — no allowance for
-            terminations, slack, trenching or verticals.
+            <b>No rate is supplied, and that is deliberate.</b> Module prices, cable and station
+            rates move faster than any figure embedded here would stay true, and a plausible
+            default gets used: it ends up in a paper with nobody remembering where it came from.
+            Type the rates from a quote you hold, and the table prices exactly the lines you have
+            rated. Stations are priced per kVA so the figure does not depend on one maker&apos;s
+            catalogue. Cable lengths are routed along corridors and block gaps, so they include
+            the detour round the modules, but they remain centre-line lengths with no allowance
+            for terminations, slack, trenching or verticals. For anything past a first look, the
+            Costing tab holds dated quotes and compares them.
           </div>
         </Section>
       </div>
@@ -7085,10 +7032,21 @@ const REPORT_DEFAULTS = {
   // both. Calibrate it against a PVsyst run when there is one.
   shadeK: 0.65,
   constraint: "site",   // the drawn boundary is usually what is fixed
-  landCost: 1.2,        // land + civils, £/m² of array area
-  tariff: 55,           // £/MWh
+  // Money is entered, never supplied: the same rule as the Summary's rates
+  // and the Costing tab. Both start empty and the trade-off says so.
+  landCost: null,       // land + civils, per m² of array area
+  tariff: null,         // per MWh
   years: 25,
+  baseline: null,       // the PVGIS yield baseline, as handed back
 };
+/* A report saved while 1.2 and 55 were the defaults never had either
+   typed into it; restoring them would put the placeholders back as
+   though they had been entered. */
+function reportFromSaved(saved) {
+  const r = { ...REPORT_DEFAULTS, ...saved };
+  if (saved && saved.landCost === 1.2 && saved.tariff === 55) { r.landCost = null; r.tariff = null; }
+  return r;
+}
 
 const CABLE_DEFAULTS = {
   dc: {
@@ -7156,7 +7114,9 @@ export default function App() {
      fill in a module datasheet to get an answer. State is shared, so
      anything typed in one workspace is still there in another. */
   const [workspace, setWorkspace] = useState("prelim");
-  const [sharedTmy, setSharedTmy] = useState(null);
+  /* The typical year the models run on: rows, plus where it came from.
+     Not saved with the project — it is 8,760 hours and a button away. */
+  const [weather, setWeather] = useState(null);
   const [entered, setEntered] = useState(false);
   const [landStep, setLandStep] = useState(0);
   /* The guided flow keeps its own small record: the handful of figures
@@ -7255,9 +7215,7 @@ export default function App() {
   const [report, setReport] = useState(REPORT_DEFAULTS);
   const [batch, setBatch] = useState(BATCH_DEFAULTS);
   const setCable = (k) => (v) => setCables((c0) => ({ ...c0, [k]: v }));
-  const [rates, setRates] = useState({
-    cur: "£", lv: 38, mv: 62, modWp: 0.13, mountWp: 0.09, invKw: 32,
-  });
+  const [rates, setRates] = useState(NO_RATES);
   const reg = useRef({});
   const saveProject = () => {
     const data = {
@@ -7290,11 +7248,11 @@ export default function App() {
         if (d.roof) setRoof(d.roof);
         if (d.rdesign) setRdesign(d.rdesign);
         if (d.costing) setCosting({ ...COSTING_DEFAULT, ...d.costing });
-        if (d.rates) setRates(d.rates);
+        if (d.rates) setRates(ratesFromSaved(d.rates));
         if (d.siteLoc) setSiteLoc(d.siteLoc);
         // Merge rather than replace, so a project saved before a cable
         // input existed still opens with a sensible value for it.
-        if (d.report) setReport({ ...REPORT_DEFAULTS, ...d.report });
+        if (d.report) setReport(reportFromSaved(d.report));
         if (d.batch) setBatch({ ...BATCH_DEFAULTS, ...d.batch });
         if (d.cables) setCables({
           dc: { ...CABLE_DEFAULTS.dc, ...d.cables.dc },
@@ -7939,7 +7897,8 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "shade" ? "flex" : "none" }}>
         <ShadeTab frame={frame} mod={pvMod} elec={elec} reg={reg} loc={siteLoc}
-          onTmy={setSharedTmy} />
+          weather={weather} onWeather={setWeather}
+          baseline={report.baseline} onBaseline={(b) => setReport((r) => ({ ...r, baseline: b }))} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "layout" ? "flex" : "none" }}>
         <LayoutTool module={pvMod} setModule={setMod2} frame={frame} setFrame={setFrame}
@@ -7966,7 +7925,8 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "report" ? "flex" : "none" }}>
         <YieldReportTab loc={siteLoc} setLoc={setSiteLoc} mod={pvMod} inv={pvInv} elec={elec}
-          frame={frame} summary={summary} rates={rates} st={report} set={setReport} />
+          frame={frame} summary={summary} rates={rates} st={report} set={setReport}
+          weather={weather} onWeather={setWeather} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "batch" ? "flex" : "none" }}>
         <BatchAnalyserTab st={batch} set={setBatch} />
@@ -7979,13 +7939,13 @@ export default function App() {
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "cost" ? "flex" : "none" }}>
         <CostingTab st={costing} set={setCosting}
-          kWpHint={summary?.dcKwp ? summary.dcKwp * 1000 : 0}
+          kWpHint={summary?.dcMWp ? summary.dcMWp * 1000 : 0}
           yieldHint={report?.specificYield || 0} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "bess" ? "flex" : "none" }}>
         <BessTab st={bess} set={setBess} scale={mount === "roof" ? "small" : "large"}
-          tmy={sharedTmy ? sharedTmy.map((r) => r.ghi) : null}
-          kWpHint={summary?.dcKwp || 0} lat={siteLoc.lat} />
+          tmy={weather ? weather.rows.map((r) => r.ghi) : null}
+          kWpHint={summary?.dcMWp ? summary.dcMWp * 1000 : 0} lat={siteLoc.lat} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: tool === "rdesign" ? "flex" : "none" }}>
         <RoofDesignerTab mod={pvMod} inv={pvInv} elec={elec} st={rdesign} set={setRdesign} />

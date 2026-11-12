@@ -22,7 +22,10 @@ src/faultNetwork.js    radial LV network: fault levels, the IEC 60364-5-54 k tab
                        the adiabatic check and PE sizing — no React
 src/FaultTool.jsx      Fault study tab: the single line, the network editor, the
                        working, the tables
-src/pvgis.js           the three outbound data pulls — ERA5, PVGIS TMY, PVGIS PVcalc
+src/pvgis.js           site data: Open-Meteo pulls, the typical year, and PVGIS's query
+                       and answer (which a page cannot fetch, only be handed)
+src/SiteData.jsx       the one set of weather and baseline controls both yield tabs use
+src/stations.js        which inverters share a transformer station — no React
 src/pvsystFiles.js     .PAN / .OND readers — the authoritative component input
 src/stringSizing.js    cold-Voc ceiling and hot-Vmp floor — no React, shared
 src/bdFlow.js          the guided seven-step model, its guards and its arithmetic
@@ -233,6 +236,11 @@ node tests/faultNetwork.test.mjs    # 275 assertions: every k in IEC 60364-5-54 
                                     # reproduced from the Annex A formula, Table 54.2, the
                                     # cascade, and the checks that decide whether a
                                     # conductor survives a fault
+node tests/stations.test.mjs        # 26 assertions: one station plan, and the indexer that
+                                    # stamps it on every block agreeing with it
+node tests/pvgis.test.mjs           # 94 assertions: the typical year against a record with a
+                                    # known answer, and PVGIS answers read back from real
+                                    # files, including the one the old tracker query got
 node tests/pvsystBatch.test.mjs     # 169 assertions: the sweep file PVsyst reads, reproduced
                                     # byte for byte against a template PVsyst itself wrote,
                                     # plus the gap-to-pitch and whole-unit DC/AC conversions
@@ -257,13 +265,24 @@ should be 0.
 All optional; the app works offline without them, and each degrades with a visible notice
 rather than failing silently.
 
-| Host | Purpose |
-|---|---|
-| `archive-api.open-meteo.com` / `api.open-meteo.com` | ERA5 daily temperature extremes for string sizing |
-| `re.jrc.ec.europa.eu/api/v5_3/tmy` | PVGIS TMY — 8,760 hours of GHI/DNI/DHI/temperature |
-| `re.jrc.ec.europa.eu/api/v5_3/PVcalc` | PVGIS validated absolute yield baseline |
+| Host | Purpose | Reached by |
+|---|---|---|
+| `archive-api.open-meteo.com` / `api.open-meteo.com` | ERA5 daily temperature extremes for string sizing; hourly temperature, and irradiance where the satellite record has none | a button |
+| `satellite-api.open-meteo.com` | EUMETSAT SARAH-3 hourly irradiance, ten years, reduced to a typical year | a button |
+| `re.jrc.ec.europa.eu/api/v5_3/PVcalc` | PVGIS validated absolute yield baseline | a link, and the answer handed back |
+| `re.jrc.ec.europa.eu/api/v5_3/tmy` | PVGIS's own typical year, as an alternative to the one above | a link, and the answer handed back |
 
-Without TMY the pitch model falls back to a clear-sky synthetic year and says so:
+**PVGIS cannot be fetched from a web page, and this is not a network fault.** Its API sends no
+cross-origin permission, by stated policy, so every browser refuses to let a page read the
+answer — from a hosted site, from `npm run dev`, from anywhere. The application called it
+directly for a year and reported the failure as an offline page, a corporate proxy or a
+`file://` path, none of which was the cause. A request in a browser *tab* is not subject to
+that rule, so `src/pvgis.js` builds the query, `SiteData.jsx` offers it as a link, and the
+answer comes back by dropping the saved file or pasting it. Do not add a `fetch` to PVGIS:
+it will work under `curl` and in a Node test and never once in the product. A relay that adds
+the header would make it one click again; none exists yet (GAPS §G38).
+
+Without a pulled year the pitch model falls back to a clear-sky synthetic year and says so:
 *"Using a clear-sky model — geometry is right, absolute yield runs high."* Preserve that
 honesty if you touch it — the geometry is trustworthy, the absolute number is not.
 
@@ -338,6 +357,52 @@ Deliberate engineering decisions, each stated in the UI's own text:
 - **An edge-of-range optimum is reported as not bracketed.** If the best case sits on the
   boundary of the sweep, the honest answer is to extend the sweep, not to call the edge an
   optimum. The tool suggests the next three steps.
+- **A PVGIS answer is read for what it was asked, not only for what it says.** `readPvgis`
+  reads the location, the mounting, the tilt and the aspect back out of the answer and
+  compares them with the site, because an answer for the wrong plane is a perfectly good
+  number about the wrong thing. This is not hypothetical: the tracker query this tool sent
+  for a year was `trackingtype=1`, which belongs to a different PVGIS tool. PVcalc accepts
+  it, ignores it, and answers for a fixed plane lying flat — 848 kWh/kWp where the tracker
+  gives 1,172 at the test point, under a label that says nothing of the kind. The correct
+  form is `fixed=0&inclined_axis=1&inclinedaxisangle=0`, and that old answer is kept as a
+  fixture that must be refused.
+- **A fixed array faces the equator, and PVGIS has to be told.** Its `aspect` defaults to
+  south. South of the equator that asks about an array pointing away from the sun, so
+  `pvgisFaces` sends 180 there. An east-west pair is two planes and PVGIS models one at a
+  time, so it is two answers and the baseline is their mean; one face of two is not a
+  smaller answer, it is a different array, and `combineFaces` returns nothing until both
+  are in.
+- **The typical year is real months, not averaged hours.** `typicalYear` takes, for each
+  calendar month, the year whose irradiation for that month was nearest that month's mean
+  across the years pulled. Averaging the hours instead would flatten every clear morning
+  and every cloudy afternoon into the same grey, which is exactly what a shading or
+  clipping model must not be given. It is a one-variable reduction of the standard method
+  and says so rather than borrowing the name unqualified. Open-Meteo's radiation is the
+  mean over the hour *ending* at the timestamp, so each row sits half an hour before it.
+- **Satellite irradiance first, reanalysis only where there is none, and never unlabelled.**
+  SARAH-3 is the record PVGIS itself uses across the Meteosat disc; at the UK test point a
+  typical year built from it lands within about 1% of PVGIS's long-term horizontal figure.
+  ERA5 matches on the yearly total but puts roughly a fifth more of it in the direct beam
+  there, which matters to a row-shading model. Outside the disc ERA5 is all there is, and
+  `WEATHER_SOURCES` carries the standing of each so the weaker cannot pass for the stronger.
+- **Weather and the baseline are loaded once and shared.** The Pitch & Yield tab and the
+  Yield report each used to pull their own copy, so one could be on a real year while the
+  other was still on clear sky. Both now read `weather` from the shell and the baseline from
+  the report's state. Do not give either tab a pull of its own again.
+- **One plan decides which inverters share a station.** `src/stations.js` stamps `tx` on
+  every block and everything — the outline, the marker, the routed cable, the count — reads
+  that. There used to be two groupings: the outlines followed "inverters per transformer"
+  and the stations that were placed and cabled followed a fixed 10/14/20-way catalogue that
+  ignored it. `planCabling` groups by the stamped `tx`, never by slicing the list again,
+  because two slicings that happen to agree is how they came apart. The modular sizes are
+  one maker's range and the interface says so.
+- **The Summary and the pitch trade-off carry no prices either.** Both used to open with a
+  rate card, and the trade-off also assumed 1,000 kWh/kWp when no baseline was loaded, so it
+  always named a "best value" pitch from prices nobody entered and a yield nobody pulled. A
+  line with no rate is listed as not priced, never shown as zero; the per-watt figure
+  appears only when every line is rated; and the trade-off shows its geometry always and
+  its ranking only when the inputs exist, naming the ones that do not. A project saved with
+  the old defaults untouched loads with them blank (`ratesFromSaved`, `reportFromSaved`).
 - **Absolute yield is PVGIS's, differences between pitches are ours.** No public API takes a
   pitch, so the report scales a PVGIS PVcalc baseline by a row-geometry ratio. The ratios
   survive a change of irradiance dataset; the absolute does not. Never present the two as

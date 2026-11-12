@@ -480,6 +480,32 @@ PVhub and should be a deliberate decision rather than a drift.
 
 ---
 
+### G38. PVGIS takes two clicks, because a page cannot fetch it
+
+PVGIS publishes no cross-origin permission and says it will not, so the yield baseline and
+its typical year are opened in a browser tab and handed back by file or paste. That works,
+keeps the provenance, and reads back what PVGIS was asked — but it is not the one-click pull
+the rest of the tool has, and a guided flow cannot run through it unattended.
+
+**Recommendation.** A relay that forwards the query and adds the header — a dozen lines on a
+free serverless tier — would restore the button. It is the first thing in this application
+that is not a static file, which is why it is a decision rather than a default: it needs an
+account, it is a thing that can go down, and its address becomes a setting.
+
+### G39. The modular station sizes are one maker's catalogue
+
+The 10, 14 and 20-way units are the Sungrow MVS3200, 4480 and 6400. A station is properly
+sized in kVA from the inverters behind it, against whatever unit sizes are actually on offer.
+
+**Recommendation.** Take the available unit sizes in kVA, derive the ways from the inverter
+rating, and let `stationPlan` choose from those. The plan, the indexer and the routing
+already take a list of sizes; only the input is missing.
+
+### G40. The Yield report still defaults its appraisal period and shading coefficient
+
+Money now starts empty everywhere. The 25-year period and the row-shading coefficient do not,
+and the second is a calibration constant standing in for an hourly simulation.
+
 ## Severity 4 — Polish
 
 ### G12. No favicon

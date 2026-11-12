@@ -22,9 +22,12 @@
    worth reading.
    ===================================================================== */
 
-import React, { useState, useMemo } from "react";
-import { fmt, fmtKm, C, Num, Sel, Section, Page, Working } from "./ui.jsx";
-import { fetchEra5, fetchTmy, fetchPvcalc } from "./pvgis.js";
+import React, { useState, useMemo, useEffect } from "react";
+import { fmt, fmtKm, C, Num, NumO, Sel, Section, Page, Working } from "./ui.jsx";
+import { fetchEra5 } from "./pvgis.js";
+import { WeatherSource, BaselineSource } from "./SiteData.jsx";
+
+const entered = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(+v);
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -140,10 +143,8 @@ function TradeCurve({ rows, chosen }) {
   );
 }
 
-export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, rates, st, set }) {
+export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, rates, st, set, weather, onWeather }) {
   const [era5, setEra5] = useState({ state: "idle", msg: "" });
-  const [tmy, setTmy] = useState({ state: "idle", msg: "" });
-  const [pvc, setPvc] = useState({ state: "idle", msg: "" });
 
   const pull = (setter, fn) => async () => {
     setter({ state: "busy", msg: "" });
@@ -153,13 +154,9 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
       : { state: "err", msg: r.msg, url: r.url });
   };
   const pullEra5 = pull(setEra5, () => fetchEra5(loc.lat, loc.lon));
-  const pullTmy = pull(setTmy, () => fetchTmy(loc.lat, loc.lon));
-  const pullPvc = pull(setPvc, () => fetchPvcalc({
-    lat: loc.lat, lon: loc.lon, mounting: frame.mounting, tilt: frame.tilt, loss: st.bos,
-  }));
-  // Concurrently: a source that is slow or blocked should not hold up the
-  // two that are fine.
-  const pullAll = () => { pullEra5(); pullTmy(); pullPvc(); };
+  /* The baseline lives in the report's own state, so it is saved with
+     the project and is the same one the Pitch & Yield tab scales to. */
+  const baseline = st.baseline || null;
 
   /* ---- the plant, as configured elsewhere ---- */
   const mwp = summary?.dcMWp ?? 0;
@@ -177,7 +174,7 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
     : 1 - st.shadeK * 0.55 * Math.pow(Math.max(0, gcr - 0.22), 1.7));
 
   /* ---- expected generation ---- */
-  const specYield = pvc.state === "ok" ? pvc.data.specYield : null;
+  const specYield = baseline ? baseline.specYield : null;
   // PVcalc models a free-standing array with no row in front of it. Ours
   // supplies the shading a real pitch imposes; below is the fraction of
   // the free-standing figure this geometry keeps.
@@ -214,7 +211,20 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
   const lv0 = summary?.lv ?? 0;
   const mv0 = summary?.mv ?? 0;
   const area0 = summary?.areaM2 ?? 0;
-  const perWp = (rates.modWp || 0) + (rates.mountWp || 0);   // £/Wp of module + mounting
+  /* What the money side of the trade-off needs, and what it is missing.
+     It used to run on a rate card this tool supplied and on 1,000 kWh/kWp
+     when no baseline was loaded, so it always produced a "best value"
+     pitch — from prices nobody had entered and a yield nobody had pulled.
+     The geometry needs none of that and is always shown. The ranking
+     appears when its inputs exist, and says which are absent until then. */
+  const missing = [];
+  if (specYield === null) missing.push("the PVGIS baseline (Y1)");
+  if (!entered(rates.lv) || !entered(rates.mv)) missing.push("LV and MV cable rates (Summary tab)");
+  if (!entered(rates.modWp) || !entered(rates.mountWp)) missing.push("module and mounting rates (Summary tab)");
+  if (!entered(st.landCost)) missing.push("a land and civils cost");
+  if (!entered(st.tariff)) missing.push("a tariff");
+  const canPrice = missing.length === 0;
+  const perWp = canPrice ? rates.modWp + rates.mountWp : 0;   // per Wp of module + mounting
   const rows = useMemo(() => {
     if (!(pitch0 > 0) || !(collectW > 0)) return [];
     const out = [];
@@ -232,7 +242,6 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
       // Backtracking trackers lose to cosine rather than to shade, so the
       // curve is shallower than fixed tilt but it is not flat.
       const keep = keepAt(gcr);
-      const spec = (specYield ?? 1000) * keep;
       const fixedSite = st.constraint === "site";
       // Rows fit as 1/pitch, so on a fixed boundary capacity does too.
       const cap = fixedSite ? mwp * (pitch0 / pitch) : mwp;
@@ -242,33 +251,45 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
       // of the area.
       const scale = fixedSite ? cap / mwp : Math.sqrt(pitch / pitch0);
       const lv = lv0 * scale, mv = mv0 * scale;
-      const energyMwh = spec * cap * 1000 / 1000;
-      const cableCost = (lv * rates.lv + mv * rates.mv) / 1000;              // £k
-      const landCost = (area * st.landCost) / 1000;                          // £k
-      const arrayCost = cap * 1e6 * perWp / 1000;                            // £k
-      const capex = cableCost + landCost + arrayCost;
-      const revenue = (energyMwh * st.tariff) / 1000;                        // £k per year
-      out.push({ pitch, gcr, keep, spec, cap, area, energyMwh, lv, mv,
-        cableCost, landCost, arrayCost, capex, revenue });
+      // Energy relative to an unshaded kWp: a ratio, and needs no baseline.
+      const rel = keep * cap;
+      const energyMwh = specYield !== null ? specYield * keep * cap : null;
+      const r = { pitch, gcr, keep, cap, area, energyMwh, lv, mv, rel };
+      if (canPrice) {
+        r.cableCost = (lv * rates.lv + mv * rates.mv) / 1000;                 // k
+        r.landCost = (area * st.landCost) / 1000;                             // k
+        r.arrayCost = cap * 1e6 * perWp / 1000;                               // k
+        r.capex = r.cableCost + r.landCost + r.arrayCost;
+        r.revenue = (energyMwh * st.tariff) / 1000;                           // k per year
+      }
+      out.push(r);
     }
     if (!out.length) return [];
     const base = out[0];
     return out.map((r) => ({
       ...r,
-      dYield: ((r.spec - base.spec) / base.spec) * 100,
-      dEnergy: ((r.energyMwh - base.energyMwh) / base.energyMwh) * 100,
+      dYield: ((r.keep - base.keep) / base.keep) * 100,
+      dEnergy: ((r.rel - base.rel) / base.rel) * 100,
       dCable: r.lv + r.mv - (base.lv + base.mv),
-      dCost: r.capex - base.capex,
+      dCost: canPrice ? r.capex - base.capex : null,
       // Value against the tightest pitch: extra revenue over the appraisal
       // period, less the extra capex — cable, land and array together, so
       // nothing about the extra space is free.
-      netGain: (r.revenue - base.revenue) * st.years - (r.capex - base.capex),
+      netGain: canPrice ? (r.revenue - base.revenue) * st.years - (r.capex - base.capex) : null,
     }));
-  }, [pitch0, collectW, st, specYield, mwp, lv0, mv0, area0, perWp,
+  }, [pitch0, collectW, st, specYield, mwp, lv0, mv0, area0, perWp, canPrice,
       rates.lv, rates.mv, frame.mounting]);
 
-  const best = rows.length ? rows.reduce((m, r) => (r.netGain > m.netGain ? r : m), rows[0]) : null;
+  const best = canPrice && rows.length ? rows.reduce((m, r) => (r.netGain > m.netGain ? r : m), rows[0]) : null;
   const chosen = rows.find((r) => Math.abs(r.pitch - pitch0) < 0.3);
+
+  /* What the plant makes per kWp at this geometry, handed up so the
+     costing tool can offer it rather than ask for it to be retyped. */
+  const netRounded = netSpec !== null ? Math.round(netSpec) : null;
+  useEffect(() => {
+    if ((st.specificYield ?? null) !== netRounded) set({ ...st, specificYield: netRounded });
+    // eslint-disable-next-line
+  }, [netRounded]);
 
   const noLayout = !summary || !(mwp > 0);
 
@@ -296,35 +317,19 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
               </div>
             )}
           </Source>
-          <Source name="PVGIS TMY — 8,760 hours" st={tmy} onPull={pullTmy}
-            what="A typical meteorological year of GHI, DNI, DHI and air temperature, which the pitch model runs against.">
-            {tmy.state === "ok" && (
-              <div className="readout" style={{ marginTop: 6 }}>
-                {fmt(tmy.data.outputs.tmy_hourly.length, 0)} hours loaded. Without this the pitch
-                model falls back to a clear-sky synthetic year: the geometry stays right and the
-                absolute yield runs high.
-              </div>
-            )}
-          </Source>
-          <Source name="PVGIS PVcalc — validated yield baseline" st={pvc} onPull={pullPvc}
-            what="Their own PV model, terrain horizon included, for one kWp of this mounting type. The only absolute yield figure in the tool that is not ours.">
-            {pvc.state === "ok" && (
-              <div className="readout" style={{ marginTop: 6 }}>
-                <b>{fmt(pvc.data.specYield, 0)} kWh/kWp</b> unshaded
-                {pvc.data.irradiation ? <> from {fmt(pvc.data.irradiation, 0)} kWh/m² in plane</> : null}
-                {pvc.data.sdYear ? <>, year-to-year spread ±{fmt(pvc.data.sdYear, 0)} kWh/kWp</> : null}.
-              </div>
-            )}
-          </Source>
+          <WeatherSource loc={loc} weather={weather} onWeather={onWeather} />
+          <BaselineSource loc={loc} mounting={frame.mounting} tilt={frame.tilt} loss={st.bos}
+            baseline={baseline} onBaseline={(b) => set({ ...st, baseline: b })} />
         </div>
-        <button className="btn primary" onClick={pullAll}>Pull all three</button>
-        <Num label="System losses for PVcalc" unit="%" value={st.bos} step={0.5}
+        <Num label="System losses to ask PVGIS for" unit="%" value={st.bos} step={0.5}
           onChange={(v) => set({ ...st, bos: v })} />
         <div className="readout">
           All three are optional and the tool works offline without them, but a generation figure
           quoted to a client from a fallback model is worse than no figure at all — so nothing here
-          is assumed. Coordinates are shared with string sizing and the layout, and a KMZ dropped
-          on the Layout tab sets them.
+          is assumed. The weather and the baseline are shared with the Pitch &amp; Yield tab: load
+          either on either tab. Coordinates are shared with string sizing and the layout, and a KMZ
+          dropped on the Layout tab sets them. The loss figure goes into the PVGIS link; what
+          PVGIS actually used is read back from its answer and shown above.
         </div>
       </Section>
 
@@ -350,8 +355,8 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
       <Section code="Y3" title="Expected generation">
         {specYield === null ? (
           <div className="warn" style={{ width: "100%" }}>
-            ⚠ Pull PVGIS PVcalc above to put an absolute number here. Everything else on this tab
-            works without it — the pitch comparison below is a ratio and does not need it.
+            ⚠ Load the PVGIS baseline above to put an absolute number here. The geometry of the
+            pitch comparison below is a ratio and does not need it; its money columns do.
           </div>
         ) : (
           <>
@@ -375,7 +380,7 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
               why={`Capacity factor ${cf === null ? "—" : fmt(cf * 100, 1)} % against ${fmt(acMw, 2)} MVA of inverter. This is a preliminary figure for starting a conversation, not a bankable one: it carries no soiling schedule, no availability assumption, no degradation and no measured horizon.`} />
             <div style={{ width: "100%", background: C.paper, border: `1px solid ${C.line}`,
               borderRadius: 6, padding: 8 }}>
-              <MonthlyBars monthly={pvc.data.monthly} mwp={mwp * geomKeep} />
+              <MonthlyBars monthly={baseline.monthly} mwp={mwp * geomKeep} />
             </div>
           </>
         )}
@@ -392,9 +397,9 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
             { value: "site", label: "Fixed site — the boundary is the boundary" },
             { value: "capacity", label: "Fixed capacity — the plant is the plant" },
           ]} />
-        <Num label="Land + civils" unit="£/m²" value={st.landCost} step={0.1}
+        <NumO label="Land + civils" unit={`${rates.cur}/m²`} value={st.landCost} step={0.1} ph="your figure"
           onChange={(v) => set({ ...st, landCost: v })} />
-        <Num label="Tariff / PPA" unit="£/MWh" value={st.tariff} step={1}
+        <NumO label="Tariff / PPA" unit={`${rates.cur}/MWh`} value={st.tariff} step={1} ph="your figure"
           onChange={(v) => set({ ...st, tariff: v })} />
         <Num label="Appraisal period" unit="years" value={st.years} step={1}
           onChange={(v) => set({ ...st, years: v })} />
@@ -417,8 +422,8 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
                 font: "12px var(--mono)" }}>
                 <thead><tr>
                   {["Pitch m", "GCR", st.constraint === "site" ? "MWp fitted" : "Area km²",
-                    "Yield/kWp", "Energy MWh/yr", "Cable LV+MV",
-                    "Extra cable", "Extra capex", `Net over ${fmt(st.years, 0)} yr`, ""].map((h) => (
+                    "Yield/kWp", specYield !== null ? "Energy MWh/yr" : "Energy", "Cable LV+MV",
+                    "Extra cable", ...(canPrice ? ["Extra capex", `Net over ${fmt(st.years, 0)} yr`] : []), ""].map((h) => (
                     <th key={h} style={{ padding: "6px 9px", borderBottom: `1px solid ${C.line}`,
                       textAlign: "left", font: "600 10.5px system-ui", textTransform: "uppercase",
                       letterSpacing: "0.07em", color: C.muted, whiteSpace: "nowrap" }}>{h}</th>
@@ -442,8 +447,8 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
                           {r.dYield >= 0 ? "+" : ""}{fmt(r.dYield, 2)}%
                         </td>
                         <td style={{ padding: "5px 9px", color: C.muted }}>
-                          {fmt(r.energyMwh, 0)}
-                          <span style={{ color: r.dEnergy >= 0 ? "#59b56f" : "#d67070", marginLeft: 6 }}>
+                          {r.energyMwh !== null ? fmt(r.energyMwh, 0) : ""}
+                          <span style={{ color: r.dEnergy >= 0 ? "#59b56f" : "#d67070", marginLeft: r.energyMwh !== null ? 6 : 0 }}>
                             {r.dEnergy >= 0 ? "+" : ""}{fmt(r.dEnergy, 2)}%
                           </span>
                         </td>
@@ -451,13 +456,17 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
                         <td style={{ padding: "5px 9px" }}>
                           {r.dCable > 0 ? "+" : ""}{fmtKm(r.dCable)}
                         </td>
-                        <td style={{ padding: "5px 9px" }}>
-                          {r.dCost > 0 ? "+" : ""}{rates.cur}{fmt(r.dCost, 0)}k
-                        </td>
-                        <td style={{ padding: "5px 9px",
-                          color: r.netGain > 0 ? "#59b56f" : r.netGain < 0 ? "#d67070" : C.muted }}>
-                          <b>{r.netGain >= 0 ? "+" : ""}{rates.cur}{fmt(r.netGain, 0)}k</b>
-                        </td>
+                        {canPrice && (
+                          <td style={{ padding: "5px 9px" }}>
+                            {r.dCost > 0 ? "+" : ""}{rates.cur}{fmt(r.dCost, 0)}k
+                          </td>
+                        )}
+                        {canPrice && (
+                          <td style={{ padding: "5px 9px",
+                            color: r.netGain > 0 ? "#59b56f" : r.netGain < 0 ? "#d67070" : C.muted }}>
+                            <b>{r.netGain >= 0 ? "+" : ""}{rates.cur}{fmt(r.netGain, 0)}k</b>
+                          </td>
+                        )}
                         <td style={{ padding: "5px 9px", font: "10.5px system-ui", color: C.muted }}>
                           {isBest ? "★ best value" : ""}{isBest && isNow ? " · " : ""}{isNow ? "in use" : ""}
                         </td>
@@ -467,10 +476,19 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
                 </tbody>
               </table>
             </div>
-            <div style={{ width: "100%", background: C.paper, border: `1px solid ${C.line}`,
-              borderRadius: 6, padding: 8 }}>
-              <TradeCurve rows={rows} chosen={chosen?.pitch} />
-            </div>
+            {canPrice ? (
+              <div style={{ width: "100%", background: C.paper, border: `1px solid ${C.line}`,
+                borderRadius: 6, padding: 8 }}>
+                <TradeCurve rows={rows} chosen={chosen?.pitch} />
+              </div>
+            ) : (
+              <div className="warn" style={{ width: "100%" }}>
+                ⚠ The table above is the geometry: what each pitch fits, keeps and cables. Ranking
+                the pitches on value needs {missing.join(", ")}. None of those is supplied by this
+                tool, because a ranking built on a price nobody entered reads exactly like one
+                built on a quote.
+              </div>
+            )}
             {best && chosen && (
               <Working n="Y4a" title="Is a wider pitch worth it?"
                 formula="net = (ΔE × tariff × years) − Δcable cost"
@@ -498,7 +516,7 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
       <Section code="Y5" title="Summary for the client">
         {noLayout || specYield === null ? (
           <div className="readout" style={{ color: C.muted }}>
-            Fills in once a layout exists and PVcalc has been pulled.
+            Fills in once a layout exists and the PVGIS baseline has been loaded.
           </div>
         ) : (
           <div style={{ width: "100%", background: C.panel2, border: `1px solid ${C.accent}55`,
@@ -515,9 +533,9 @@ export function YieldReportTab({ loc, setLoc, mod, inv, elec, frame, summary, ra
               {" "}{fmt((summary.areaM2 || 0) / 1e6, 2)} km².
             </div>
             <div style={{ font: "11px system-ui", color: C.muted, marginTop: 10 }}>
-              Basis: PVGIS {pvc.data.sdYear ? "SARAH3" : "satellite"} irradiance and PVGIS's own PV
-              model for the absolute yield, with row-geometry effects applied on top; {fmt(st.bos, 1)} %
-              system losses assumed. This is a preliminary figure to frame a conversation. It carries
+              Basis: {baseline.asked?.radDb || "PVGIS satellite"} irradiance and PVGIS&apos;s own PV
+              model for the absolute yield, with row-geometry effects applied on top;
+              {" "}{fmt(baseline.asked?.loss ?? st.bos, 1)} % system losses, as PVGIS was asked. This is a preliminary figure to frame a conversation. It carries
               no soiling schedule, no availability assumption, no degradation profile and no measured
               horizon, and it has not been simulated in PVsyst. Expect the bankable figure to sit
               below it.
