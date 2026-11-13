@@ -107,7 +107,7 @@ export function SiteMap({ records, selectedId, onPick }) {
           {held.size > 0 ? `${held.size} ${held.size === 1 ? "country" : "countries"} with a project, tinted` : ""}
         </span>
       </div>
-      <div style={{ position: "relative" }}>
+      <div style={{ position: "relative", width: "100%" }}>
       <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} role="img"
         aria-label={`World map with ${pts.length} project${pts.length === 1 ? "" : "s"} placed on it`}
         style={{ width: "100%", height: "auto", display: "block", background: "#101317",
@@ -227,7 +227,7 @@ function SiteCard({ spot, selectedId, inline = false }) {
   const left = (spot.p.x / MAP_W) * 100, top = (spot.p.y / MAP_H) * 100;
   const flipX = left > 58, flipY = top > 55;
   const place = inline
-    ? { position: "relative", marginTop: 8 }
+    ? { position: "relative", marginTop: 8, width: "100%" }
     : { position: "absolute", left: `${left}%`, top: `${top}%`, pointerEvents: "none", zIndex: 5,
         transform: `translate(${flipX ? "calc(-100% - 14px)" : "14px"}, ${flipY ? "calc(-100% + 10px)" : "-10px"})`,
         width: "max-content", maxWidth: "min(300px, 78vw)" };
