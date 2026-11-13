@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { feature } from "topojson-client";
 import {
   MAP_W, MAP_H, FOCUS_SPAN, MIN_SPAN, regionAround, makeProjection, drawWorld, countryOf, groupBySpot,
-  clusterOnScreen,
+  clusterOnScreen, fmtPower, fmtEnergy, siteCard,
 } from "../src/worldMap.js";
 
 const world = JSON.parse(readFileSync(new URL("../node_modules/world-atlas/countries-110m.json", import.meta.url), "utf8"));
@@ -134,6 +134,27 @@ console.log("\n--- sites that overlap at the current zoom ---");
   const id110 = countryOf(F, 28.28, -15.42).id, id50 = countryOf(F50, 28.28, -15.42).id;
   eq(id50, id110, "Zambia has the same id in both outline sets");
   ok(F50.length >= F.length, "and the finer set carries at least as many countries");
+}
+
+console.log("\n--- the card a site shows on hover ---");
+{
+  eq(fmtPower(600, "p"), "600 kWp", "a roof in kWp");
+  eq(fmtPower(77750, "p"), "77.75 MWp", "a field in MWp");
+  eq(fmtPower(52480, "va"), "52.48 MVA", "an AC limit in kVA stays apparent power");
+  eq(fmtPower(500, "ac"), "500 kWac", "and one in kWac stays real power");
+  eq(fmtPower(undefined), null, "a missing power is nothing, not zero");
+  eq(fmtEnergy(873000), "873 MWh/yr", "energy in MWh");
+  eq(fmtEnergy(152300000), "152.30 GWh/yr", "and GWh");
+  eq(fmtEnergy(null), null, "and missing energy is nothing");
+  const c = siteCard({ project: "Solar farm", siteName: "North field", variant: "VC3",
+    pnomDc: 77750, pnomAc: 52480, pnomAcUnit: "kVA", pnomRatio: 1.48, specificYield: 1958.4, producedKwh: 152300000, pr: 84.12 });
+  eq(c.title, "North field", "titled by the site");
+  eq(c.sub, "Solar farm · VC3", "with the project and variant beneath");
+  eq(c.rows.map((r) => r[1]).join(" | "), "77.75 MWp | 52.48 MVA | 1.48 | 1,958 kWh/kWp | 152.30 GWh/yr | 84.1%",
+     "every figure in its own unit");
+  const bare = siteCard({ project: "Roof", pnomDc: 600 });
+  eq(bare.rows.filter((r) => r[1] === null).length, 5, "fields the report did not carry stay empty, never zero");
+  eq(bare.sub, "", "and nothing invented beneath the title");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

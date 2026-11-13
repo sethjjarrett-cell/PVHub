@@ -274,8 +274,9 @@ node tests/siteConstraints.test.mjs # 62 assertions: a frame against a zone and 
 node tests/handoff.test.mjs         # 83 assertions: what the layout hands each tool, that the
                                     # BOM and the sweep built from it are the layout's plant,
                                     # and that nothing the layout does not know is filled in
-node tests/worldMap.test.mjs        # 47 assertions: which country a point is in, what each
-                                    # view frames, and sites that overlap at a given zoom
+node tests/worldMap.test.mjs        # 60 assertions: which country a point is in, what each
+                                    # view frames, sites that overlap at a given zoom, and the
+                                    # hover card's figures in their own units
 node tests/stations.test.mjs        # 52 assertions: one station plan in three modes, units by
                                     # kVA floored to the inverters that fit, and the indexer
                                     # that stamps it on every block agreeing with it
@@ -855,6 +856,14 @@ Deliberate engineering decisions, each stated in the UI's own text:
   would overlap at the current scale, so the merge undoes itself as the view closes in.
   Clicking steps through what is under the dot, because three dots drawn on top of each
   other read as one report with two unreachable.
+- **A site's hover card shows what the report says, in the report's units, and never a sum.**
+  Hovering a dot (or tapping it, since a phone has no hover) opens a card with DC and AC
+  capacity, DC/AC, specific yield, annual energy and PR for every report at that spot.
+  `siteCard` in `src/worldMap.js` formats them: kVA stays kVA, and a field the report did not
+  carry reads "not in report", never zero. Several reports at one spot are listed, not added,
+  because they are usually variants of one plant and a total would count it twice. The card
+  takes no pointer events, so it cannot steal the hover from the dot and flicker; below 760 px
+  it sits under the map at full width rather than floating off the edge of a narrow screen.
 - **A region to zoom to is a set of points, not a polygon.** A spherical polygon wound the
   wrong way means "everything except this", and fitting a projection to that zooms out to
   the whole globe without complaint. `regionAround` returns the outline of its box as a

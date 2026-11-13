@@ -149,3 +149,46 @@ export function clusterOnScreen(placed, minPx = 13) {
   }
   return out;
 }
+
+/* ---------------------------------------------------------------
+   What a site's card says on hover.
+
+   Plain strings, worked out here so the formatting can be tested: a
+   card that shows "0 kWh" for a field the report did not carry would
+   move every eye-ball comparison down, so an absent field is null and
+   the card says it was not in the report.
+   --------------------------------------------------------------- */
+
+const fin = (v) => typeof v === "number" && Number.isFinite(v);
+const g = (v, d) => v.toLocaleString("en-GB", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+/** Power from kW: kW below a megawatt, MW above. The unit kind is kept. */
+export function fmtPower(kw, kind = "p") {
+  if (!fin(kw)) return null;
+  const big = Math.abs(kw) >= 1000;
+  const unit = kind === "va" ? (big ? "MVA" : "kVA") : kind === "ac" ? (big ? "MWac" : "kWac") : (big ? "MWp" : "kWp");
+  return `${g(big ? kw / 1000 : kw, big ? 2 : 0)} ${unit}`;
+}
+
+/** Energy from kWh: MWh below a gigawatt-hour, GWh above. */
+export function fmtEnergy(kwh) {
+  if (!fin(kwh)) return null;
+  return kwh >= 1e6 ? `${g(kwh / 1e6, 2)} GWh/yr` : `${g(kwh / 1000, kwh >= 1e4 ? 0 : 1)} MWh/yr`;
+}
+
+/** The card rows for one tracked record: [label, value or null]. */
+export function siteCard(f = {}) {
+  const ac = fmtPower(f.pnomAc, f.pnomAcUnit === "kVA" ? "va" : "ac");
+  return {
+    title: f.siteName || f.project || "Unnamed",
+    sub: [f.project && f.siteName && f.project !== f.siteName ? f.project : null, f.variant].filter(Boolean).join(" · "),
+    rows: [
+      ["DC capacity", fmtPower(f.pnomDc, "p")],
+      ["AC capacity", ac],
+      ["DC/AC", fin(f.pnomRatio) ? g(f.pnomRatio, 2) : null],
+      ["Specific yield", fin(f.specificYield) ? `${g(f.specificYield, 0)} kWh/kWp` : null],
+      ["Annual energy", fmtEnergy(f.producedKwh)],
+      ["PR", fin(f.pr) ? `${g(f.pr, 1)}%` : null],
+    ],
+  };
+}

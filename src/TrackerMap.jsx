@@ -18,9 +18,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { feature } from "topojson-client";
 import world from "world-atlas/countries-110m.json";
-import { fmt, C } from "./ui.jsx";
+import { fmt, C, useNarrow } from "./ui.jsx";
 import {
-  MAP_W, MAP_H, FOCUS_SPAN, regionAround, drawWorld, countryOf, groupBySpot, clusterOnScreen,
+  MAP_W, MAP_H, FOCUS_SPAN, regionAround, drawWorld, countryOf, groupBySpot, clusterOnScreen, siteCard,
 } from "./worldMap.js";
 
 const FEATURES = feature(world, world.objects.countries).features;
@@ -36,6 +36,12 @@ const INK = {
 
 export function SiteMap({ records, selectedId, onPick }) {
   const [view, setView] = useState("world");
+  /* The spot whose card is open: on hover with a mouse, on tap with a
+     finger, since a touch screen has no hover to show it. */
+  const [hover, setHover] = useState(null);
+  /* On a phone the map is narrower than the card, so the card goes
+     under the map, full width, instead of floating off the edge. */
+  const narrow = useNarrow(760);
   /* A finer outline for the zoomed views. At 1:110 million Britain is
      about forty straight edges, which is fine across a whole world and
      blunt across a single country. The 1:50 million set is seven times
@@ -101,10 +107,12 @@ export function SiteMap({ records, selectedId, onPick }) {
           {held.size > 0 ? `${held.size} ${held.size === 1 ? "country" : "countries"} with a project, tinted` : ""}
         </span>
       </div>
+      <div style={{ position: "relative" }}>
       <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} role="img"
         aria-label={`World map with ${pts.length} project${pts.length === 1 ? "" : "s"} placed on it`}
         style={{ width: "100%", height: "auto", display: "block", background: "#101317",
-          border: `1px solid ${C.line}`, borderRadius: 7 }}>
+          border: `1px solid ${C.line}`, borderRadius: 7 }}
+        onClick={(e) => { if (e.target === e.currentTarget || e.target.tagName === "path") setHover(null); }}>
         <path d={map.sphere} fill={INK.ocean} />
         <path d={map.graticule} fill="none" stroke={INK.grid} strokeWidth="0.6" />
         {map.countries.map((c) => (
@@ -135,8 +143,15 @@ export function SiteMap({ records, selectedId, onPick }) {
             onPick(s.items[(k + 1) % s.items.length].r.id);
           };
           const shown = on ? s.items.find((i) => i.r.id === selectedId) : s.items[0];
+          const key = `${s.lat},${s.lon}`;
           return (
-            <g key={`${s.lat},${s.lon}`} onClick={next} style={{ cursor: "pointer" }}>
+            <g key={key} style={{ cursor: "pointer" }} tabIndex={0} role="button"
+              aria-label={`${[...new Set(s.items.map((i) => nameOf(i.r)))].join(", ")}${s.country ? `, ${s.country.name}` : ""}`}
+              onClick={() => { next(); setHover(key); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); next(); setHover(key); } }}
+              onPointerEnter={(e) => { if (e.pointerType === "mouse") setHover(key); }}
+              onPointerLeave={(e) => { if (e.pointerType === "mouse") setHover((h) => (h === key ? null : h)); }}
+              onFocus={() => setHover(key)} onBlur={() => setHover((h) => (h === key ? null : h))}>
               {/* a larger invisible disc, so the dot can be hit with a thumb */}
               <circle cx={s.p.x} cy={s.p.y} r="14" fill="transparent" />
               <circle cx={s.p.x} cy={s.p.y} r={on ? 7 : 5}
@@ -152,16 +167,19 @@ export function SiteMap({ records, selectedId, onPick }) {
                   {nameOf(shown.r)}
                 </text>
               )}
-              <title>
-                {[...new Set(s.items.map((i) => nameOf(i.r)))].join(", ")}
-                {` — near ${fmt(Math.abs(s.lat), 2)}°${s.lat >= 0 ? "N" : "S"} ${fmt(Math.abs(s.lon), 2)}°${s.lon >= 0 ? "E" : "W"}`}
-                {s.country ? `, ${s.country.name}` : ", outside every country outline"}
-                {many ? `. ${s.items.length} reports here: click to step through them.` : ""}
-              </title>
             </g>
           );
         })}
       </svg>
+      {(() => {
+        const s = placed.find((x) => `${x.lat},${x.lon}` === hover);
+        return s && !narrow ? <SiteCard spot={s} selectedId={selectedId} /> : null;
+      })()}
+      </div>
+      {narrow && (() => {
+        const s = placed.find((x) => `${x.lat},${x.lon}` === hover);
+        return s ? <SiteCard spot={s} selectedId={selectedId} inline /> : null;
+      })()}
 
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
         {pts.map(({ r, lat, lon }) => (
@@ -196,5 +214,60 @@ export function SiteMap({ records, selectedId, onPick }) {
         shore. The degrees on the buttons are exact.
       </div>
     </>
+  );
+}
+
+/* The card over a hovered or tapped spot. Positioned in percentages of
+   the drawing, so it follows the dot at any width, and flipped to the
+   other side near the right or bottom edge so it is never cut off. It
+   takes no pointer events: a card that caught the mouse would steal the
+   hover from the dot beneath it and flicker. */
+const CARD_MAX = 4;
+function SiteCard({ spot, selectedId, inline = false }) {
+  const left = (spot.p.x / MAP_W) * 100, top = (spot.p.y / MAP_H) * 100;
+  const flipX = left > 58, flipY = top > 55;
+  const place = inline
+    ? { position: "relative", marginTop: 8 }
+    : { position: "absolute", left: `${left}%`, top: `${top}%`, pointerEvents: "none", zIndex: 5,
+        transform: `translate(${flipX ? "calc(-100% - 14px)" : "14px"}, ${flipY ? "calc(-100% + 10px)" : "-10px"})`,
+        width: "max-content", maxWidth: "min(300px, 78vw)" };
+  const items = spot.items.slice(0, CARD_MAX);
+  const more = spot.items.length - items.length;
+  return (
+    <div role="tooltip" style={{
+      ...place, background: "#161b22",
+      border: `1px solid ${C.line}`, borderRadius: 6, padding: "8px 10px",
+      boxShadow: "0 6px 22px rgba(0,0,0,0.45)", font: "11px/1.45 system-ui", color: C.text,
+    }}>
+      <div style={{ color: C.muted, fontSize: 10.5, marginBottom: 4 }}>
+        {fmt(Math.abs(spot.lat), 2)}°{spot.lat >= 0 ? "N" : "S"} {fmt(Math.abs(spot.lon), 2)}°{spot.lon >= 0 ? "E" : "W"}
+        {spot.country ? ` · ${spot.country.name}` : " · outside every country outline"}
+      </div>
+      {items.map(({ r }, i) => {
+        const c = siteCard(r.fields);
+        return (
+          <div key={r.id} style={{ borderTop: i ? `1px solid ${C.line}` : "none", paddingTop: i ? 6 : 0, marginTop: i ? 6 : 0 }}>
+            <div style={{ fontWeight: 600, color: r.id === selectedId ? C.accent : C.text }}>{c.title}</div>
+            {c.sub && <div style={{ color: C.muted, fontSize: 10.5 }}>{c.sub}</div>}
+            <table style={{ borderCollapse: "collapse", marginTop: 3 }}><tbody>
+              {c.rows.map(([k, v]) => (
+                <tr key={k}>
+                  <td style={{ color: C.muted, padding: "1px 10px 1px 0", whiteSpace: "nowrap" }}>{k}</td>
+                  <td style={{ font: v ? "600 11px var(--mono)" : "italic 10.5px system-ui",
+                    color: v ? C.text : C.muted, whiteSpace: "nowrap" }}>{v || "not in report"}</td>
+                </tr>
+              ))}
+            </tbody></table>
+          </div>
+        );
+      })}
+      {more > 0 && <div style={{ color: C.muted, marginTop: 5 }}>and {more} more here</div>}
+      {spot.items.length > 1 && (
+        <div style={{ color: C.muted, fontSize: 10.5, marginTop: 5, borderTop: `1px solid ${C.line}`, paddingTop: 4 }}>
+          {spot.items.length} reports at this spot, not added together: they are usually variants of
+          one plant. Click to step through them.
+        </div>
+      )}
+    </div>
   );
 }
